@@ -1,33 +1,121 @@
-How to Upload Your Project to GitThis guide will walk you through the process of initializing a Git repository, adding your project files, committing them, and pushing them to a remote repository (like GitHub, GitLab, or Bitbucket).PrerequisitesGit Installed: Ensure Git is installed on your system. You can download it from git-scm.com.Git Account: Have an account on a Git hosting service (e.g., GitHub, GitLab, Bitbucket).Text Editor/IDE: A text editor or Integrated Development Environment (IDE) is useful for managing your code.Terminal/Command Prompt: You'll be using command-line commands.Step-by-Step Guide1. Navigate to Your Project DirectoryOpen your terminal or command prompt and navigate to the root directory of your project (where your OCD.py file and other project files are located).cd /path/to/your/project/folder
-2. Initialize a Git RepositoryIf this is a new project that hasn't been under version control before, initialize a new Git repository in your project directory:git init
-This command creates a hidden .git directory, which Git uses to store all the version control information.3. Add Your Project FilesTell Git which files you want to track. You can add specific files or all files in the current directory.To add all files (recommended for initial commit):git add .
-To add specific files:git add OCD.py file_organizer_settings.json
-(Replace file_organizer_settings.json with any other specific files you want to track, like README.md, requirements.txt, etc.)4. Commit Your FilesCommitting saves the current state of your added files to the repository's history. Each commit should represent a logical change.git commit -m "Initial commit of the OCD - File Organizer application"
-The -m flag allows you to provide a commit message. Make sure your message is descriptive and explains the changes made in that commit.5. Create a Repository on a Hosting Service (e.g., GitHub)Go to your preferred Git hosting service (GitHub, GitLab, Bitbucket) and create a new empty repository.Do NOT initialize it with a README.md or license file if you are pushing an existing project.Copy the provided remote repository URL (usually starts with https:// or git@).6. Connect Your Local Repository to the Remote RepositoryAdd the remote repository as an "origin" to your local Git repository. This tells Git where to push your code.git remote add origin <remote_repository_url>
-Replace <remote_repository_url> with the URL you copied in the previous step (e.g., https://github.com/yourusername/your-repo-name.git).You can verify the remote was added correctly:git remote -v
-7. Push Your Code to the Remote RepositoryFinally, push your committed changes from your local main (or master) branch to the remote origin repository.git push -u origin main
-git push: Command to send your commits to the remote repository.-u origin main: Sets the upstream branch, meaning future git push and git pull commands will automatically know to interact with origin/main. If your default branch is master, use git push -u origin master.You might be prompted for your username and password (or a personal access token if you have two-factor authentication enabled).8. Verify Your UploadGo to your repository on the hosting service's website. You should now see your project files uploaded there.Common Git Commandsgit status: Shows the status of your working directory and staging area.git log: Shows the commit history.git pull: Fetches and integrates changes from the remote repository.git branch: Lists, creates, or deletes branches.git checkout <branch-name>: Switches to a different branch.Best PracticesCommit Frequently: Make small, logical commits.Write Clear Commit Messages: Explain what changed and why.Use Branches: Create new branches for new features or bug fixes to keep your main branch stable.Pull Before Pushing: Always git pull before git push to avoid merge conflicts, especially when working in a team..gitignore: Create a .gitignore file in your project's root to specify files and directories that Git should ignore (e.g., __pycache__/, *.pyc, file_organizer_settings.json, .DS_Store, venv/). This keeps your repository clean.Example .gitignore for your project:# Python
-__pycache__/
-*.pyc
-*.pyd
-*.pyo
-.Python
-build/
-dist/
-develop-eggs/
-.eggs/
-*.egg-info/
-.env
-venv/
-env/
+# 🎯 OCD - File Organizer
 
-# IDEs
-.vscode/
-.idea/
+> **Effortlessly organize, declutter, and control your digital files with a beautiful, powerful desktop app.**
 
-# OS generated files
-.DS_Store
-Thumbs.db
+---
 
-# Application specific settings (if you don't want them versioned)
-file_organizer_settings.json
+## 🚀 Features at a Glance
+
+| **Feature**                | **Description**                                                                                                                                         |
+|:-------------------------- |:-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Multi-Source Selection** | Add multiple source folders and one destination for maximum flexibility.                                                                                |
+| **Smart Organization**     | Organize by year, month, week, date, or file type. "Smart Organize" sorts media by date, others by extension.                                          |
+| **Powerful Filtering**     | Exclude by extension, name, or size. Fine-tune exactly what gets organized.                                                                            |
+| **Duplicate Handling**     | Skip, move to a "Duplicates" subfolder, or permanently delete duplicates—your choice.                                                                  |
+| **Operation Preview**      | See exactly what will happen before you commit. Real-time thumbnail previews for images and videos.                                                     |
+| **Undo (Revert)**          | Instantly undo your last organization operation (except permanent deletions).                                                                          |
+| **Progress & Logging**     | Visual progress bar and detailed logs for transparency and troubleshooting.                                                                            |
+| **Settings Persistence**   | All your preferences saved in `file_organizer_settings.json`—never set up twice.                                                                      |
+| **Export Logs**            | Save operation logs as a text file for your records or support.                                                                                        |
+
+---
+
+## ✨ How It Works
+
+1. **Launch**  
+   Run the Python script to open the OCD - File Organizer window.
+
+2. **Select Source Folders**  
+   Click **Add Folder** to pick one or more directories. Use **Clear All** to reset.
+
+3. **Choose Destination Folder**  
+   Click **Browse** to select where organized files will go.
+
+4. **Pick Organization Method**  
+   - **Smart Organize**: Media by date, others by extension  
+   - **By Year**: `2023/`  
+   - **By Year-Month** (default): `2023-01/`  
+   - **By Year-Month-Date**: `2023-01-15/`  
+   - **By Year-Week**: `2024-Week01/`  
+   - **By File Type**: `pdf/`, `docx/`, etc.
+
+5. **Set Filters (Optional)**  
+   - **Exclude Extensions**: e.g., `tmp, log`
+   - **Exclude Names**: e.g., `temp, backup`
+   - **Size Range**: Min/Max in MB
+
+6. **Handle Duplicates**  
+   - **Skip**  
+   - **Move to Duplicates**  
+   - **Delete Permanently** (careful!)
+
+7. **Preview**  
+   Click **Preview** to simulate the operation. Thumbnails and logs show what will happen.
+
+8. **Organize**  
+   Happy with the preview? Click **Organize Files**. Watch the progress bar and logs.
+
+9. **Revert**  
+   Need to undo? Click **Revert** to restore files (except deleted ones).
+
+10. **Export Logs**  
+    Click **Export Log** to save the operation history.
+
+11. **Exit**  
+    Click **Exit** to close the app.
+
+---
+
+## ⚡️ Performance Highlights
+
+- **Threaded Operations**: UI stays responsive, even with thousands of files.
+- **Efficient Hashing**: MD5 with 8KB chunk reads for duplicate detection.
+- **Smart Thumbnails**: 200x200px max for fast previews.
+- **Optimized for SSDs**, but works on HDDs and network drives.
+
+| **Factor**              | **Impact**                                                                                 |
+|:----------------------- |:------------------------------------------------------------------------------------------|
+| File I/O Speed          | SSDs > HDDs. Network drives depend on bandwidth.                                          |
+| Number of Files         | More files = longer processing time.                                                      |
+| File Size               | Large files take longer to hash/move.                                                     |
+| Duplicate Detection     | Fast for most use cases; chunked reads for big files.                                     |
+| Thumbnail Generation    | Lightweight, but processing many large images may add time.                               |
+| Python’s GIL            | QThreads keep UI smooth; I/O operations often release the GIL.                            |
+
+---
+
+## 🛠️ FAQ & Troubleshooting
+
+| **Question**                                 | **Solution**                                                                                                                                  |
+|:---------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------|
+| Files not moving?                            | Check the log for errors, confirm folders, and ensure you clicked **Organize Files** (not just **Preview**).                                  |
+| Not organized as expected?                   | Double-check your method and file metadata (creation dates, extensions).                                                                      |
+| How are duplicates handled?                  | MD5 hash comparison; action depends on your setting (skip, move, delete).                                                                    |
+| Can I undo an operation?                     | Yes—use **Revert** immediately after organizing (except deleted files).                                                                       |
+| Permission denied errors?                    | Run as administrator and check folder permissions.                                                                                           |
+| App freezes on big jobs?                     | UI uses threads, but huge jobs may slow things down. Monitor system resources.                                                               |
+| How to export logs?                          | Click **Export Log**.                                                                                                                        |
+| Settings not saving?                         | Ensure write access to app directory; delete a corrupted `file_organizer_settings.json` if needed.                                            |
+
+---
+
+## 💡 Why OCD - File Organizer?
+
+- **Intuitive**: Clean, modern interface with real-time feedback.
+- **Flexible**: Organize by date, type, or custom filters.
+- **Safe**: Preview and revert features prevent mistakes.
+- **Fast**: Threaded design keeps things moving.
+
+---
+
+## 🏁 Get Started
+
+1. Install Python and PyQt6.
+2. Download the script.
+3. Run and enjoy a clutter-free digital life!
+
+---
+
+> **Tame your files. Take control. OCD - File Organizer.**
+
+---
