@@ -4,6 +4,14 @@
 
 ---
 
+## 🏁 Get Started
+
+1. **Visit the site** to learn more and download the app.  
+2. **Download the executable** for your platform.  
+3. **Run the application** and start organizing your files instantly!
+
+---
+
 ## 🚀 Features at a Glance
 
 | **Feature**               | **Description**                                                                                   |
@@ -100,14 +108,6 @@
 - **Flexible:** Organize by date, type, or custom filters.  
 - **Safe:** Preview and revert features prevent mistakes.  
 - **Fast:** Threaded design keeps things moving smoothly.
-
----
-
-## 🏁 Get Started
-
-1. Install Python and PyQt6.  
-2. Download the script.  
-3. Run and enjoy a clutter-free digital life!
 
 ---
 
