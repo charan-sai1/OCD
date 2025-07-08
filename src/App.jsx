@@ -95,12 +95,12 @@ const HeroSection = () => {
             
             <div className="flex flex-col sm:flex-row gap-4">
               <a
-                href="OCD.zip"
+                href="OCD.exe"
                 download
                 className="inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-2xl shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/40 transform hover:scale-105 transition-all duration-300 group"
               >
                 <Download size={24} className="mr-3 group-hover:animate-bounce"
-                download="OCD.zip" />
+                download="OCD.exe" />
                 Download OCD
               </a>
               
