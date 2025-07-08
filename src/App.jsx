@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Sun, Moon, Download, Github, Linkedin, FolderOpen, Zap, Shield, Cpu,Calendar,FileText,Filter ,Copy ,Settings,HelpCircle   } from 'lucide-react';
 import Bg from '../public/bg.png'
 import Logo from '../public/OCD.png'
-import Logotp from '../public/OCDtp.png'
+import Lenis from '@studio-freight/lenis';
 // Theme Context
 const ThemeContext = createContext();
 
@@ -45,7 +45,7 @@ const Navigation = () => {
     <nav className="fixed w-full z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md shadow-sm border-b border-gray-100 dark:border-gray-800">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <div className="flex items-center gap-5 text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-          <img src={Logo} alt="" srcset="" className='w-11 h-11'/>
+          <img src={Logo} alt="" srcSet="" className='w-11 h-11'/>
           OCD
         </div>
         <div className="flex items-center space-x-4">
@@ -95,12 +95,12 @@ const HeroSection = () => {
             
             <div className="flex flex-col sm:flex-row gap-4">
               <a
-                href="OCD.exe"
+                href="OCD.zip"
                 download
                 className="inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-2xl shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/40 transform hover:scale-105 transition-all duration-300 group"
               >
                 <Download size={24} className="mr-3 group-hover:animate-bounce"
-                download="OCD.exe" />
+                download="OCD.zip" />
                 Download OCD
               </a>
               
@@ -240,7 +240,7 @@ const GitHubSection = () => {
           </p>
           
           <a
-            href="https://github.com/yourusername/ocd-file-organizer"
+            href="https://github.com/charan-sai1/OCD/tree/master"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center px-8 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 group transform hover:scale-105"
@@ -270,7 +270,7 @@ const LinkedInSection = () => {
           </p>
           
           <a
-            href="https://linkedin.com/in/yourprofile"
+            href="https://www.linkedin.com/in/sai-charan782973/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center px-8 py-4 bg-white text-blue-600 font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 group transform hover:scale-105"
@@ -339,7 +339,7 @@ const FAQSection = () => {
             <div key={index} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
               <button
                 onClick={() => setOpenFAQ(openFAQ === index ? null : index)}
-                className="w-full px-8 py-6 text-left flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                className="w-full px-8 py-6 text-left flex justify-between items-center bg-white dark:bg-gray-800 transition-colors duration-200"
               >
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white pr-4">
                   {faq.question}
@@ -520,7 +520,35 @@ const Footer = () => {
 
 // Main App Component
 const App = () => {
-    
+    useEffect(() => {
+    // Initialize Lenis
+    const lenis = new Lenis({
+      duration: 1.2,     // How long the scroll takes (seconds)
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // A common smooth easing function
+      direction: 'vertical',
+      gestureDirection: 'vertical',
+      smooth: true,
+      mouseMultiplier: 1,
+      smoothTouch: true, // Set to true if you want smooth scroll on touch devices (can be resource intensive)
+      touchMultiplier: 2,
+      infinite: false,
+    });
+
+    // Request animation frame loop to update Lenis
+    // This connects Lenis to the browser's animation loop
+    function raf(time) {
+      lenis.raf(time);
+      requestAnimationFrame(raf);
+    }
+
+    requestAnimationFrame(raf);
+
+    // Clean up Lenis instance when the component unmounts
+    return () => {
+      lenis.destroy();
+    };
+  }, []); // Empty dependency array ensures this runs only once on mount
+
   return (
     <ThemeProvider>
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
