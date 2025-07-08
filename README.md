@@ -1,22 +1,22 @@
 # 🎯 OCD - File Organizer
 
-> **Effortlessly organize, declutter, and control your digital files with a beautiful, powerful desktop app.**
+> Effortlessly organize, declutter, and control your digital files with a sleek, powerful desktop app.
 
 ---
 
 ## 🚀 Features at a Glance
 
-| **Feature**                | **Description**                                                                                                                                         |
-|:-------------------------- |:-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Multi-Source Selection** | Add multiple source folders and one destination for maximum flexibility.                                                                                |
-| **Smart Organization**     | Organize by year, month, week, date, or file type. "Smart Organize" sorts media by date, others by extension.                                          |
-| **Powerful Filtering**     | Exclude by extension, name, or size. Fine-tune exactly what gets organized.                                                                            |
-| **Duplicate Handling**     | Skip, move to a "Duplicates" subfolder, or permanently delete duplicates—your choice.                                                                  |
-| **Operation Preview**      | See exactly what will happen before you commit. Real-time thumbnail previews for images and videos.                                                     |
-| **Undo (Revert)**          | Instantly undo your last organization operation (except permanent deletions).                                                                          |
-| **Progress & Logging**     | Visual progress bar and detailed logs for transparency and troubleshooting.                                                                            |
-| **Settings Persistence**   | All your preferences saved in `file_organizer_settings.json`—never set up twice.                                                                      |
-| **Export Logs**            | Save operation logs as a text file for your records or support.                                                                                        |
+| **Feature**               | **Description**                                                                                   |
+|:-------------------------|:-------------------------------------------------------------------------------------------------|
+| **Multi-Source Selection**| Add multiple source folders and one destination for maximum flexibility.                          |
+| **Smart Organization**    | Organize by year, month, week, date, or file type. "Smart Organize" sorts media by date, others by extension. |
+| **Powerful Filtering**    | Exclude files by extension, name patterns, or size range.                                        |
+| **Duplicate Handling**    | Skip, move to a "Duplicates" subfolder, or permanently delete duplicates—your choice.            |
+| **Operation Preview**     | Simulate file moves with real-time thumbnails before committing changes.                          |
+| **Undo (Revert)**         | Instantly undo the last organization operation (except permanent deletions).                      |
+| **Progress & Logging**    | Visual progress bar and detailed logs for transparency and troubleshooting.                      |
+| **Settings Persistence**  | Saves your preferences in `file_organizer_settings.json` for consistent experience.              |
+| **Export Logs**           | Save operation logs as a text file for record-keeping or support.                                |
 
 ---
 
@@ -40,78 +40,73 @@
    - **By File Type**: `pdf/`, `docx/`, etc.
 
 5. **Set Filters (Optional)**  
-   - **Exclude Extensions**: e.g., `tmp, log`
-   - **Exclude Names**: e.g., `temp, backup`
+   - **Exclude Extensions**: e.g., `tmp, log`  
+   - **Exclude Names**: e.g., `temp, backup`  
    - **Size Range**: Min/Max in MB
 
 6. **Handle Duplicates**  
    - **Skip**  
    - **Move to Duplicates**  
-   - **Delete Permanently** (careful!)
+   - **Delete Permanently** (use with caution!)
 
 7. **Preview**  
    Click **Preview** to simulate the operation. Thumbnails and logs show what will happen.
 
 8. **Organize**  
-   Happy with the preview? Click **Organize Files**. Watch the progress bar and logs.
+   Click **Organize Files** to execute. Watch the progress bar and logs.
 
 9. **Revert**  
    Need to undo? Click **Revert** to restore files (except deleted ones).
 
 10. **Export Logs**  
-    Click **Export Log** to save the operation history.
+    Save logs by clicking **Export Log**.
 
 11. **Exit**  
-    Click **Exit** to close the app.
+    Close the app when done.
 
 ---
 
 ## ⚡️ Performance Highlights
 
-- **Threaded Operations**: UI stays responsive, even with thousands of files.
-- **Efficient Hashing**: MD5 with 8KB chunk reads for duplicate detection.
-- **Smart Thumbnails**: 200x200px max for fast previews.
-- **Optimized for SSDs**, but works on HDDs and network drives.
-
-| **Factor**              | **Impact**                                                                                 |
-|:----------------------- |:------------------------------------------------------------------------------------------|
-| File I/O Speed          | SSDs > HDDs. Network drives depend on bandwidth.                                          |
-| Number of Files         | More files = longer processing time.                                                      |
-| File Size               | Large files take longer to hash/move.                                                     |
-| Duplicate Detection     | Fast for most use cases; chunked reads for big files.                                     |
-| Thumbnail Generation    | Lightweight, but processing many large images may add time.                               |
-| Python’s GIL            | QThreads keep UI smooth; I/O operations often release the GIL.                            |
+| **Factor**            | **Impact**                                                                                 |
+|:---------------------|:------------------------------------------------------------------------------------------|
+| File I/O Speed        | SSDs > HDDs. Network drives depend on bandwidth.                                          |
+| Number of Files       | More files = longer processing time.                                                      |
+| File Size             | Large files take longer to hash and move.                                                |
+| Duplicate Detection   | MD5 hashing with chunked reads balances speed and accuracy.                              |
+| Thumbnail Generation  | Limited to 200×200 px for fast previews.                                                 |
+| Threading             | QThreads keep UI responsive during long tasks.                                          |
 
 ---
 
 ## 🛠️ FAQ & Troubleshooting
 
-| **Question**                                 | **Solution**                                                                                                                                  |
-|:---------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------|
-| Files not moving?                            | Check the log for errors, confirm folders, and ensure you clicked **Organize Files** (not just **Preview**).                                  |
-| Not organized as expected?                   | Double-check your method and file metadata (creation dates, extensions).                                                                      |
-| How are duplicates handled?                  | MD5 hash comparison; action depends on your setting (skip, move, delete).                                                                    |
-| Can I undo an operation?                     | Yes—use **Revert** immediately after organizing (except deleted files).                                                                       |
-| Permission denied errors?                    | Run as administrator and check folder permissions.                                                                                           |
-| App freezes on big jobs?                     | UI uses threads, but huge jobs may slow things down. Monitor system resources.                                                               |
-| How to export logs?                          | Click **Export Log**.                                                                                                                        |
-| Settings not saving?                         | Ensure write access to app directory; delete a corrupted `file_organizer_settings.json` if needed.                                            |
+| **Question**                         | **Solution**                                                                                 |
+|:-----------------------------------|:--------------------------------------------------------------------------------------------|
+| Files not moving?                   | Check logs for errors, confirm folders, and ensure you clicked **Organize Files** (not just **Preview**). |
+| Organization not as expected?       | Verify organization method and file metadata (creation dates, extensions).                  |
+| How are duplicates handled?         | MD5 hash comparison; action depends on your setting (skip, move, delete).                   |
+| Can I undo an operation?            | Yes—use **Revert** immediately after organizing (except deleted files).                    |
+| Permission denied errors?           | Run as administrator and verify folder permissions.                                        |
+| App freezes on big jobs?            | UI uses threads, but huge jobs may slow system. Monitor resources.                          |
+| How to export logs?                 | Click **Export Log**.                                                                       |
+| Settings not saving?                | Ensure write access to app directory; delete corrupted `file_organizer_settings.json` if needed. |
 
 ---
 
 ## 💡 Why OCD - File Organizer?
 
-- **Intuitive**: Clean, modern interface with real-time feedback.
-- **Flexible**: Organize by date, type, or custom filters.
-- **Safe**: Preview and revert features prevent mistakes.
-- **Fast**: Threaded design keeps things moving.
+- **Intuitive UI:** Clean, modern interface with real-time feedback.  
+- **Flexible:** Organize by date, type, or custom filters.  
+- **Safe:** Preview and revert features prevent mistakes.  
+- **Fast:** Threaded design keeps things moving smoothly.
 
 ---
 
 ## 🏁 Get Started
 
-1. Install Python and PyQt6.
-2. Download the script.
+1. Install Python and PyQt6.  
+2. Download the script.  
 3. Run and enjoy a clutter-free digital life!
 
 ---
