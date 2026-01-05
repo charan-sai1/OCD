@@ -11,6 +11,7 @@ import IconButton from "@mui/material/IconButton";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
+import { previewCache } from "./utils/previewCache";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
@@ -32,6 +33,9 @@ import { performanceMonitor } from "./utils/performanceMonitor";
 import { workerManager } from "./utils/workerManager";
 import { imagePreloader } from "./utils/imagePreloader";
 import { asyncScheduler } from "./utils/requestIdleCallbackPolyfill";
+import { thumbnailGenerationService } from "./utils/thumbnailGenerationService";
+import { advancedImageCache } from "./utils/advancedCache";
+import OptimizationProgress, { OptimizationState } from "./components/OptimizationProgress";
 
 function App() {
   // Load persisted data from localStorage
@@ -68,6 +72,8 @@ function App() {
     persistedData.directories,
   );
   console.log('Initial directory paths:', directoryPaths);
+
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(
     persistedData.sidebarCollapsed,
   );
@@ -78,8 +84,18 @@ function App() {
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
-  const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
+   const [loadingProgress, setLoadingProgress] = useState<number>(0);
+   const [optimizationState, setOptimizationState] = useState<OptimizationState>({
+     isScanning: false,
+     isGenerating: false,
+     scanProgress: 0,
+     generationProgress: 0,
+     totalImages: 0,
+     processedImages: 0,
+     currentFile: undefined,
+     canMinimize: true
+   });
 
   // Register service worker for caching (only in production)
   useEffect(() => {
@@ -102,17 +118,29 @@ function App() {
     });
   }, []);
 
+  // Initialize caches
+  useEffect(() => {
+    const initCaches = async () => {
+      try {
+        await previewCache.init();
+        await advancedImageCache.init();
+        console.log('Image caches initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize caches:', error);
+      }
+    };
+    initCaches();
+  }, []);
+
   // Load initial viewport images in background (not all images)
   useEffect(() => {
     if (directoryPaths.length > 0) {
-      console.log('Directories found, starting image loading...');
       setIsLoadingImages(true); // Show loading immediately
       loadInitialViewportImages().catch((error) => {
         console.error('Error in initial image loading:', error);
         setIsLoadingImages(false);
       });
     } else {
-      console.log('No directories selected');
       setImages([]);
       setIsLoadingImages(false);
     }
@@ -148,32 +176,120 @@ function App() {
     }
   }, [directoryPaths, imageSize, isSidebarCollapsed, directoryCache]);
 
-  const handleAddFolders = async () => {
-    // Schedule directory selection asynchronously
-    asyncScheduler.schedule(async () => {
-      try {
-        const selected = await open({
-          directory: true,
-          multiple: true,
-          title: "Select Image Directories",
-        });
+   const handleAddFolders = async () => {
+     // Schedule directory selection asynchronously
+     asyncScheduler.schedule(async () => {
+       try {
+         const selected = await open({
+           directory: true,
+           multiple: true,
+           title: "Select Image Directories",
+         });
 
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected];
-          // Add new paths to existing ones, avoiding duplicates
-          setDirectoryPaths((prev) => {
-            const combined = [...prev, ...paths];
-            return Array.from(new Set(combined)); // Remove duplicates
-          });
+         if (selected) {
+           const paths = Array.isArray(selected) ? selected : [selected];
+           // Add new paths to existing ones, avoiding duplicates
+           setDirectoryPaths((prev) => {
+             const combined = [...prev, ...paths];
+             return Array.from(new Set(combined)); // Remove duplicates
+           });
 
-          // Auto-load images when directories are selected (load from all directories)
-          asyncScheduler.schedule(() => loadImagesFromPaths(), { timeout: 100 });
-        }
-      } catch (err) {
-        console.error("Error opening directory picker:", err);
-      }
-    });
-  };
+           // Start optimization process for new folders
+           await optimizeNewFolders(paths);
+         }
+       } catch (err) {
+         console.error("Error opening directory picker:", err);
+       }
+     });
+   };
+
+   const optimizeNewFolders = async (newPaths: string[]) => {
+     try {
+       // Phase 1: Scan directories
+       setOptimizationState(prev => ({ ...prev, isScanning: true, scanProgress: 0 }));
+
+       const allImages = await scanDirectoriesForImages(newPaths);
+
+       setOptimizationState(prev => ({
+         ...prev,
+         isScanning: false,
+         isGenerating: true,
+         totalImages: allImages.length,
+         generationProgress: 0
+       }));
+
+       // Phase 2: Generate thumbnails
+       const deviceProfile = await import('./utils/deviceCapabilities').then(m => m.DeviceCapabilities.detect());
+
+       await thumbnailGenerationService.generateThumbnailsForImages(
+         allImages,
+         {
+           quality: deviceProfile.recommendedSettings.quality,
+           format: 'webp',
+           maxConcurrent: deviceProfile.recommendedSettings.batchSize,
+           deviceAdaptive: true
+         },
+         (completed, total, currentFile) => {
+           setOptimizationState(prev => ({
+             ...prev,
+             processedImages: completed,
+             generationProgress: (completed / total) * 100,
+             currentFile
+           }));
+         }
+       );
+
+       // Phase 3: Complete and load images
+       setOptimizationState(prev => ({
+         ...prev,
+         isGenerating: false
+       }));
+
+       console.log('Thumbnail optimization complete!');
+
+       // Now load the images (they should load instantly from cache)
+       asyncScheduler.schedule(() => loadImagesFromPaths(newPaths), { timeout: 100 });
+
+     } catch (error) {
+       console.error('Optimization failed:', error);
+       setOptimizationState(prev => ({
+         ...prev,
+         isScanning: false,
+         isGenerating: false
+       }));
+
+       // Fallback: load images without optimization
+       asyncScheduler.schedule(() => loadImagesFromPaths(newPaths), { timeout: 100 });
+     }
+   };
+
+   const scanDirectoriesForImages = async (paths: string[]): Promise<string[]> => {
+     const allImages: string[] = [];
+
+     for (let i = 0; i < paths.length; i++) {
+       const path = paths[i];
+       try {
+         const { invoke } = await import('@tauri-apps/api/core');
+         const imagePaths: string[] = await invoke("list_files", {
+           path: path,
+           fileType: "images",
+         });
+         allImages.push(...imagePaths);
+
+         // Update scan progress
+         setOptimizationState(prev => ({
+           ...prev,
+           scanProgress: ((i + 1) / paths.length) * 100,
+           currentFile: path.split('/').pop()
+         }));
+
+       } catch (error) {
+         console.error(`Error scanning ${path}:`, error);
+       }
+     }
+
+     return allImages;
+   };
 
   const loadImagesFromPaths = async (pathsToLoad?: string[]) => {
     const paths = pathsToLoad || directoryPaths;
@@ -201,12 +317,12 @@ function App() {
       const seenPaths = new Set<string>();
       const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-      // Process scan results asynchronously
-      for (let i = 0; i < scanResults.length; i++) {
-        const result = scanResults[i];
-        const path = result.path;
-        const images = Array.isArray(result.images) ? result.images as string[] : [];
-        const error = result.error;
+        // Process scan results asynchronously
+        for (let i = 0; i < scanResults.length; i++) {
+          const result = scanResults[i];
+          const path = result.path;
+          const images = Array.isArray(result.images) ? result.images as string[] : [];
+          const error = result.error;
 
         if (error) {
           console.error(`Error scanning ${path}:`, error);
@@ -746,6 +862,25 @@ function App() {
           loadingProgress={loadingProgress}
         />
       </Suspense>
+
+      {/* Optimization Progress Dialog */}
+      <OptimizationProgress
+        state={optimizationState}
+        onSkip={() => {
+          thumbnailGenerationService.cancel();
+          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false }));
+          // Load images without waiting for optimization
+          asyncScheduler.schedule(() => loadImagesFromPaths(), { timeout: 100 });
+        }}
+        onBackground={() => {
+          setOptimizationState(prev => ({ ...prev, canMinimize: false }));
+          // Continue optimization in background
+        }}
+        onCancel={() => {
+          thumbnailGenerationService.cancel();
+          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false }));
+        }}
+      />
     </ThemeProvider>
   );
 }
