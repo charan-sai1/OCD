@@ -1,2 +1,0 @@
-# OCD
-OCD - file organizer
