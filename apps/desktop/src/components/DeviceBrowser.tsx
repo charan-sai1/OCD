@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from "react";
-import {
-  Box,
-  Typography,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  CircularProgress,
-  Alert,
-  Breadcrumbs,
-  Link,
-  Chip,
-  Tooltip,
-  IconButton,
-} from "@mui/material";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import CircularProgress from "@mui/material/CircularProgress";
+import Alert from "@mui/material/Alert";
+import Breadcrumbs from "@mui/material/Breadcrumbs";
+import Link from "@mui/material/Link";
+import Chip from "@mui/material/Chip";
+import Tooltip from "@mui/material/Tooltip";
+import IconButton from "@mui/material/IconButton";
 import {
   Storage as StorageIcon,
   Usb as UsbIcon,
@@ -28,6 +26,7 @@ import {
   GridView as GridViewIcon,
 } from "@mui/icons-material";
 import { invoke } from "@tauri-apps/api/core";
+import DeviceImportDialog from "./DeviceImportDialog";
 
 interface Device {
   name: string;
@@ -49,6 +48,7 @@ type ViewMode = "list" | "small_grid" | "large_grid";
 interface DeviceBrowserProps {
   onDeviceSelect?: (device: Device) => void;
   onFileSelect?: (files: string[]) => void;
+  onImportImages?: (images: string[]) => void;
 }
 
 interface ViewControlsProps {
@@ -320,6 +320,7 @@ const FileGrid: React.FC<FileGridProps> = ({ files, onFileClick, size }) => {
 const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
   onDeviceSelect,
   onFileSelect,
+  onImportImages,
 }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -337,10 +338,44 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
     const saved = localStorage.getItem("deviceBrowserViewMode");
     return (saved as ViewMode) || "list";
   });
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [newDevices, setNewDevices] = useState<Device[]>([]);
 
   const changeViewMode = (mode: ViewMode) => {
     setViewMode(mode);
     localStorage.setItem("deviceBrowserViewMode", mode);
+  };
+
+  const handleImportFromDevice = async (device: Device) => {
+    try {
+      setLoading(true);
+      // List images from the device
+      const imageFiles: string[] = await invoke("list_files", {
+        path: device.mount_point,
+        fileType: "images",
+      });
+
+      if (imageFiles.length > 0) {
+        // Add images to the main app
+        onImportImages?.(imageFiles);
+        setDeviceChangeMessage(`Imported ${imageFiles.length} images from ${device.name || device.mount_point}`);
+        setTimeout(() => setDeviceChangeMessage(null), 3000);
+      } else {
+        setDeviceChangeMessage(`No images found on ${device.name || device.mount_point}`);
+        setTimeout(() => setDeviceChangeMessage(null), 3000);
+      }
+    } catch (err) {
+      console.error("Error importing from device:", err);
+      setError("Failed to import images from device");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportToDevice = async (device: Device) => {
+    // TODO: Implement export functionality
+    setDeviceChangeMessage(`Export functionality coming soon for ${device.name || device.mount_point}`);
+    setTimeout(() => setDeviceChangeMessage(null), 3000);
   };
 
   // Load connected devices on component mount and set up polling
@@ -366,6 +401,17 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
       const currentCount = connectedDevices.length;
       if (previousDeviceCount !== 0 && currentCount !== previousDeviceCount) {
         if (currentCount > previousDeviceCount) {
+          // New devices connected - find which ones are new
+          const existingMountPoints = new Set(devices.map(d => d.mount_point));
+          const newlyConnectedDevices = connectedDevices.filter(
+            d => !existingMountPoints.has(d.mount_point)
+          );
+
+          if (newlyConnectedDevices.length > 0) {
+            setNewDevices(newlyConnectedDevices);
+            setShowImportDialog(true);
+          }
+
           setDeviceChangeMessage(
             `Device connected (${currentCount - previousDeviceCount} new)`,
           );
@@ -735,6 +781,15 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
           />
         )}
       </Box>
+
+      {/* Device Import Dialog */}
+      <DeviceImportDialog
+        open={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+        newDevices={newDevices}
+        onImportFromDevice={handleImportFromDevice}
+        onExportToDevice={handleExportToDevice}
+      />
     </Box>
   );
 };

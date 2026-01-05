@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facial Recognition Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #007bff;
+            transition: width 0.3s ease;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        pre {
+            background: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Facial Recognition Test Suite</h1>
+        <p>This page tests the fixed facial recognition implementation.</p>
+
+        <div id="status" class="status info">Ready to run tests</div>
+
+        <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+        </div>
+
+        <div>
+            <button id="run-tests" onclick="runAllTests()">Run All Tests</button>
+            <button id="test-hardware" onclick="testHardware()">Test Hardware Detection</button>
+            <button id="test-database" onclick="testDatabase()">Test Database</button>
+            <button id="test-detection" onclick="testFaceDetection()">Test Face Detection</button>
+            <button id="clear-storage" onclick="clearStorage()">Clear Storage</button>
+        </div>
+
+        <div id="results" class="results" style="display: none;">
+            <h3>Test Results</h3>
+            <pre id="results-content">No tests run yet</pre>
+        </div>
+
+        <div id="debug-info" class="results" style="display: none;">
+            <h3>Debug Information</h3>
+            <pre id="debug-content">No debug info available</pre>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the test function
+        import { testFixedFacialRecognition } from './test-facial-recognition-fixed.ts';
+
+        let currentTest = null;
+
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${type}`;
+            statusEl.textContent = message;
+        }
+
+        function updateProgress(percent) {
+            const progressEl = document.getElementById('progress-fill');
+            progressEl.style.width = `${percent}%`;
+        }
+
+        function showResults(content) {
+            const resultsEl = document.getElementById('results');
+            const contentEl = document.getElementById('results-content');
+            resultsEl.style.display = 'block';
+            contentEl.textContent = content;
+        }
+
+        function showDebugInfo(info) {
+            const debugEl = document.getElementById('debug-info');
+            const contentEl = document.getElementById('debug-content');
+            debugEl.style.display = 'block';
+            contentEl.textContent = info;
+        }
+
+        function setButtonsEnabled(enabled) {
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(btn => btn.disabled = !enabled);
+        }
+
+        // Override console.log to capture output
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        let logOutput = [];
+
+        function captureOutput(type, ...args) {
+            const message = `[${new Date().toLocaleTimeString()}] ${type.toUpperCase()}: ${args.join(' ')}`;
+            logOutput.push(message);
+            showDebugInfo(logOutput.join('\n'));
+
+            // Also call original
+            if (type === 'log') originalLog(...args);
+            else if (type === 'error') originalError(...args);
+            else if (type === 'warn') originalWarn(...args);
+        }
+
+        console.log = (...args) => captureOutput('log', ...args);
+        console.error = (...args) => captureOutput('error', ...args);
+        console.warn = (...args) => captureOutput('warn', ...args);
+
+        window.runAllTests = async function() {
+            if (currentTest) return;
+
+            setButtonsEnabled(false);
+            logOutput = [];
+            updateStatus('Running comprehensive test suite...', 'info');
+            updateProgress(0);
+
+            try {
+                currentTest = testFixedFacialRecognition();
+                const result = await currentTest;
+
+                updateStatus('All tests passed! ✅', 'success');
+                updateProgress(100);
+                showResults('🎉 All facial recognition tests completed successfully!\n\n' +
+                          'Features verified:\n' +
+                          '✅ Hardware detection\n' +
+                          '✅ Database operations\n' +
+                          '✅ Face detection pipeline\n' +
+                          '✅ Embedding extraction\n' +
+                          '✅ Face clustering\n' +
+                          '✅ Error handling\n\n' +
+                          'The facial recognition system is now working correctly.');
+
+            } catch (error) {
+                updateStatus('Tests failed ❌', 'error');
+                updateProgress(0);
+                showResults(`❌ Test suite failed:\n\n${error.message || error}\n\n` +
+                          'Check the debug information below for details.');
+            } finally {
+                currentTest = null;
+                setButtonsEnabled(true);
+            }
+        };
+
+        window.testHardware = async function() {
+            updateStatus('Testing hardware detection...', 'info');
+
+            try {
+                const { TauriHardwareDetector } = await import('./shared-backend/platforms/tauri/hardware-detector.ts');
+                const detector = new TauriHardwareDetector();
+                const capabilities = await detector.detectCapabilities();
+
+                const result = `Hardware Detection Results:\n` +
+                             `Platform: ${capabilities.platform}\n` +
+                             `CPU Cores: ${capabilities.cpuCores}\n` +
+                             `Memory: ${(capabilities.memoryGB / (1024*1024*1024)).toFixed(1)} GB\n` +
+                             `GPU Available: ${capabilities.hasGPU}`;
+
+                updateStatus('Hardware detection successful ✅', 'success');
+                showResults(result);
+
+            } catch (error) {
+                updateStatus('Hardware detection failed ❌', 'error');
+                showResults(`Error: ${error.message || error}`);
+            }
+        };
+
+        window.testDatabase = async function() {
+            updateStatus('Testing database operations...', 'info');
+
+            try {
+                const { TauriSQLiteDatabase } = await import('./shared-backend/platforms/tauri/database.ts');
+                const db = new TauriSQLiteDatabase();
+                await db.initialize();
+
+                const faceCount = await db.getFaceCount();
+                const personCount = await db.getPersonCount();
+
+                const result = `Database Test Results:\n` +
+                             `Initialization: ✅\n` +
+                             `Current faces: ${faceCount}\n` +
+                             `Current people: ${personCount}\n` +
+                             `Storage: localStorage (fallback mode)`;
+
+                updateStatus('Database test successful ✅', 'success');
+                showResults(result);
+
+                await db.close();
+
+            } catch (error) {
+                updateStatus('Database test failed ❌', 'error');
+                showResults(`Error: ${error.message || error}`);
+            }
+        };
+
+        window.testFaceDetection = async function() {
+            updateStatus('Testing face detection...', 'info');
+
+            try {
+                // Create mock image data
+                const mockImageData = new ImageData(640, 480);
+                for (let i = 0; i < mockImageData.data.length; i += 4) {
+                    mockImageData.data[i] = Math.random() * 255;     // R
+                    mockImageData.data[i + 1] = Math.random() * 255; // G
+                    mockImageData.data[i + 2] = Math.random() * 255; // B
+                    mockImageData.data[i + 3] = 255;                 // A
+                }
+
+                const { FallbackFaceDetector } = await import('./shared-backend/platforms/tauri/face-detectors.ts');
+                const detector = new FallbackFaceDetector();
+                await detector.loadModel();
+
+                const result = await detector.detectFaces(mockImageData, {
+                    minFaceSize: 40,
+                    maxFaces: 10,
+                    confidenceThreshold: 0.5,
+                    enableLandmarks: true,
+                    enableQualityAssessment: true
+                });
+
+                const output = `Face Detection Test Results:\n` +
+                             `Model: ${result.modelUsed}\n` +
+                             `Processing time: ${result.processingTime}ms\n` +
+                             `Faces detected: ${result.faces.length}\n\n`;
+
+                if (result.faces.length > 0) {
+                    result.faces.forEach((face, i) => {
+                        output += `Face ${i + 1}:\n` +
+                                `  Confidence: ${(face.confidence * 100).toFixed(1)}%\n` +
+                                `  Bounds: ${face.bounds.width}x${face.bounds.height} at (${face.bounds.x}, ${face.bounds.y})\n` +
+                                `  Quality: ${face.quality ? `Blur: ${(face.quality.blur * 100).toFixed(1)}%, Brightness: ${(face.quality.brightness * 100).toFixed(1)}%` : 'Not assessed'}\n\n`;
+                    });
+                }
+
+                updateStatus('Face detection test successful ✅', 'success');
+                showResults(output);
+
+            } catch (error) {
+                updateStatus('Face detection test failed ❌', 'error');
+                showResults(`Error: ${error.message || error}`);
+            }
+        };
+
+        window.clearStorage = function() {
+            if (confirm('This will clear all stored face data. Continue?')) {
+                localStorage.clear();
+                updateStatus('Storage cleared', 'info');
+                showResults('Local storage has been cleared.\n\nThis removes all stored faces, people, and processing data.');
+            }
+        };
+
+        // Show debug info by default
+        showDebugInfo('Debug console output will appear here during tests...\n\nClick "Run All Tests" to start the comprehensive test suite.');
+
+        // Auto-run a quick hardware test on page load
+        setTimeout(() => {
+            console.log('🧪 Facial Recognition Test Page Loaded');
+            console.log('Click the buttons above to run individual tests or "Run All Tests" for the full suite.');
+        }, 100);
+    </script>
+</body>
+</html>

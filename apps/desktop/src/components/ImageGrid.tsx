@@ -1,15 +1,13 @@
 import React, { useState } from "react";
-import {
-  Box,
-  Typography,
-  Button,
-  ImageList,
-  ImageListItem,
-  ImageListItemBar,
-  Fab,
-  Tooltip,
-  useTheme,
-} from "@mui/material";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import ImageList from "@mui/material/ImageList";
+import ImageListItem from "@mui/material/ImageListItem";
+import ImageListItemBar from "@mui/material/ImageListItemBar";
+import Fab from "@mui/material/Fab";
+import Tooltip from "@mui/material/Tooltip";
+import { useTheme } from "@mui/material/styles";
 import {
   FolderOpen as FolderOpenIcon,
   PhotoLibrary as PhotoLibraryIcon,

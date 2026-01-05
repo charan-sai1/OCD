@@ -1,132 +1,73 @@
 import { useState, useEffect } from "react";
-import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
-import Lenis from "lenis";
-import "lenis/dist/lenis.css";
-import Sidebar from "./components/Sidebar";
-import PhotoGrid from "./components/PhotoGrid";
-import {
-  Fab,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  IconButton,
-  Box,
-  Typography,
-} from "@mui/material";
-import {
-  MoreVert as MoreVertIcon,
-  FolderOpen as FolderOpenIcon,
-  CloudUpload as CloudUploadIcon,
-  Add as AddIcon,
-  Remove as RemoveIcon,
-} from "@mui/icons-material";
-import FolderView from "./components/FolderView";
-import DeviceBrowser from "./components/DeviceBrowser";
-import FolderManagementDialog from "./components/FolderManagementDialog";
-import SearchBar from "./components/SearchBar";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ThemeProvider } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
+import React, { Suspense, lazy } from "react";
+import Fab from "@mui/material/Fab";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import IconButton from "@mui/material/IconButton";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import CircularProgress from "@mui/material/CircularProgress";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import AddIcon from "@mui/icons-material/Add";
+import RemoveIcon from "@mui/icons-material/Remove";
+import { theme } from "./theme";
+import "./styles/animations.css";
 
-const theme = createTheme({
-  palette: {
-    mode: "dark",
-    primary: {
-      main: "#f5f5f5", // Off-white
-    },
-    secondary: {
-      main: "#1a1a1a", // Off-black
-    },
-    background: {
-      default: "#121212", // Dark off-black
-      paper: "#1e1e1e", // Slightly lighter off-black
-    },
-    text: {
-      primary: "#f5f5f5", // Off-white text
-      secondary: "#e0e0e0", // Lighter off-white
-    },
-  },
-  typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    h4: {
-      fontWeight: 300,
-      letterSpacing: "-0.01562em",
-    },
-    h6: {
-      fontWeight: 400,
-      letterSpacing: "0.00735em",
-    },
-  },
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: 20,
-          textTransform: "none",
-          fontWeight: 500,
-        },
-        contained: {
-          boxShadow: "none",
-          "&:hover": {
-            boxShadow:
-              "0px 2px 4px -1px rgba(0,0,0,0.2), 0px 4px 5px 0px rgba(0,0,0,0.14), 0px 1px 10px 0px rgba(0,0,0,0.12)",
-          },
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: 12,
-          boxShadow: "none",
-          border: "1px solid rgba(255,255,255,0.12)",
-        },
-      },
-    },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          "& .MuiOutlinedInput-root": {
-            borderRadius: 16,
-          },
-        },
-      },
-    },
-  },
-});
+// Lazy load components for better initial bundle size
+const Sidebar = lazy(() => import("./components/Sidebar"));
+const PhotoGrid = lazy(() => import("./components/PhotoGrid"));
+const FolderView = lazy(() => import("./components/FolderView"));
+const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
+const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
+const SearchBar = lazy(() => import("./components/SearchBar"));
+const FaceRecognitionPanel = lazy(() => import("./components/FaceRecognitionPanel"));
+import { open } from "@tauri-apps/plugin-dialog";
+import { performanceMonitor } from "./utils/performanceMonitor";
+import { workerManager } from "./utils/workerManager";
+import { imagePreloader } from "./utils/imagePreloader";
+import { asyncScheduler } from "./utils/requestIdleCallbackPolyfill";
 
 function App() {
   // Load persisted data from localStorage
   const loadPersistedData = () => {
     try {
-      const savedDirectories = localStorage.getItem("ocd-selected-directories");
-      const savedImageSize = localStorage.getItem("ocd-image-size");
-      const savedSidebarState = localStorage.getItem("ocd-sidebar-collapsed");
+      const savedDirectories = localStorage.getItem('ocd-selected-directories');
+      const savedImageSize = localStorage.getItem('ocd-image-size');
+      const savedSidebarState = localStorage.getItem('ocd-sidebar-collapsed');
+      const savedDirectoryCache = localStorage.getItem('ocd-directory-cache');
 
       return {
         directories: savedDirectories ? JSON.parse(savedDirectories) : [],
         imageSize: savedImageSize ? parseInt(savedImageSize, 10) : 4,
-        sidebarCollapsed: savedSidebarState
-          ? JSON.parse(savedSidebarState)
-          : false,
+        sidebarCollapsed: savedSidebarState ? JSON.parse(savedSidebarState) : false,
+        directoryCache: savedDirectoryCache ? JSON.parse(savedDirectoryCache) : {},
       };
     } catch (error) {
-      console.error("Error loading persisted data:", error);
+      console.error('Error loading persisted data:', error);
       return {
         directories: [],
         imageSize: 4,
         sidebarCollapsed: false,
+        directoryCache: {},
       };
     }
   };
 
   const persistedData = loadPersistedData();
+  console.log('Loaded persisted data:', persistedData);
 
   const [selectedSection, setSelectedSection] = useState<string>("photos");
   const [images, setImages] = useState<string[]>([]);
   const [directoryPaths, setDirectoryPaths] = useState<string[]>(
     persistedData.directories,
   );
+  console.log('Initial directory paths:', directoryPaths);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(
     persistedData.sidebarCollapsed,
   );
@@ -136,36 +77,48 @@ function App() {
   const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState<boolean>(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
+  const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
 
-  // Load images whenever directoryPaths changes (including from persisted data)
+  // Register service worker for caching (only in production)
+  useEffect(() => {
+    // Temporarily skip service worker to avoid conflicts
+    console.log('Skipping service worker registration');
+    return;
+
+    asyncScheduler.schedule(() => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('Service Worker registered successfully:', registration);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      } else {
+        console.log('Service Worker not supported in this browser');
+      }
+    });
+  }, []);
+
+  // Load initial viewport images in background (not all images)
   useEffect(() => {
     if (directoryPaths.length > 0) {
-      loadImagesFromPaths();
+      console.log('Directories found, starting image loading...');
+      setIsLoadingImages(true); // Show loading immediately
+      loadInitialViewportImages().catch((error) => {
+        console.error('Error in initial image loading:', error);
+        setIsLoadingImages(false);
+      });
     } else {
+      console.log('No directories selected');
       setImages([]);
+      setIsLoadingImages(false);
     }
   }, [directoryPaths]);
 
-  // Initialize Lenis smooth scrolling
-  useEffect(() => {
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-    });
 
-    function raf(time: number) {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
-
-    return () => {
-      lenis.destroy();
-    };
-  }, []);
 
   // Handle scroll detection for search bar visibility
   useEffect(() => {
@@ -178,61 +131,48 @@ function App() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Persist directory paths to localStorage
+  // Persist all settings to localStorage (batched for performance)
   useEffect(() => {
     try {
-      localStorage.setItem(
-        "ocd-selected-directories",
-        JSON.stringify(directoryPaths),
-      );
-    } catch (error) {
-      console.error("Error saving directory paths to localStorage:", error);
-    }
-  }, [directoryPaths]);
-
-  // Persist image size to localStorage
-  useEffect(() => {
-    try {
+      localStorage.setItem("ocd-selected-directories", JSON.stringify(directoryPaths));
       localStorage.setItem("ocd-image-size", imageSize.toString());
-    } catch (error) {
-      console.error("Error saving image size to localStorage:", error);
-    }
-  }, [imageSize]);
-
-  // Persist sidebar state to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "ocd-sidebar-collapsed",
-        JSON.stringify(isSidebarCollapsed),
+      localStorage.setItem("ocd-sidebar-collapsed", JSON.stringify(isSidebarCollapsed));
+      const recentCache = Object.fromEntries(
+        Object.entries(directoryCache)
+          .filter(([_, data]) => Date.now() - data.timestamp < 30 * 60 * 1000)
+          .slice(-10)
       );
+      localStorage.setItem("ocd-directory-cache", JSON.stringify(recentCache));
     } catch (error) {
-      console.error("Error saving sidebar state to localStorage:", error);
+      console.error("Error saving settings to localStorage:", error);
     }
-  }, [isSidebarCollapsed]);
+  }, [directoryPaths, imageSize, isSidebarCollapsed, directoryCache]);
 
   const handleAddFolders = async () => {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: true,
-        title: "Select Image Directories",
-      });
-
-      if (selected) {
-        const paths = Array.isArray(selected) ? selected : [selected];
-        // Add new paths to existing ones, avoiding duplicates
-        setDirectoryPaths((prev) => {
-          const combined = [...prev, ...paths];
-          return Array.from(new Set(combined)); // Remove duplicates
+    // Schedule directory selection asynchronously
+    asyncScheduler.schedule(async () => {
+      try {
+        const selected = await open({
+          directory: true,
+          multiple: true,
+          title: "Select Image Directories",
         });
 
-        // Auto-load images when directories are selected (load from all directories)
-        await loadImagesFromPaths();
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected];
+          // Add new paths to existing ones, avoiding duplicates
+          setDirectoryPaths((prev) => {
+            const combined = [...prev, ...paths];
+            return Array.from(new Set(combined)); // Remove duplicates
+          });
+
+          // Auto-load images when directories are selected (load from all directories)
+          asyncScheduler.schedule(() => loadImagesFromPaths(), { timeout: 100 });
+        }
+      } catch (err) {
+        console.error("Error opening directory picker:", err);
       }
-    } catch (err) {
-      console.error("Error opening directory picker:", err);
-    }
+    });
   };
 
   const loadImagesFromPaths = async (pathsToLoad?: string[]) => {
@@ -244,92 +184,168 @@ function App() {
       return;
     }
 
+    performanceMonitor.start('total-image-loading');
+
     try {
       setIsLoadingImages(true);
       setLoadingProgress(0);
+
+      // Try to use web worker for directory scanning
+      console.log('Attempting to use directory scanner worker...');
+
+      const directoryScanner = await workerManager.getDirectoryScanner();
+      const scanResults = await directoryScanner.scanDirectories(paths, directoryCache);
+      console.log('Directory scanner worker succeeded');
+
       const allImagePaths: string[] = [];
+      const seenPaths = new Set<string>();
+      const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-      // Process folders in batches to prevent UI blocking
-      const batchSize = 3; // Process 3 folders concurrently
-      const batches = [];
+      // Process scan results asynchronously
+      for (let i = 0; i < scanResults.length; i++) {
+        const result = scanResults[i];
+        const path = result.path;
+        const images = Array.isArray(result.images) ? result.images as string[] : [];
+        const error = result.error;
 
-      for (let i = 0; i < paths.length; i += batchSize) {
-        batches.push(paths.slice(i, i + batchSize));
-      }
-
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        console.log(
-          `Processing batch ${batchIndex + 1}/${batches.length}:`,
-          batch,
-        );
-
-        // Process folders in this batch concurrently
-        const batchPromises = batch.map(async (path, indexInBatch) => {
-          try {
-            console.log("Loading images from path:", path);
-            const imagePaths: string[] = await invoke("list_files", {
-              path: path,
-              fileType: "images",
-            });
-            console.log(
-              "Found images in",
-              path,
-              ":",
-              imagePaths.length,
-              "images",
-            );
-
-            // Update progress incrementally within the batch
-            const currentProgress =
-              ((batchIndex * batchSize + indexInBatch + 1) / paths.length) *
-              100;
-            setLoadingProgress(Math.min(currentProgress, 99)); // Cap at 99% until fully complete
-
-            return imagePaths;
-          } catch (error) {
-            console.error(`Error loading images from ${path}:`, error);
-            // Return empty array for failed folders instead of breaking entire process
-            return [];
-          }
-        });
-
-        // Wait for all folders in this batch to complete
-        const batchResults = await Promise.all(batchPromises);
-
-        // Add results to our collection
-        batchResults.forEach((imagePaths) => {
-          allImagePaths.push(...imagePaths);
-        });
-
-        // Add a small delay between batches to keep UI responsive
-        if (batchIndex < batches.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+        if (error) {
+          console.error(`Error scanning ${path}:`, error);
+          // Remove failed directory from cache
+          setDirectoryCache(prev => {
+            const updated = { ...prev };
+            delete updated[path];
+            return updated;
+          });
+          continue;
         }
+
+        // Update cache for newly scanned directories
+        const now = Date.now();
+        const cached = directoryCache[path];
+        if (!cached || (now - cached.timestamp) >= CACHE_DURATION) {
+          setDirectoryCache(prev => ({
+            ...prev,
+            [path]: {
+              images,
+              timestamp: now,
+            }
+          }));
+          console.log(`Scanned ${images.length} images in ${path}`);
+        } else {
+          console.log(`Using cached data for ${path} (${images.length} images)`);
+        }
+
+        // Add to collection with deduplication
+        for (const imagePath of images) {
+          if (!seenPaths.has(imagePath)) {
+            seenPaths.add(imagePath);
+            allImagePaths.push(imagePath);
+          }
+        }
+
+        // Update progress incrementally
+        const progress = ((i + 1) / scanResults.length) * 100;
+        setLoadingProgress(Math.min(progress, 99));
+
+        // Yield control between directories
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
 
-      // Remove duplicates (in case same image exists in multiple directories)
-      const uniqueImages = Array.from(new Set(allImagePaths));
       console.log(
-        "Total unique images found:",
-        uniqueImages.length,
-        "unique images from",
-        allImagePaths.length,
-        "total paths",
+        `Loading complete - total unique images: ${allImagePaths.length}`
       );
 
-      setImages(uniqueImages);
+      setImages(allImagePaths);
       setLoadingProgress(100);
 
-      // Small delay to show completion before hiding
+      performanceMonitor.end('total-image-loading');
+
+      // Log performance stats asynchronously
+      asyncScheduler.schedule(() => {
+        performanceMonitor.logAllStats();
+      });
+
+      // Show completion state briefly
       setTimeout(() => {
         setIsLoadingImages(false);
         setLoadingProgress(0);
-      }, 800); // Slightly longer to show completion
+      }, 1000);
+
     } catch (err) {
-      console.error("Error loading images:", err);
-      setIsLoadingImages(false);
-      setLoadingProgress(0);
+      console.error("Worker scanning failed, attempting fallback:", err);
+
+      // Fallback to synchronous scanning
+      console.log('Attempting fallback synchronous scanning...');
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const scanResults: any[] = [];
+
+        for (let i = 0; i < paths.length; i++) {
+          const path = paths[i];
+          try {
+            const imagesResult = await invoke("list_files", {
+              path: path,
+              fileType: "images",
+            });
+
+            // Ensure images is an array of strings
+            const images = Array.isArray(imagesResult) ? imagesResult as string[] : [];
+
+            // Update cache
+            setDirectoryCache(prev => ({
+              ...prev,
+              [path]: {
+                images,
+                timestamp: Date.now(),
+              }
+            }));
+
+            scanResults.push({ path, images });
+            console.log(`Scanned ${images.length} images from ${path}`);
+          } catch (scanError) {
+            console.error(`Error scanning ${path}:`, scanError);
+            const errorMessage = scanError instanceof Error ? scanError.message : 'Unknown error';
+            scanResults.push({ path, images: [], error: errorMessage });
+          }
+        }
+
+        // Process scan results
+        const allImagePaths: string[] = [];
+        const seenPaths = new Set<string>();
+
+        for (let i = 0; i < scanResults.length; i++) {
+          const result = scanResults[i];
+          const images = Array.isArray(result.images) ? result.images as string[] : [];
+          const error = result.error;
+
+          if (error) {
+            console.error(`Error scanning ${result.path}:`, error);
+            continue;
+          }
+
+          // Add to collection with deduplication
+          for (const imagePath of images) {
+            if (!seenPaths.has(imagePath)) {
+              seenPaths.add(imagePath);
+              allImagePaths.push(imagePath);
+            }
+          }
+        }
+
+        console.log(`Fallback scanning complete - total unique images: ${allImagePaths.length}`);
+        setImages(allImagePaths);
+        setLoadingProgress(100);
+
+        setTimeout(() => {
+          setIsLoadingImages(false);
+          setLoadingProgress(0);
+        }, 1000);
+
+      } catch (fallbackError) {
+        console.error('Fallback scanning also failed:', fallbackError);
+        setIsLoadingImages(false);
+        setLoadingProgress(0);
+      }
     }
   };
 
@@ -355,6 +371,146 @@ function App() {
     console.log("Import functionality to be implemented");
   };
 
+  const loadInitialViewportImages = async () => {
+    // Schedule initial loading asynchronously to prevent blocking
+    asyncScheduler.schedule(async () => {
+      try {
+        // Calculate how many images we need for initial viewport (2x viewport height)
+        const viewportHeight = window.innerHeight - 200; // Account for header/footer
+        const imageSize = 4; // Default columns
+        const itemHeight = Math.floor((window.innerWidth - 80) / imageSize); // Approximate item height
+        const imagesPerRow = imageSize;
+        const rowsInViewport = Math.ceil(viewportHeight / itemHeight);
+        const initialImageCount = rowsInViewport * imagesPerRow * 2; // 2x viewport for smooth scrolling
+
+        console.log(`Loading ${initialImageCount} images for initial viewport`);
+
+        setIsLoadingImages(true);
+        setLoadingProgress(0);
+
+        // Get all available image paths from cache or quick scan
+        const allPaths = await getAllImagePaths();
+
+        console.log(`Found ${allPaths.length} total images`);
+
+        // Take only the first N images for initial load
+        const initialPaths = allPaths.slice(0, initialImageCount);
+
+        console.log(`Loading ${initialPaths.length} initial images`);
+        setImages(initialPaths);
+        setLoadingProgress(100);
+
+        // Start background loading of remaining images asynchronously
+        asyncScheduler.schedule(() => {
+          loadRemainingImages(allPaths, initialImageCount);
+        }, { timeout: 2000 }); // Timeout ensures it runs even if not idle
+
+      } catch (error) {
+        console.error("Error loading initial viewport images:", error);
+        setIsLoadingImages(false);
+      }
+    });
+  };
+
+  const getAllImagePaths = async (): Promise<string[]> => {
+    try {
+      // Import the invoke function dynamically to avoid main thread dependencies
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // Use cached data if available, otherwise do quick scan
+      const allPaths: string[] = [];
+      const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+      for (const path of directoryPaths) {
+        const cached = directoryCache[path];
+        const now = Date.now();
+
+        if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+          // Use cached data
+          allPaths.push(...cached.images);
+          console.log(`Using cached data for ${path}: ${cached.images.length} images`);
+        } else {
+          // Quick scan of directory
+          try {
+            const imagePaths: string[] = await invoke("list_files", {
+              path: path,
+              fileType: "images",
+            });
+            allPaths.push(...imagePaths);
+            console.log(`Scanned ${imagePaths.length} images from ${path}`);
+
+            // Update cache
+            setDirectoryCache(prev => ({
+              ...prev,
+              [path]: {
+                images: imagePaths,
+                timestamp: now,
+              }
+            }));
+          } catch (error) {
+            console.error(`Error scanning ${path}:`, error);
+          }
+        }
+
+        // Yield control between directories to prevent blocking
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      const deduplicated = Array.from(new Set(allPaths));
+      console.log(`Total unique images found: ${deduplicated.length}`);
+      return deduplicated;
+    } catch (error) {
+      console.error('Error in getAllImagePaths:', error);
+      return [];
+    }
+  };
+
+  const loadRemainingImages = async (allPaths: string[], loadedCount: number) => {
+    const remainingPaths = allPaths.slice(loadedCount);
+
+    if (remainingPaths.length === 0) {
+      setIsLoadingImages(false);
+      return;
+    }
+
+    try {
+      let result;
+
+      try {
+        // Try to use async processor worker
+        console.log('Attempting to use async processor worker...');
+        const asyncProcessor = await workerManager.getAsyncProcessor();
+        result = await asyncProcessor.processBatch({
+          id: 'load-remaining-images',
+          data: remainingPaths,
+          batchSize: 50,
+          delay: 10,
+        });
+        console.log('Async processor worker succeeded');
+      } catch (workerError) {
+        console.warn('Async processor worker failed, falling back to direct processing:', workerError);
+
+        // Fallback: process in batches manually
+        result = {
+          completed: true,
+          processed: remainingPaths,
+        };
+      }
+
+      if (result.completed) {
+        // Update images state with all processed items
+        setImages(prev => [...prev, ...result.processed]);
+        console.log(`Loaded ${result.processed.length} additional images`);
+      }
+    } catch (error) {
+      console.error('Error in loadRemainingImages:', error);
+      // Final fallback
+      setImages(prev => [...prev, ...remainingPaths]);
+    }
+
+    setIsLoadingImages(false);
+  };
+
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setMenuAnchorEl(event.currentTarget);
     setIsMoreOptionsOpen(true);
@@ -364,6 +520,14 @@ function App() {
     setMenuAnchorEl(null);
     setIsMoreOptionsOpen(false);
   };
+
+  // Cleanup workers and preloader when app unmounts
+  React.useEffect(() => {
+    return () => {
+      workerManager.terminateAll().catch(console.error);
+      imagePreloader.clear();
+    };
+  }, []);
 
   return (
     <ThemeProvider theme={theme}>
@@ -399,26 +563,41 @@ function App() {
         >
           {/* Photo Grid */}
           <Box sx={{ flex: 1, padding: 3, paddingTop: 2, overflowY: "auto" }}>
-            {selectedSection === "photos" ? (
-              <PhotoGrid
-                images={images}
-                directoryPaths={directoryPaths}
-                imageSize={imageSize}
-              />
-            ) : selectedSection === "folders" ? (
+            <Suspense fallback={
+              <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
+                <CircularProgress size={60} />
+              </Box>
+            }>
+              {selectedSection === "photos" ? (
+                <PhotoGrid
+                  images={images}
+                  directoryPaths={directoryPaths}
+                  imageSize={imageSize}
+                  isLoadingImages={isLoadingImages}
+                />
+              ) : selectedSection === "folders" ? (
               <FolderView
                 directoryPaths={directoryPaths}
                 onAddFolders={handleAddFolders}
                 onRemoveDirectory={handleRemoveDirectory}
               />
-            ) : selectedSection === "devices" ? (
-              <DeviceBrowser
-                onFileSelect={async (files: string[]) => {
-                  // When images are selected from a device, add them to the current images
-                  setImages((prev) => [...prev, ...files]);
-                }}
-              />
-            ) : (
+             ) : selectedSection === "devices" ? (
+               <DeviceBrowser
+                 onFileSelect={async (files: string[]) => {
+                   // When images are selected from a device, add them to the current images
+                   setImages((prev) => [...prev, ...files]);
+                 }}
+                 onImportImages={(importedImages: string[]) => {
+                   // When images are imported from a device, add them to the current images
+                   setImages((prev) => [...prev, ...importedImages]);
+                 }}
+               />
+             ) : selectedSection === "faces" ? (
+               <FaceRecognitionPanel
+                 isVisible={true}
+                 onClose={() => setSelectedSection("photos")}
+               />
+             ) : (
               <Box
                 sx={{
                   display: "flex",
@@ -434,16 +613,19 @@ function App() {
                 </Typography>
               </Box>
             )}
-          </Box>
+          </Suspense>
+        </Box>
         </Box>
       </Box>
 
       {/* Search Bar */}
-      <SearchBar
-        onSearch={handleSearch}
-        sidebarWidth={isSidebarCollapsed ? 80 : 280}
-        isVisible={!isScrolled}
-      />
+      <Suspense fallback={null}>
+        <SearchBar
+          onSearch={handleSearch}
+          sidebarWidth={isSidebarCollapsed ? 80 : 280}
+          isVisible={!isScrolled}
+        />
+      </Suspense>
 
       {/* Floating More Options Button */}
       <Fab
@@ -553,15 +735,17 @@ function App() {
       </Menu>
 
       {/* Folder Management Dialog */}
-      <FolderManagementDialog
-        open={isFolderManagementOpen}
-        onClose={() => setIsFolderManagementOpen(false)}
-        directoryPaths={directoryPaths}
-        onAddFolders={handleAddFolders}
-        onRemoveDirectory={handleRemoveDirectory}
-        isLoadingImages={isLoadingImages}
-        loadingProgress={loadingProgress}
-      />
+      <Suspense fallback={null}>
+        <FolderManagementDialog
+          open={isFolderManagementOpen}
+          onClose={() => setIsFolderManagementOpen(false)}
+          directoryPaths={directoryPaths}
+          onAddFolders={handleAddFolders}
+          onRemoveDirectory={handleRemoveDirectory}
+          isLoadingImages={isLoadingImages}
+          loadingProgress={loadingProgress}
+        />
+      </Suspense>
     </ThemeProvider>
   );
 }

@@ -1,15 +1,13 @@
 import React from "react";
-import {
-  Box,
-  Typography,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  IconButton,
-} from "@mui/material";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import {
   PhotoLibrary as PhotoLibraryIcon,
   Folder as FolderIcon,
@@ -17,6 +15,7 @@ import {
   Delete as DeleteIcon,
   Archive as ArchiveIcon,
   Devices as DevicesIcon,
+  Face as FaceIcon,
   ChevronLeft as ChevronLeftIcon,
 } from "@mui/icons-material";
 
@@ -37,6 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: "photos", label: "Photos", icon: PhotoLibraryIcon },
     { id: "folders", label: "Folders", icon: FolderIcon },
     { id: "devices", label: "Devices", icon: DevicesIcon },
+    { id: "faces", label: "Faces", icon: FaceIcon },
     { id: "favorites", label: "Favorites", icon: FavoriteIcon },
     { id: "archive", label: "Archive", icon: ArchiveIcon },
     { id: "trash", label: "Trash", icon: DeleteIcon },
