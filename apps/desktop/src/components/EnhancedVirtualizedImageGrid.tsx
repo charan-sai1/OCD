@@ -1,6 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
-import CircularProgress from "@mui/material/CircularProgress";
 import FastImage from "./FastImage";
 import { advancedImageCache } from "../utils/advancedCache";
 import { DeviceCapabilities } from "../utils/deviceCapabilities";

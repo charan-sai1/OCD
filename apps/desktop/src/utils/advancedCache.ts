@@ -20,7 +20,6 @@ class AdvancedImageCache {
   private db: IDBDatabase | null = null;
   private memoryCache = new Map<string, string>();
   private readonly MAX_MEMORY_CACHE = 50;
-  private readonly MAX_DISK_CACHE = 200 * 1024 * 1024; // 200MB default, can be configured
   private accessCount = 0;
   private hitCount = 0;
 
@@ -102,7 +101,9 @@ class AdvancedImageCache {
           // Maintain memory cache size
           if (this.memoryCache.size > this.MAX_MEMORY_CACHE) {
             const firstKey = this.memoryCache.keys().next().value;
-            this.memoryCache.delete(firstKey);
+            if (firstKey) {
+              this.memoryCache.delete(firstKey);
+            }
           }
 
           resolve(url);

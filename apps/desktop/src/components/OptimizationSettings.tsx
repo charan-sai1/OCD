@@ -43,7 +43,7 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
     hitRate: number;
   } | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
-  const [deviceProfile, setDeviceProfile] = useState(DeviceCapabilities.detect());
+  const deviceProfile = DeviceCapabilities.detect();
 
   // Load settings from localStorage
   useEffect(() => {
