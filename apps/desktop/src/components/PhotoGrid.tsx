@@ -176,13 +176,29 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
     if (images.length === 0 && directoryPaths.length > 0) {
       return renderNoImages();
     }
-     // Use enhanced virtual scrolling for large collections (>50 images) with page-based preloading
+     // Use enhanced virtual scrolling for large collections (>50 images) with magical Lenis scrolling and delayed loading
      if (images.length > 50) {
        return (
          <EnhancedVirtualizedImageGrid
            images={images}
            imageSize={imageSize}
            pagesToPreload={3}
+           enableSmoothScroll={true}
+           lenisConfig={{
+             smoothness: 0.8, // Very smooth, magical feel
+             duration: 1200,
+             direction: 'vertical'
+           }}
+           delayedLoading={{
+             effectType: 'cascade',
+             baseDelay: 100,       // 100ms magical delay
+             cascadeDelay: 50,     // 50ms between images
+             fadeInDuration: 300,  // Smooth fade-in
+             staggerRows: true,
+             priorityBasedDelay: true,
+             scrollBasedAdjustment: true,
+             maxConcurrentLoads: 3
+           }}
            onImageClick={(imagePath) => {
              // Handle image click - could open lightbox or navigate
              console.log('Image clicked:', imagePath);

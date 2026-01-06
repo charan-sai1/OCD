@@ -5,6 +5,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use walkdir::WalkDir;
 
 #[derive(Serialize, Deserialize)]
 pub struct Device {
@@ -62,9 +63,16 @@ fn list_images(path: &str) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-async fn list_files(path: &str, file_type: &str) -> Result<Vec<String>, String> {
+async fn list_files(
+    path: &str,
+    file_type: &str,
+    recursive: Option<bool>,
+    max_depth: Option<usize>,
+) -> Result<Vec<String>, String> {
     use std::path::Path;
-    use tokio::fs;
+
+    let recursive = recursive.unwrap_or(true); // Default to recursive for backward compatibility
+    let max_depth = max_depth.unwrap_or(10); // Prevent infinite recursion
 
     let extensions = match file_type {
         "images" => vec!["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"],
@@ -75,24 +83,59 @@ async fn list_files(path: &str, file_type: &str) -> Result<Vec<String>, String> 
         _ => vec![],
     };
 
-    let mut entries = fs::read_dir(path).await.map_err(|e| e.to_string())?;
-
     let mut files = Vec::new();
 
-    while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
-        let path = entry.path();
-        if path.is_file() {
-            if let Some(extension) = path.extension() {
-                if let Some(ext_str) = extension.to_str() {
-                    if extensions.contains(&ext_str.to_lowercase().as_str()) {
-                        files.push(path.to_string_lossy().to_string());
+    if recursive {
+        // Use WalkDir for efficient recursive scanning
+        let walkdir = WalkDir::new(path)
+            .max_depth(max_depth)
+            .follow_links(false) // Don't follow symlinks to avoid loops
+            .into_iter();
+
+        for entry in walkdir {
+            match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(extension) = path.extension() {
+                            if let Some(ext_str) = extension.to_str() {
+                                if extensions.contains(&ext_str.to_lowercase().as_str()) {
+                                    files.push(path.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Log error but continue processing other files
+                    eprintln!("Error accessing directory entry: {}", e);
+                }
+            }
+
+            // Yield control periodically to prevent blocking
+            if files.len() % 100 == 0 {
+                tokio::task::yield_now().await;
+            }
+        }
+    } else {
+        // Non-recursive: only scan immediate directory
+        let mut entries = tokio::fs::read_dir(path).await.map_err(|e| e.to_string())?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(extension) = path.extension() {
+                    if let Some(ext_str) = extension.to_str() {
+                        if extensions.contains(&ext_str.to_lowercase().as_str()) {
+                            files.push(path.to_string_lossy().to_string());
+                        }
                     }
                 }
             }
-        }
 
-        // Yield control to prevent blocking for too long
-        tokio::task::yield_now().await;
+            // Yield control to prevent blocking for too long
+            tokio::task::yield_now().await;
+        }
     }
 
     Ok(files)

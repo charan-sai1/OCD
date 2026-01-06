@@ -29,6 +29,16 @@ interface OptimizationSettings {
   pagesToPreload: number; // Number of pages to preload ahead
   progressiveLoading: boolean; // Enable blur-to-sharp transitions
   aggressivePreloading: boolean; // Always preload max pages regardless of memory
+  // Magical scrolling settings
+  enableSmoothScroll: boolean; // Enable Lenis smooth scrolling
+  scrollSmoothness: number; // 0.1-1.0 (lower = smoother)
+  scrollDuration: number; // Animation duration in ms
+  // Delayed loading settings
+  enableDelayedLoading: boolean; // Enable magical delayed loading
+  loadingEffect: 'none' | 'cascade' | 'wave' | 'spiral' | 'random';
+  baseDelay: number; // Base delay in ms
+  cascadeDelay: number; // Delay between images in ms
+  fadeInDuration: number; // Fade-in animation duration
 }
 
 const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsChange }) => {
@@ -40,7 +50,17 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
     deviceAdaptive: true,
     pagesToPreload: 3,
     progressiveLoading: true,
-    aggressivePreloading: false
+    aggressivePreloading: false,
+    // Magical scrolling defaults
+    enableSmoothScroll: true,
+    scrollSmoothness: 0.8, // Very smooth
+    scrollDuration: 1200,
+    // Delayed loading defaults
+    enableDelayedLoading: true,
+    loadingEffect: 'cascade',
+    baseDelay: 100,
+    cascadeDelay: 50,
+    fadeInDuration: 300
   });
 
   const [cacheStats, setCacheStats] = useState<{
@@ -286,6 +306,183 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
         label="Aggressive preloading (ignore memory limits)"
         sx={{ mb: 3, display: 'block' }}
       />
+
+      {/* Magical Scrolling Section */}
+      <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+        🎯 Magical Scrolling
+      </Typography>
+
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Experience buttery-smooth scrolling like iOS with customizable smoothness
+      </Typography>
+
+      {/* Enable Smooth Scrolling */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={settings.enableSmoothScroll}
+            onChange={(e) => setSettings(prev => ({ ...prev, enableSmoothScroll: e.target.checked }))}
+          />
+        }
+        label="Enable magical smooth scrolling"
+        sx={{ mb: 2, display: 'block' }}
+      />
+
+      {/* Scroll Smoothness */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Scroll Smoothness: {Math.round(settings.scrollSmoothness * 100)}%
+        </Typography>
+        <Slider
+          value={settings.scrollSmoothness}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, scrollSmoothness: value as number }))}
+          min={0.1}
+          max={1.0}
+          step={0.1}
+          marks={[
+            { value: 0.1, label: 'Ultra Smooth' },
+            { value: 0.5, label: 'Balanced' },
+            { value: 1.0, label: 'Instant' },
+          ]}
+          valueLabelDisplay="auto"
+          disabled={!settings.enableSmoothScroll}
+        />
+        <Typography variant="caption" color="text.secondary">
+          Lower = smoother but may feel slower
+        </Typography>
+      </Box>
+
+      {/* Scroll Duration */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Scroll Duration: {settings.scrollDuration}ms
+        </Typography>
+        <Slider
+          value={settings.scrollDuration}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, scrollDuration: value as number }))}
+          min={400}
+          max={2000}
+          step={100}
+          marks={[
+            { value: 400, label: 'Fast' },
+            { value: 1200, label: 'Magical' },
+            { value: 2000, label: 'Slow' },
+          ]}
+          valueLabelDisplay="auto"
+          disabled={!settings.enableSmoothScroll}
+        />
+      </Box>
+
+      {/* Magical Loading Section */}
+      <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+        ✨ Magical Loading Effects
+      </Typography>
+
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Make images appear with intentional timing for a premium feel
+      </Typography>
+
+      {/* Enable Delayed Loading */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={settings.enableDelayedLoading}
+            onChange={(e) => setSettings(prev => ({ ...prev, enableDelayedLoading: e.target.checked }))}
+          />
+        }
+        label="Enable magical delayed loading"
+        sx={{ mb: 2, display: 'block' }}
+      />
+
+      {/* Loading Effect Type */}
+      <FormControl fullWidth sx={{ mb: 3 }} disabled={!settings.enableDelayedLoading}>
+        <InputLabel>Loading Effect</InputLabel>
+        <Select
+          value={settings.loadingEffect}
+          onChange={(e) => setSettings(prev => ({ ...prev, loadingEffect: e.target.value as any }))}
+        >
+          <MenuItem value="none">None - Instant loading</MenuItem>
+          <MenuItem value="cascade">Cascade - Row by row (recommended)</MenuItem>
+          <MenuItem value="wave">Wave - Alternating pattern</MenuItem>
+          <MenuItem value="spiral">Spiral - From center outward</MenuItem>
+          <MenuItem value="random">Random - Varied timing</MenuItem>
+        </Select>
+      </FormControl>
+
+      {/* Base Delay */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Base Delay: {settings.baseDelay}ms
+        </Typography>
+        <Slider
+          value={settings.baseDelay}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, baseDelay: value as number }))}
+          min={0}
+          max={500}
+          step={25}
+          marks={[
+            { value: 0, label: 'None' },
+            { value: 100, label: 'Subtle' },
+            { value: 250, label: 'Noticeable' },
+            { value: 500, label: 'Dramatic' },
+          ]}
+          valueLabelDisplay="auto"
+          disabled={!settings.enableDelayedLoading}
+        />
+        <Typography variant="caption" color="text.secondary">
+          Initial delay before any images start loading
+        </Typography>
+      </Box>
+
+      {/* Cascade Delay */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Cascade Delay: {settings.cascadeDelay}ms
+        </Typography>
+        <Slider
+          value={settings.cascadeDelay}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, cascadeDelay: value as number }))}
+          min={0}
+          max={200}
+          step={10}
+          marks={[
+            { value: 0, label: 'Instant' },
+            { value: 50, label: 'Smooth' },
+            { value: 100, label: 'Gentle' },
+            { value: 200, label: 'Slow' },
+          ]}
+          valueLabelDisplay="auto"
+          disabled={!settings.enableDelayedLoading}
+        />
+        <Typography variant="caption" color="text.secondary">
+          Delay between each image in the cascade effect
+        </Typography>
+      </Box>
+
+      {/* Fade-in Duration */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Fade-in Duration: {settings.fadeInDuration}ms
+        </Typography>
+        <Slider
+          value={settings.fadeInDuration}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, fadeInDuration: value as number }))}
+          min={0}
+          max={1000}
+          step={50}
+          marks={[
+            { value: 0, label: 'Instant' },
+            { value: 200, label: 'Quick' },
+            { value: 500, label: 'Smooth' },
+            { value: 1000, label: 'Gentle' },
+          ]}
+          valueLabelDisplay="auto"
+          disabled={!settings.enableDelayedLoading}
+        />
+        <Typography variant="caption" color="text.secondary">
+          How long images take to fade in when they appear
+        </Typography>
+      </Box>
 
       {/* Cache Statistics */}
       <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>

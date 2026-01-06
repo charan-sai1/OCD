@@ -3,6 +3,12 @@ import Box from "@mui/material/Box";
 import FastImage from "./FastImage";
 import { advancedImageCache } from "../utils/advancedCache";
 import { DeviceCapabilities } from "../utils/deviceCapabilities";
+import { userBehaviorPredictor } from "../utils/userBehaviorPredictor";
+import { systemResourceManager } from "../utils/systemResourceManager";
+import { predictiveLoadingQueue } from "../utils/predictiveLoadingQueue";
+import { visualContinuityManager } from "../utils/visualContinuityManager";
+import { lenisScrollManager, type LenisConfig } from "../utils/lenisScrollManager";
+import { delayedImageLoader, type DelayedLoadConfig } from "../utils/delayedImageLoader";
 
 interface VirtualGridProps {
   images: string[];
@@ -13,6 +19,9 @@ interface VirtualGridProps {
   pagesToPreload?: number; // Number of pages to preload ahead (default: 3)
   progressiveLoading?: boolean; // Enable progressive loading
   aggressivePreloading?: boolean; // Ignore memory limits for preloading
+  enableSmoothScroll?: boolean; // Enable Lenis smooth scrolling
+  lenisConfig?: LenisConfig; // Lenis scroll configuration
+  delayedLoading?: DelayedLoadConfig; // Delayed loading configuration
 }
 
 // Enhanced FastImage component with intersection-based loading and prefetching
@@ -121,14 +130,19 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   prefetchDistance = 3,
   pagesToPreload = 3,
   progressiveLoading = true,
-  aggressivePreloading = false
+  aggressivePreloading = false,
+  enableSmoothScroll = true,
+  lenisConfig,
+  delayedLoading
 }) => {
   const gridRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 });
   const [scrollVelocity, setScrollVelocity] = useState(0);
   const [preloadRange, setPreloadRange] = useState({ start: 0, end: 100 });
+
   const lastScrollY = useRef(0);
   const lastScrollTime = useRef(Date.now());
+  const lenisInitialized = useRef(false);
 
   // Safety check
   if (!images || images.length === 0) {
@@ -203,17 +217,37 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     return index >= preloadRange.start && index < preloadRange.end;
   }, [preloadRange]);
 
-  // Enhanced scroll handler with velocity tracking and preload management
+  // Apple-style image interaction handling
+  const handleImageClick = useCallback((imagePath: string, _index: number) => {
+    // Record click behavior for learning
+    userBehaviorPredictor.recordClick(imagePath, { x: 0, y: 0 }, 3000); // Assume 3s dwell time
+
+    // Handle visual continuity if transitioning to another view
+    if (onImageClick) {
+      // Prepare smooth transition
+      visualContinuityManager.prepareNextImage(imagePath);
+      onImageClick(imagePath);
+    }
+  }, [onImageClick]);
+
+  const handleImageVisible = useCallback((_index: number) => {
+    // Record that this image became visible for behavior learning
+    // Note: We could track visibility patterns here for more sophisticated learning
+  }, []);
+
+  // Enhanced scroll handler with magical coordination between Lenis and delayed loading
   const updateVisibleRange = useCallback(() => {
     if (!gridRef.current) return;
 
     const now = Date.now();
-    const currentScrollY = window.scrollY;
+    // Use Lenis scroll position if available, fallback to native
+    const scrollInfo = lenisScrollManager.isActive() ? lenisScrollManager.getScrollInfo() : null;
+    const currentScrollY = scrollInfo ? scrollInfo.scroll : window.scrollY;
     const timeDelta = now - lastScrollTime.current;
     const scrollDelta = currentScrollY - lastScrollY.current;
 
     // Calculate scroll velocity (pixels per second)
-    const velocity = timeDelta > 0 ? Math.abs(scrollDelta / (timeDelta / 1000)) : 0;
+    const velocity = scrollInfo ? scrollInfo.velocity : (timeDelta > 0 ? Math.abs(scrollDelta / (timeDelta / 1000)) : 0);
     setScrollVelocity(velocity);
 
     lastScrollY.current = currentScrollY;
@@ -228,6 +262,8 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     const startRow = Math.floor(scrollTop / itemHeight) - 1; // Extra row for hysteresis
     const endRow = Math.floor((scrollTop + visibleHeight) / itemHeight) + 1;
 
+
+
     // Convert rows to image indices
     const startIndex = Math.max(0, startRow * columnCount);
     const endIndex = Math.min(images.length, (endRow + 1) * columnCount);
@@ -237,13 +273,102 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
       end: endIndex
     });
 
-    // Update preload range based on current page
+    // Apple-style intelligence: predict and preload based on behavior
+    const currentPosition = Math.floor(scrollTop / (container.offsetWidth / columnCount));
+    const scrollDirection = scrollDelta > 0 ? 'down' : 'up';
+
+    // Record scroll behavior for learning
+    userBehaviorPredictor.recordScroll(currentPosition, velocity, scrollDirection as any);
+
+    // Get system-aware loading strategy
+    const strategy = systemResourceManager.getAppropriateStrategy();
+
+    // Predict next images based on user behavior
+    const prediction = userBehaviorPredictor.predictNextImages(currentPosition, images.length);
+
+    // Adjust prediction based on system resources
+    const adjustedPrediction = {
+      ...prediction,
+      recommendedPreloadCount: Math.min(
+        prediction.recommendedPreloadCount,
+        strategy.preloadDistance
+      )
+    };
+
+    // Convert prediction to preloadable images with delayed loading coordination
+    const imagesToPreload = [];
+    for (let i = 1; i <= adjustedPrediction.recommendedPreloadCount; i++) {
+      const nextPos = scrollDirection === 'down'
+        ? currentPosition + i
+        : currentPosition - i;
+
+      if (nextPos >= 0 && nextPos < images.length) {
+        const row = Math.floor(nextPos / columnCount);
+        const col = nextPos % columnCount;
+
+        imagesToPreload.push({
+          imagePath: `image_${nextPos}`,
+          confidence: adjustedPrediction.confidence * (1 - i * 0.1), // Decrease confidence for further images
+          expectedTimeToNeed: adjustedPrediction.expectedTimeToNeed + (i * 100), // Later images take longer
+          size: 50000 // Estimated 50KB per image
+        });
+
+        // Schedule delayed loading for magical cascade effect
+        const priority: 'high' | 'normal' | 'low' = i === 1 ? 'high' : i === 2 ? 'normal' : 'low';
+        delayedImageLoader.scheduleLoad(
+          `image_${nextPos}`,
+          { row, col },
+          priority
+        );
+      }
+    }
+
+    // Queue intelligent preloading
+    if (imagesToPreload.length > 0) {
+      predictiveLoadingQueue.enqueueWithPrediction(imagesToPreload);
+    }
+
+    // Update preload range based on current page and system resources
     const { currentPage, itemsPerPage } = calculatePageInfo();
     const newPreloadRange = calculatePreloadRange(currentPage, itemsPerPage);
     setPreloadRange(newPreloadRange);
+
+    // Handle rapid scrolling with visual continuity
+    if (velocity > 50) {
+      visualContinuityManager.handleRapidScroll(velocity, `image_${currentPosition}`);
+    }
+
+    // Update delayed loader with current row context for cascading effects
+    delayedImageLoader.updateCurrentRow(startRow);
   }, [columnCount, images.length, calculatePageInfo, calculatePreloadRange]);
 
-  // Throttled scroll listener for better performance
+  // Initialize Lenis smooth scrolling and delayed loading
+  useEffect(() => {
+    const initializeMagicalScrolling = async () => {
+      if (enableSmoothScroll && !lenisInitialized.current) {
+        try {
+          await lenisScrollManager.initialize(lenisConfig);
+          lenisInitialized.current = true;
+          console.log('Magical smooth scrolling enabled');
+        } catch (error) {
+          console.warn('Lenis initialization failed, using native scrolling:', error);
+        }
+      }
+
+      // Configure delayed loader if provided
+      if (delayedLoading) {
+        delayedImageLoader.updateConfig(delayedLoading);
+      }
+    };
+
+    initializeMagicalScrolling();
+
+    return () => {
+      // Cleanup will be handled by component unmount
+    };
+  }, [enableSmoothScroll, lenisConfig, delayedLoading]);
+
+  // Throttled scroll listener with magical coordination
   useEffect(() => {
     let ticking = false;
     let rafId: number;
@@ -258,12 +383,46 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
       }
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    // Start user behavior session
+    userBehaviorPredictor.startSession();
+
+    // Use Lenis scroll events if available, fallback to native
+    if (lenisScrollManager.isActive()) {
+      lenisScrollManager.onScroll((scrollInfo) => {
+        // Update our scroll tracking
+        lastScrollY.current = scrollInfo.scroll;
+        setScrollVelocity(scrollInfo.velocity);
+
+        // Update delayed loader with scroll velocity
+        delayedImageLoader.updateScrollVelocity(scrollInfo.velocity);
+
+        // Trigger range updates
+        updateVisibleRange();
+      });
+    } else {
+      // Fallback to native scroll events
+      window.addEventListener('scroll', handleScroll, { passive: true });
+    }
+
     updateVisibleRange(); // Initial calculation
 
+    // Subscribe to system resource changes
+    const unsubscribeResources = systemResourceManager.onBudgetUpdate((budget) => {
+      console.log('System resource budget updated:', budget);
+      // Could trigger re-evaluation of loading strategy
+    });
+
     return () => {
-      window.removeEventListener('scroll', handleScroll);
-      if (rafId) cancelAnimationFrame(rafId);
+      if (lenisScrollManager.isActive()) {
+        // Lenis cleanup handled automatically
+      } else {
+        window.removeEventListener('scroll', handleScroll);
+        if (rafId) cancelAnimationFrame(rafId);
+      }
+      unsubscribeResources();
+
+      // End user behavior session
+      userBehaviorPredictor.endSession();
     };
   }, [updateVisibleRange]);
 
@@ -332,7 +491,8 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
               <FastImageWithIntersection
                 imagePath={imagePath}
                 alt={imagePath.split("/").pop() || `Image ${actualIndex + 1}`}
-                onClick={() => onImageClick?.(imagePath)}
+                onClick={() => handleImageClick(imagePath, actualIndex)}
+                onVisible={() => handleImageVisible(actualIndex)}
                 distance={distance}
                 priority={priority}
                 prefetchDistance={shouldBePrefetched ? prefetchDistance : 0}
