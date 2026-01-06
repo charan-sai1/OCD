@@ -26,6 +26,9 @@ interface OptimizationSettings {
   maxCacheSize: number; // in MB
   backgroundOptimization: boolean;
   deviceAdaptive: boolean;
+  pagesToPreload: number; // Number of pages to preload ahead
+  progressiveLoading: boolean; // Enable blur-to-sharp transitions
+  aggressivePreloading: boolean; // Always preload max pages regardless of memory
 }
 
 const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsChange }) => {
@@ -34,7 +37,10 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
     quality: 'medium',
     maxCacheSize: 100, // Default 100MB
     backgroundOptimization: true,
-    deviceAdaptive: true
+    deviceAdaptive: true,
+    pagesToPreload: 3,
+    progressiveLoading: true,
+    aggressivePreloading: false
   });
 
   const [cacheStats, setCacheStats] = useState<{
@@ -229,6 +235,55 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
           />
         }
         label="Allow background optimization"
+        sx={{ mb: 2, display: 'block' }}
+      />
+
+      {/* Progressive Loading */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={settings.progressiveLoading}
+            onChange={(e) => setSettings(prev => ({ ...prev, progressiveLoading: e.target.checked }))}
+          />
+        }
+        label="Progressive loading (blur-to-sharp transitions)"
+        sx={{ mb: 2, display: 'block' }}
+      />
+
+      {/* Pages to Preload */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" gutterBottom>
+          Pages to preload ahead: {settings.pagesToPreload}
+        </Typography>
+        <Slider
+          value={settings.pagesToPreload}
+          onChange={(_, value) => setSettings(prev => ({ ...prev, pagesToPreload: value as number }))}
+          min={1}
+          max={5}
+          step={1}
+          marks={[
+            { value: 1, label: '1' },
+            { value: 2, label: '2' },
+            { value: 3, label: '3' },
+            { value: 4, label: '4' },
+            { value: 5, label: '5' },
+          ]}
+          valueLabelDisplay="auto"
+        />
+        <Typography variant="caption" color="text.secondary">
+          More pages = smoother scrolling, higher memory usage
+        </Typography>
+      </Box>
+
+      {/* Aggressive Preloading */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={settings.aggressivePreloading}
+            onChange={(e) => setSettings(prev => ({ ...prev, aggressivePreloading: e.target.checked }))}
+          />
+        }
+        label="Aggressive preloading (ignore memory limits)"
         sx={{ mb: 3, display: 'block' }}
       />
 

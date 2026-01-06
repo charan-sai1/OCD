@@ -1,9 +1,7 @@
-import React, { memo, useCallback, useEffect, useRef } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
-import { asyncScheduler } from "../utils/requestIdleCallbackPolyfill";
-import { LoadingPriority } from "../utils/progressiveImagePreloader";
-import ProgressiveImage from "./ProgressiveImage";
+import FastImage from "./FastImage";
 
 interface VirtualImageGridProps {
   images: string[];
@@ -14,8 +12,8 @@ interface VirtualImageGridProps {
   hasMore?: boolean;
 }
 
-// Progressive image component with intersection-based loading priority
-const ProgressiveImageWithIntersection: React.FC<{
+// Fast image component with intersection-based loading priority
+const FastImageWithIntersection: React.FC<{
   imagePath: string;
   alt: string;
   onClick?: () => void;
@@ -31,12 +29,10 @@ const ProgressiveImageWithIntersection: React.FC<{
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Determine loading priority based on distance from viewport
-  const getLoadingPriority = useCallback((distance: number): LoadingPriority => {
-    if (distance <= 0.5) return LoadingPriority.IMMEDIATE; // In viewport
-    if (distance <= 1) return LoadingPriority.HIGH;       // Near viewport
-    if (distance <= 2) return LoadingPriority.NORMAL;     // Medium distance
-    if (distance <= 3) return LoadingPriority.LOW;        // Far distance
-    return LoadingPriority.IDLE;                          // Very far
+  const getLoadingPriority = useCallback((distance: number): 'high' | 'normal' | 'low' => {
+    if (distance <= 0.5) return 'high';   // In viewport
+    if (distance <= 1) return 'normal';  // Near viewport
+    return 'low';                        // Far away
   }, []);
 
   const priority = getLoadingPriority(distance);
@@ -47,12 +43,12 @@ const ProgressiveImageWithIntersection: React.FC<{
 
     const observer = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            onVisible?.();
-            observer.unobserve(container);
-          }
-        });
+        // Throttle updates to prevent excessive processing
+        const visibleEntries = entries.filter(entry => entry.isIntersecting);
+        if (visibleEntries.length > 0) {
+          onVisible?.();
+          observer.unobserve(container);
+        }
       },
       {
         rootMargin: "200px", // Start loading 200px before visible
@@ -67,29 +63,30 @@ const ProgressiveImageWithIntersection: React.FC<{
 
   return (
     <div ref={containerRef}>
-      <ProgressiveImage
+      <FastImage
         imagePath={imagePath}
         alt={alt}
         onClick={onClick}
         priority={priority}
-        enableTransitions={true}
-        transitionDuration={300}
+        width={300}
+        height={300}
       />
     </div>
   );
 });
 
-ProgressiveImageWithIntersection.displayName = "ProgressiveImageWithIntersection";
+FastImageWithIntersection.displayName = "FastImageWithIntersection";
 
 const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
   images = [],
   imageSize,
   onImageClick,
-  isLoadingImages = false,
-  onLoadMore,
-  hasMore = false,
+  isLoadingImages: _isLoadingImages = false,
+  onLoadMore: _onLoadMore,
+  hasMore: _hasMore = false,
 }) => {
   const gridRef = useRef<HTMLDivElement>(null);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 }); // Default render first 100
 
   // Safety check
   if (!images || images.length === 0) {
@@ -98,29 +95,91 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
 
   const columnCount = Math.max(1, imageSize || 4);
 
+  // Calculate which images should be rendered based on viewport
+  const renderedImages = useMemo(() => {
+    if (images.length <= 100) {
+      // Small collections: render all
+      return images;
+    }
+
+    // Large collections: render only visible range + buffer
+    const buffer = 20; // Smaller buffer for better performance
+    const start = Math.max(0, visibleRange.start - buffer);
+    const end = Math.min(images.length, visibleRange.end + buffer);
+
+    return images.slice(start, end);
+  }, [images, visibleRange]);
+
+  // Update visible range based on scroll position
+  const updateVisibleRange = useCallback(() => {
+    if (!gridRef.current) return;
+
+    const container = gridRef.current;
+    const itemHeight = container.offsetWidth / columnCount;
+    const visibleHeight = window.innerHeight;
+    const scrollTop = window.scrollY;
+
+    // Calculate which rows are visible
+    const startRow = Math.floor(scrollTop / itemHeight);
+    const endRow = Math.floor((scrollTop + visibleHeight) / itemHeight);
+
+    // Convert rows to image indices
+    const startIndex = startRow * columnCount;
+    const endIndex = (endRow + 1) * columnCount;
+
+    setVisibleRange({
+      start: Math.max(0, startIndex),
+      end: Math.min(images.length, endIndex + columnCount * 2) // Add buffer
+    });
+  }, [columnCount, images.length]);
+
+  // Listen for scroll events (throttled)
+  useEffect(() => {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          updateVisibleRange();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    updateVisibleRange(); // Initial calculation
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [updateVisibleRange]);
+
+  // Note: Preloading is now handled by FastImage component with caching
+
+  // Memoize expensive calculations
+  const itemHeight = useMemo(() => {
+    if (!gridRef.current) return 100; // Default fallback
+    return gridRef.current.getBoundingClientRect().width / columnCount;
+  }, [columnCount]);
+
   // Calculate distance from viewport center for loading priority
   const calculateDistanceFromViewport = useCallback((index: number): number => {
     if (!gridRef.current) return Infinity;
 
     const gridRect = gridRef.current.getBoundingClientRect();
     const viewportCenter = window.innerHeight / 2;
-    const itemHeight = gridRect.width / columnCount; // Approximate item height (square aspect ratio)
     const row = Math.floor(index / columnCount);
     const itemTop = gridRect.top + (row * itemHeight);
     const itemCenter = itemTop + (itemHeight / 2);
 
     return Math.abs(itemCenter - viewportCenter) / window.innerHeight; // Distance in viewport heights
-  }, [columnCount]);
+  }, [columnCount, itemHeight]);
 
-  // Trigger onLoadMore when approaching end
-  const handleImageVisible = useCallback((index: number) => {
-    if (onLoadMore && !isLoadingImages && images.length > 0) {
-      const preloadThreshold = Math.max(0, images.length - 50); // Reduced threshold for better UX
-      if (index >= preloadThreshold) {
-        asyncScheduler.schedule(() => onLoadMore());
-      }
-    }
-  }, [onLoadMore, isLoadingImages, images.length]);
+  // Trigger onLoadMore when approaching end (disabled for static collections)
+  const handleImageVisible = useCallback((_index: number) => {
+    // For static collections, we don't need load more functionality
+    // This prevents unnecessary processing for large image sets
+    return;
+  }, []);
 
   return (
     <Box
@@ -139,12 +198,14 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
           width: "100%",
         }}
       >
-        {images.map((imagePath, index) => {
-          const distance = calculateDistanceFromViewport(index);
+        {renderedImages.map((imagePath) => {
+          // Calculate actual index in full array
+          const actualIndex = images.indexOf(imagePath);
+          const distance = calculateDistanceFromViewport(actualIndex);
 
           return (
             <Box
-              key={`${imagePath}-${index}`}
+              key={`${imagePath}-${actualIndex}`}
               sx={{
                 aspectRatio: "1",
                 width: "100%",
@@ -154,11 +215,11 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
                 willChange: "transform",
               }}
             >
-              <ProgressiveImageWithIntersection
+              <FastImageWithIntersection
                 imagePath={imagePath}
-                alt={imagePath.split("/").pop() || `Image ${index + 1}`}
+                alt={imagePath.split("/").pop() || `Image ${actualIndex + 1}`}
                 onClick={() => onImageClick?.(imagePath)}
-                onVisible={() => handleImageVisible(index)}
+                onVisible={() => handleImageVisible(actualIndex)}
                 distance={distance}
               />
             </Box>
@@ -167,7 +228,7 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
       </Box>
 
       {/* Loading indicator at bottom */}
-      {hasMore && (
+      {_hasMore && (
         <Box
           sx={{
             display: "flex",

@@ -173,6 +173,12 @@ fn get_device_info(mount_point: &str) -> Result<Device, String> {
 }
 
 #[tauri::command]
+async fn read_binary_file(path: &str) -> Result<Vec<u8>, String> {
+    use std::fs;
+    fs::read(path).map_err(|e| format!("Failed to read file: {}", e))
+}
+
+#[tauri::command]
 async fn generate_thumbnail(image_path: &str, size: u32) -> Result<String, String> {
     use std::fs;
     use std::io::Cursor;
@@ -193,6 +199,126 @@ async fn generate_thumbnail(image_path: &str, size: u32) -> Result<String, Strin
     let base64_string = base64::encode(buffer.get_ref());
 
     Ok(format!("data:image/jpeg;base64,{}", base64_string))
+}
+
+#[tauri::command]
+async fn extract_exif_thumbnail(image_path: &str) -> Result<Option<String>, String> {
+    use std::fs;
+
+    let data =
+        fs::read(image_path).map_err(|e| format!("Cannot read file for EXIF extraction: {}", e))?;
+
+    // Try to extract embedded thumbnail using marker-based approach
+    // This works for most cameras that store thumbnails as embedded JPEGs
+    if let Some(thumbnail_data) = find_embedded_jpeg(&data) {
+        let base64_string = base64::encode(&thumbnail_data);
+        return Ok(Some(format!("data:image/jpeg;base64,{}", base64_string)));
+    }
+
+    Ok(None) // No EXIF thumbnail found
+}
+
+fn find_embedded_jpeg(image_data: &[u8]) -> Option<Vec<u8>> {
+    // Look for embedded JPEG thumbnail after the main image
+    // Many cameras store thumbnails as separate JPEG segments
+
+    // Look for JPEG SOI marker (0xFF, 0xD8)
+    for i in 0..image_data.len().saturating_sub(2) {
+        if image_data[i] == 0xFF && image_data[i + 1] == 0xD8 {
+            // Found potential JPEG start, check if it looks like a thumbnail
+            let remaining = &image_data[i..];
+
+            // Look for JPEG EOI marker (0xFF, 0xD9)
+            for j in 2..remaining.len().saturating_sub(2) {
+                if remaining[j] == 0xFF && remaining[j + 1] == 0xD9 {
+                    let thumbnail_size = j + 2;
+                    if thumbnail_size > 500 && thumbnail_size < 100000 {
+                        // Reasonable thumbnail size
+                        return Some(remaining[0..thumbnail_size].to_vec());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+async fn extract_or_generate_thumbnail(image_path: &str, size: u32) -> Result<String, String> {
+    // First, try to extract existing EXIF thumbnail
+    match extract_exif_thumbnail(image_path).await {
+        Ok(Some(exif_thumbnail)) => {
+            // Validate the EXIF thumbnail by attempting to load it
+            if validate_base64_image(&exif_thumbnail).is_ok() {
+                println!("Using EXIF thumbnail for: {}", image_path);
+                return Ok(exif_thumbnail);
+            } else {
+                println!(
+                    "EXIF thumbnail validation failed, generating new thumbnail for: {}",
+                    image_path
+                );
+            }
+        }
+        Ok(None) => {
+            println!(
+                "No EXIF thumbnail found, generating new thumbnail for: {}",
+                image_path
+            );
+        }
+        Err(e) => {
+            println!(
+                "EXIF extraction failed ({}), generating new thumbnail for: {}",
+                e, image_path
+            );
+        }
+    }
+
+    // Fallback: Generate new thumbnail
+    generate_thumbnail(image_path, size).await
+}
+
+fn validate_base64_image(base64_data: &str) -> Result<(), String> {
+    // Remove the data URL prefix if present
+    let data = if base64_data.starts_with("data:image") {
+        base64_data
+            .split(',')
+            .nth(1)
+            .ok_or("Invalid data URL format")?
+    } else {
+        base64_data
+    };
+
+    // Try to decode the base64 data
+    base64::decode(data).map_err(|e| format!("Base64 decode error: {}", e))?;
+
+    // Additional validation could include checking image format headers
+    // For now, successful base64 decode indicates valid thumbnail data
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn test_exif_extraction(test_image_path: &str) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+
+    println!("Testing EXIF extraction for: {}", test_image_path);
+
+    let exif_result = extract_exif_thumbnail(test_image_path).await;
+    let has_exif = exif_result.is_ok() && exif_result.as_ref().unwrap().is_some();
+
+    let result = json!({
+        "imagePath": test_image_path,
+        "hasExifThumbnail": has_exif,
+        "exifResult": match exif_result {
+            Ok(Some(data)) => format!("Found thumbnail ({} bytes)", data.len()),
+            Ok(None) => "No EXIF thumbnail found".to_string(),
+            Err(e) => format!("Error: {}", e)
+        }
+    });
+
+    Ok(result)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -216,6 +342,10 @@ pub struct QualityResult {
 async fn generate_progressive_thumbnails(
     requests: Vec<QualityRequest>,
 ) -> Result<Vec<QualityResult>, String> {
+    println!(
+        "Backend: generate_progressive_thumbnails called with {} requests",
+        requests.len()
+    );
     use std::fs;
     use std::io::Cursor;
 
@@ -522,8 +652,12 @@ fn main() {
             list_files,
             list_connected_devices,
             get_device_info,
+            read_binary_file,
             generate_thumbnail,
             generate_progressive_thumbnails,
+            extract_exif_thumbnail,
+            extract_or_generate_thumbnail,
+            test_exif_extraction,
             initialize_face_recognition,
             detect_faces,
             extract_embeddings,

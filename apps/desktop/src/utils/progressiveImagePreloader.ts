@@ -130,7 +130,7 @@ export class ProgressiveImagePreloader {
 
   private loadingQueue: ProgressiveImageRequest[] = [];
   private activeLoads = new Set<string>();
-  private maxConcurrent = 5;
+  private maxConcurrent = 3; // Reduced for better performance with large collections
 
   constructor() {
     // Workers will be initialized on demand
@@ -225,48 +225,73 @@ export class ProgressiveImagePreloader {
     const { imagePath, qualities } = request;
     const result: ProgressiveImageResult = { imagePath };
 
+    console.log('ProgressiveImagePreloader: Loading qualities for', imagePath, qualities);
+
     try {
-      // Use the new progressive thumbnails API
       const { invoke } = await import('@tauri-apps/api/core');
 
-      const backendRequests = [{
-        image_path: imagePath,
-        thumbnail_size: qualities.thumbnail,
-        preview_size: qualities.preview,
-        full_quality: qualities.full
-      }];
+      // Process thumbnail (prefer EXIF, fallback to generation)
+      if (qualities.thumbnail) {
+        try {
+          console.log('ProgressiveImagePreloader: Extracting/generating thumbnail for', imagePath);
+          const thumbnail = await invoke('extract_or_generate_thumbnail', {
+            imagePath,
+            size: qualities.thumbnail
+          });
 
-      const backendResults: any[] = await invoke('generate_progressive_thumbnails', backendRequests as any);
-
-      if (Array.isArray(backendResults) && backendResults.length > 0) {
-        const backendResult = backendResults[0];
-
-        // Cache and notify for each quality level
-        if (backendResult.thumbnail && qualities.thumbnail) {
-          this.cacheImage(`${imagePath}-thumbnail-${qualities.thumbnail}`, backendResult.thumbnail, ImageQuality.THUMBNAIL);
-          result.thumbnail = backendResult.thumbnail;
-          request.onProgress?.(ImageQuality.THUMBNAIL, backendResult.thumbnail);
+          this.cacheImage(`${imagePath}-thumbnail-${qualities.thumbnail}`, thumbnail as string, ImageQuality.THUMBNAIL);
+          result.thumbnail = thumbnail as string;
+          request.onProgress?.(ImageQuality.THUMBNAIL, thumbnail as string);
+          console.log('ProgressiveImagePreloader: Thumbnail loaded successfully');
+        } catch (thumbnailError) {
+          console.error('ProgressiveImagePreloader: Thumbnail extraction/generation failed', thumbnailError);
+          result.error = `Thumbnail: ${thumbnailError instanceof Error ? thumbnailError.message : 'Failed'}`;
         }
-
-        if (backendResult.preview && qualities.preview) {
-          this.cacheImage(`${imagePath}-preview-${qualities.preview}`, backendResult.preview, ImageQuality.PREVIEW);
-          result.preview = backendResult.preview;
-          request.onProgress?.(ImageQuality.PREVIEW, backendResult.preview);
-        }
-
-        if (backendResult.full && qualities.full) {
-          this.cacheImage(`${imagePath}-full`, backendResult.full, ImageQuality.FULL);
-          result.full = backendResult.full;
-          request.onProgress?.(ImageQuality.FULL, backendResult.full);
-        }
-
-        if (backendResult.error) {
-          result.error = backendResult.error;
-        }
-      } else {
-        throw new Error('No results returned from thumbnail generation');
       }
+
+      // Process preview (always generate for consistency)
+      if (qualities.preview) {
+        try {
+          console.log('ProgressiveImagePreloader: Generating preview for', imagePath);
+          const preview = await invoke('generate_thumbnail', {
+            imagePath,
+            size: qualities.preview
+          });
+
+          this.cacheImage(`${imagePath}-preview-${qualities.preview}`, preview as string, ImageQuality.PREVIEW);
+          result.preview = preview as string;
+          request.onProgress?.(ImageQuality.PREVIEW, preview as string);
+          console.log('ProgressiveImagePreloader: Preview generated successfully');
+        } catch (previewError) {
+          console.error('ProgressiveImagePreloader: Preview generation failed', previewError);
+          if (!result.error) {
+            result.error = `Preview: ${previewError instanceof Error ? previewError.message : 'Failed'}`;
+          }
+        }
+      }
+
+      // Process full resolution
+      if (qualities.full) {
+        try {
+          console.log('ProgressiveImagePreloader: Loading full resolution for', imagePath);
+          // For full resolution, use the original image URL
+          const { convertFileSrc } = await import('@tauri-apps/api/core');
+          const fullUrl = convertFileSrc(imagePath);
+
+          this.cacheImage(`${imagePath}-full`, fullUrl, ImageQuality.FULL);
+          result.full = fullUrl;
+          request.onProgress?.(ImageQuality.FULL, fullUrl);
+          console.log('ProgressiveImagePreloader: Full resolution loaded successfully');
+        } catch (fullError) {
+          console.error('ProgressiveImagePreloader: Full resolution loading failed', fullError);
+          if (!result.error) {
+            result.error = `Full: ${fullError instanceof Error ? fullError.message : 'Failed'}`;
+          }
+        }
+      }
+
     } catch (error) {
+      console.error('ProgressiveImagePreloader: General error', error);
       result.error = error instanceof Error ? error.message : 'Failed to load image';
     }
 
@@ -299,13 +324,22 @@ export class ProgressiveImagePreloader {
 
   // Public methods for cache management
   preloadBatch(images: string[], qualities: ProgressiveImageRequest['qualities'], priority: LoadingPriority = LoadingPriority.NORMAL): void {
-    const requests = images.map(imagePath => ({
-      imagePath,
-      qualities,
-      priority
-    }));
+    // Process images in smaller batches to prevent overwhelming the system
+    const batchSize = 20; // Process 20 images at a time
 
-    requests.forEach(request => this.loadProgressiveImage(request));
+    for (let i = 0; i < images.length; i += batchSize) {
+      const batch = images.slice(i, i + batchSize);
+      const requests = batch.map(imagePath => ({
+        imagePath,
+        qualities,
+        priority
+      }));
+
+      // Add delay between batches to prevent system overload
+      setTimeout(() => {
+        requests.forEach(request => this.loadProgressiveImage(request));
+      }, (i / batchSize) * 100); // 100ms delay between batches
+    }
   }
 
   getImage(imagePath: string, quality: ImageQuality, size?: number): string | null {

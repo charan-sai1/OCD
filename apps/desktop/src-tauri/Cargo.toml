@@ -18,6 +18,7 @@ sysinfo = "0.30"
  futures = "0.3"
  image = "0.24"
  base64 = "0.22"
+ rexif = "0.7"
  once_cell = "1.19"
  chrono = { version = "0.4", features = ["serde"] }
  rand = "0.8"

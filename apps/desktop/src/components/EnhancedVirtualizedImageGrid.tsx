@@ -10,6 +10,9 @@ interface VirtualGridProps {
   onImageClick?: (imagePath: string) => void;
   overscan?: number; // Extra items to render outside viewport
   prefetchDistance?: number; // Distance to prefetch thumbnails
+  pagesToPreload?: number; // Number of pages to preload ahead (default: 3)
+  progressiveLoading?: boolean; // Enable progressive loading
+  aggressivePreloading?: boolean; // Ignore memory limits for preloading
 }
 
 // Enhanced FastImage component with intersection-based loading and prefetching
@@ -21,6 +24,7 @@ const FastImageWithIntersection: React.FC<{
   distance: number; // Distance from viewport center (0 = in viewport)
   priority: 'high' | 'normal' | 'low';
   prefetchDistance?: number;
+  progressiveLoading?: boolean;
 }> = memo(({
   imagePath,
   alt,
@@ -28,7 +32,8 @@ const FastImageWithIntersection: React.FC<{
   onVisible,
   distance,
   priority,
-  prefetchDistance = 2
+  prefetchDistance = 2,
+  progressiveLoading = true
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -43,7 +48,7 @@ const FastImageWithIntersection: React.FC<{
 
   const currentPriority = priority !== 'low' ? priority : getLoadingPriority(distance);
 
-  // Prefetch thumbnails for nearby images
+  // Prefetch thumbnails for images within preload range
   useEffect(() => {
     if (Math.abs(distance) <= prefetchDistance && !isPrefetched) {
       const prefetchThumbnail = async () => {
@@ -100,6 +105,7 @@ const FastImageWithIntersection: React.FC<{
         priority={currentPriority}
         width={300}
         height={300}
+        progressiveLoading={progressiveLoading}
       />
     </div>
   );
@@ -112,11 +118,15 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   imageSize,
   onImageClick,
   overscan = 5,
-  prefetchDistance = 3
+  prefetchDistance = 3,
+  pagesToPreload = 3,
+  progressiveLoading = true,
+  aggressivePreloading = false
 }) => {
   const gridRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 });
   const [scrollVelocity, setScrollVelocity] = useState(0);
+  const [preloadRange, setPreloadRange] = useState({ start: 0, end: 100 });
   const lastScrollY = useRef(0);
   const lastScrollTime = useRef(Date.now());
 
@@ -126,6 +136,31 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   }
 
   const columnCount = Math.max(1, imageSize || 4);
+
+  // Calculate page information based on viewport and grid layout
+  const calculatePageInfo = useCallback(() => {
+    if (!gridRef.current) return { itemsPerPage: 100, currentPage: 0 };
+
+    const viewportHeight = window.innerHeight;
+    const itemSize = gridRef.current.offsetWidth / columnCount;
+    const itemsPerRow = columnCount;
+    const rowsPerViewport = Math.ceil(viewportHeight / itemSize);
+    const itemsPerPage = rowsPerViewport * itemsPerRow;
+    const currentPage = Math.floor(window.scrollY / viewportHeight);
+
+    return { itemsPerPage, currentPage };
+  }, [columnCount]);
+
+  // Calculate preload range based on current page and pagesToPreload
+  const calculatePreloadRange = useCallback((currentPage: number, itemsPerPage: number) => {
+    // Load current page + pagesToPreload ahead + 1 page behind for smooth scrolling
+    const startPage = Math.max(0, currentPage - 1);
+    const endPage = currentPage + pagesToPreload;
+    const startIndex = startPage * itemsPerPage;
+    const endIndex = Math.min(images.length, endPage * itemsPerPage);
+
+    return { start: startIndex, end: endIndex };
+  }, [images.length, pagesToPreload, aggressivePreloading]);
 
   // Adaptive overscan based on scroll velocity for better performance
   const adaptiveOverscan = useMemo(() => {
@@ -146,7 +181,29 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     return images.slice(start, end);
   }, [images, visibleRange, adaptiveOverscan]);
 
-  // Enhanced scroll handler with velocity tracking
+  // Calculate image priority based on page position
+  const getImagePriority = useCallback((index: number): 'high' | 'normal' | 'low' => {
+    const { currentPage, itemsPerPage } = calculatePageInfo();
+    const imagePage = Math.floor(index / itemsPerPage);
+    const pageDiff = imagePage - currentPage;
+
+    // Page-based priority assignment
+    if (pageDiff === 0) return 'high';      // Current page - highest priority
+    if (pageDiff === 1) return 'high';      // Next page - high priority
+    if (pageDiff === 2) return 'normal';    // 2 pages ahead - normal priority
+    if (pageDiff === -1) return 'low';      // Previous page - low priority (maintenance)
+    if (pageDiff === 3) return 'low';       // 3 pages ahead - low priority
+
+    // Beyond preload range - don't preload
+    return 'low';
+  }, [calculatePageInfo]);
+
+  // Check if image should be prefetched based on preload range
+  const shouldPrefetch = useCallback((index: number): boolean => {
+    return index >= preloadRange.start && index < preloadRange.end;
+  }, [preloadRange]);
+
+  // Enhanced scroll handler with velocity tracking and preload management
   const updateVisibleRange = useCallback(() => {
     if (!gridRef.current) return;
 
@@ -179,7 +236,12 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
       start: startIndex,
       end: endIndex
     });
-  }, [columnCount, images.length]);
+
+    // Update preload range based on current page
+    const { currentPage, itemsPerPage } = calculatePageInfo();
+    const newPreloadRange = calculatePreloadRange(currentPage, itemsPerPage);
+    setPreloadRange(newPreloadRange);
+  }, [columnCount, images.length, calculatePageInfo, calculatePreloadRange]);
 
   // Throttled scroll listener for better performance
   useEffect(() => {
@@ -249,7 +311,11 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         {renderedImages.map((imagePath) => {
           const actualIndex = images.indexOf(imagePath);
           const distance = calculateDistanceFromViewport(actualIndex);
-          const priority = distance <= 0.5 ? 'high' : distance <= 1 ? 'normal' : 'low';
+          const pagePriority = getImagePriority(actualIndex);
+          const shouldBePrefetched = shouldPrefetch(actualIndex);
+
+          // Combine distance and page priority for optimal loading
+          const priority = pagePriority === 'high' ? 'high' : distance <= 0.5 ? 'high' : 'normal';
 
           return (
             <Box
@@ -269,7 +335,8 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
                 onClick={() => onImageClick?.(imagePath)}
                 distance={distance}
                 priority={priority}
-                prefetchDistance={prefetchDistance}
+                prefetchDistance={shouldBePrefetched ? prefetchDistance : 0}
+                progressiveLoading={progressiveLoading}
               />
             </Box>
           );

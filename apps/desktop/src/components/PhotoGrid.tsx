@@ -4,10 +4,9 @@ import ImageList from "@mui/material/ImageList";
 import ImageListItem from "@mui/material/ImageListItem";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
-import VirtualImageGrid from "./VirtualImageGrid";
+import EnhancedVirtualizedImageGrid from "./EnhancedVirtualizedImageGrid";
 import SkeletonImageGrid from "./SkeletonImageGrid";
-import ProgressiveImage from "./ProgressiveImage";
-import { LoadingPriority } from "../utils/progressiveImagePreloader";
+import FastImage from "./FastImage";
 import "../styles/animations.css";
 
 interface PhotoGridProps {
@@ -17,8 +16,8 @@ interface PhotoGridProps {
   isLoadingImages?: boolean;
 }
 
-// Progressive image component for ImageList
-const ProgressiveImageGridItem = memo(({
+// Fast image component for ImageList
+const FastImageGridItem = memo(({
   imagePath,
   index,
   hoveredIndex,
@@ -44,11 +43,12 @@ const ProgressiveImageGridItem = memo(({
       onMouseEnter={() => setHoveredIndex(index)}
       onMouseLeave={() => setHoveredIndex(null)}
     >
-      <ProgressiveImage
+      <FastImage
         imagePath={imagePath}
         alt={imageName}
-        priority={LoadingPriority.NORMAL}
-        enableTransitions={true}
+        priority="normal"
+        width={300}
+        height={300}
         style={{
           borderRadius: 12,
           width: "100%",
@@ -87,7 +87,7 @@ const ProgressiveImageGridItem = memo(({
   );
 });
 
-ProgressiveImageGridItem.displayName = "ProgressiveImageGridItem";
+FastImageGridItem.displayName = "FastImageGridItem";
 
 const PhotoGrid: React.FC<PhotoGridProps> = memo(({
   images,
@@ -155,7 +155,7 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
       }}
     >
       {images.map((imagePath, index) => (
-        <ProgressiveImageGridItem
+        <FastImageGridItem
           key={`${imagePath}-${index}`}
           imagePath={imagePath}
           index={index}
@@ -176,17 +176,20 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
     if (images.length === 0 && directoryPaths.length > 0) {
       return renderNoImages();
     }
-    if (images.length > 500) {
-      return (
-        <VirtualImageGrid
-          images={images}
-          imageSize={imageSize}
-          isLoadingImages={isLoadingImages}
-          onLoadMore={() => {}}
-          hasMore={false}
-        />
-      );
-    }
+     // Use enhanced virtual scrolling for large collections (>50 images) with page-based preloading
+     if (images.length > 50) {
+       return (
+         <EnhancedVirtualizedImageGrid
+           images={images}
+           imageSize={imageSize}
+           pagesToPreload={3}
+           onImageClick={(imagePath) => {
+             // Handle image click - could open lightbox or navigate
+             console.log('Image clicked:', imagePath);
+           }}
+         />
+       );
+     }
     return (
       <Box className="anim-fade-in-up">
         {renderImageList()}

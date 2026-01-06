@@ -35,6 +35,13 @@ class ImagePreloader {
     this.preloadWithPriority(images, 'normal', onProgress);
   }
 
+  // Enhanced preloading for page-based loading
+  preloadPages(images: string[], pagesToPreload: number = 3, imagesPerPage: number = 100, onProgress?: (loaded: number, total: number) => void) {
+    // Calculate page ranges to preload
+    const preloadImages = images.slice(0, pagesToPreload * imagesPerPage);
+    this.preloadWithPriority(preloadImages, 'high', onProgress);
+  }
+
   preloadWithPriority(images: string[], priority: 'high' | 'normal' = 'normal', onProgress?: (loaded: number, total: number) => void) {
     // Filter out already loaded images
     const newImages = images.filter(img => !this.loadedImages.has(img) && !this.loadingImages.has(img));
