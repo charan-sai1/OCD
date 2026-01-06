@@ -1,8 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
-import FastImage from "./FastImage";
-import { advancedImageCache } from "../utils/advancedCache";
-import { DeviceCapabilities } from "../utils/deviceCapabilities";
+import LazyImageContainer from "./LazyImageContainer";
 import { userBehaviorPredictor } from "../utils/userBehaviorPredictor";
 import { systemResourceManager } from "../utils/systemResourceManager";
 import { predictiveLoadingQueue } from "../utils/predictiveLoadingQueue";
@@ -17,36 +15,30 @@ interface VirtualGridProps {
   overscan?: number; // Extra items to render outside viewport
   prefetchDistance?: number; // Distance to prefetch thumbnails
   pagesToPreload?: number; // Number of pages to preload ahead (default: 3)
-  progressiveLoading?: boolean; // Enable progressive loading
+
   aggressivePreloading?: boolean; // Ignore memory limits for preloading
   enableSmoothScroll?: boolean; // Enable Lenis smooth scrolling
   lenisConfig?: LenisConfig; // Lenis scroll configuration
   delayedLoading?: DelayedLoadConfig; // Delayed loading configuration
 }
 
-// Enhanced FastImage component with intersection-based loading and prefetching
-const FastImageWithIntersection: React.FC<{
+// Lazy image container with intersection-based visibility detection
+const LazyImageWithIntersection: React.FC<{
   imagePath: string;
-  alt: string;
   onClick?: () => void;
   onVisible?: () => void;
   distance: number; // Distance from viewport center (0 = in viewport)
   priority: 'high' | 'normal' | 'low';
   prefetchDistance?: number;
-  progressiveLoading?: boolean;
 }> = memo(({
   imagePath,
-  alt,
   onClick,
   onVisible,
   distance,
   priority,
-  prefetchDistance = 2,
-  progressiveLoading = true
+  prefetchDistance = 2
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
-  const [isPrefetched, setIsPrefetched] = useState(false);
+  const [hasTriggeredVisible, setHasTriggeredVisible] = useState(false);
 
   // Determine loading priority based on distance from viewport
   const getLoadingPriority = useCallback((distance: number): 'high' | 'normal' | 'low' => {
@@ -57,70 +49,38 @@ const FastImageWithIntersection: React.FC<{
 
   const currentPriority = priority !== 'low' ? priority : getLoadingPriority(distance);
 
-  // Prefetch thumbnails for images within preload range
+  // Notify parent when image becomes visible (for prefetching)
   useEffect(() => {
-    if (Math.abs(distance) <= prefetchDistance && !isPrefetched) {
-      const prefetchThumbnail = async () => {
-        try {
-          const deviceProfile = DeviceCapabilities.detect();
-          const cachedUrl = await advancedImageCache.get(imagePath, deviceProfile.recommendedSettings.quality);
-
-          if (!cachedUrl) {
-            // Thumbnail not cached, could trigger generation here if needed
-            // For now, just mark as prefetched to avoid repeated attempts
-          }
-          setIsPrefetched(true);
-        } catch (error) {
-          console.warn('Prefetch failed for', imagePath, error);
-        }
-      };
-
-      prefetchThumbnail();
+    if (distance <= prefetchDistance && !hasTriggeredVisible) {
+      setHasTriggeredVisible(true);
+      onVisible?.();
     }
-  }, [distance, prefetchDistance, imagePath, isPrefetched]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visibleEntries = entries.filter(entry => entry.isIntersecting);
-        const wasVisible = isVisible;
-
-        setIsVisible(visibleEntries.length > 0);
-
-        if (visibleEntries.length > 0 && !wasVisible) {
-          onVisible?.();
-        }
-      },
-      {
-        rootMargin: "200px", // Start loading 200px before visible
-        threshold: 0.01,
-      }
-    );
-
-    observer.observe(container);
-
-    return () => observer.disconnect();
-  }, [onVisible, isVisible]);
+  }, [distance, prefetchDistance, onVisible, hasTriggeredVisible]);
 
   return (
-    <div ref={containerRef}>
-      <FastImage
-        imagePath={imagePath}
-        alt={alt}
-        onClick={onClick}
-        priority={currentPriority}
-        width={300}
-        height={300}
-        progressiveLoading={progressiveLoading}
-      />
-    </div>
+    <LazyImageContainer
+      imagePath={imagePath}
+      width={300}
+      height={300}
+      aspectRatio={1}
+      onClick={onClick}
+      onLoad={() => {
+        // Could trigger additional logic when image loads
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Image loaded: ${imagePath.split('/').pop()}`);
+        }
+      }}
+      onError={(error) => {
+        console.warn(`Image failed to load: ${imagePath}`, error);
+      }}
+      placeholderVariant="shimmer"
+      transitionDuration={300}
+      priority={currentPriority}
+    />
   );
 });
 
-FastImageWithIntersection.displayName = "FastImageWithIntersection";
+LazyImageWithIntersection.displayName = "LazyImageWithIntersection";
 
 const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   images = [],
@@ -129,7 +89,6 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   overscan = 5,
   prefetchDistance = 3,
   pagesToPreload = 3,
-  progressiveLoading = true,
   aggressivePreloading = false,
   enableSmoothScroll = true,
   lenisConfig,
@@ -511,15 +470,13 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
                 willChange: "transform",
               }}
             >
-              <FastImageWithIntersection
+              <LazyImageWithIntersection
                 imagePath={imagePath}
-                alt={imagePath.split("/").pop() || `Image ${actualIndex + 1}`}
                 onClick={() => handleImageClick(imagePath, actualIndex)}
                 onVisible={() => handleImageVisible(actualIndex)}
                 distance={distance}
                 priority={priority}
                 prefetchDistance={shouldBePrefetched ? prefetchDistance : 0}
-                progressiveLoading={progressiveLoading}
               />
             </Box>
           );
