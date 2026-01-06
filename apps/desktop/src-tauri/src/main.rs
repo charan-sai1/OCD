@@ -7,6 +7,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
+mod database;
+mod face_recognition;
+mod sqlite_db;
+
+use face_recognition::{FaceRecognitionService, ProcessingMode};
+
 #[derive(Serialize, Deserialize)]
 pub struct Device {
     pub name: String,
@@ -63,16 +69,11 @@ fn list_images(path: &str) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-async fn list_files(
-    path: &str,
-    file_type: &str,
-    recursive: Option<bool>,
-    max_depth: Option<usize>,
-) -> Result<Vec<String>, String> {
+async fn list_files(path: &str, file_type: &str) -> Result<Vec<String>, String> {
     use std::path::Path;
 
-    let recursive = recursive.unwrap_or(true); // Default to recursive for backward compatibility
-    let max_depth = max_depth.unwrap_or(10); // Prevent infinite recursion
+    let recursive = true; // Always recursive
+    let max_depth = 20; // Allow deeper directory structures
 
     let extensions = match file_type {
         "images" => vec!["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"],
@@ -88,7 +89,6 @@ async fn list_files(
     if recursive {
         // Use WalkDir for efficient recursive scanning
         let walkdir = WalkDir::new(path)
-            .max_depth(max_depth)
             .follow_links(false) // Don't follow symlinks to avoid loops
             .into_iter();
 
@@ -117,26 +117,7 @@ async fn list_files(
                 tokio::task::yield_now().await;
             }
         }
-    } else {
-        // Non-recursive: only scan immediate directory
-        let mut entries = tokio::fs::read_dir(path).await.map_err(|e| e.to_string())?;
-
-        while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if let Some(ext_str) = extension.to_str() {
-                        if extensions.contains(&ext_str.to_lowercase().as_str()) {
-                            files.push(path.to_string_lossy().to_string());
-                        }
-                    }
-                }
-            }
-
-            // Yield control to prevent blocking for too long
-            tokio::task::yield_now().await;
-        }
-    }
+    } 
 
     Ok(files)
 }
@@ -495,80 +476,85 @@ fn generate_full_quality(img: &image::DynamicImage) -> Result<String, String> {
     Ok(format!("data:image/jpeg;base64,{}", base64_string))
 }
 
-// Facial Recognition Commands
-static FACE_RECOGNITION_INITIALIZED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+// Facial Recognition Service
+static FACE_RECOGNITION_SERVICE: Lazy<Mutex<FaceRecognitionService>> = Lazy::new(|| {
+    let model_dir = std::path::PathBuf::from("models");
+    Mutex::new(FaceRecognitionService::new(model_dir))
+});
 
 #[tauri::command]
-async fn initialize_face_recognition() -> Result<(), String> {
-    let mut initialized = FACE_RECOGNITION_INITIALIZED
-        .lock()
-        .map_err(|e| e.to_string())?;
-    if *initialized {
-        return Ok(());
-    }
-
-    // In a real implementation, this would initialize the face recognition system
-    // For now, just mark as initialized
-    *initialized = true;
+fn initialize_face_recognition() -> Result<(), String> {
+    // Service is already initialized in the static
     Ok(())
 }
 
 #[tauri::command]
-async fn detect_faces(image_path: String) -> Result<serde_json::Value, String> {
-    // Mock implementation - in real app this would call the face recognition API
-    use serde_json::{Value, json};
+fn detect_faces(image_path: String) -> Result<serde_json::Value, String> {
+    use serde_json::json;
 
-    // Simulate face detection
-    let faces = vec![json!({
-        "id": format!("face_{}", chrono::Utc::now().timestamp()),
-        "bounds": {
-            "x": 100,
-            "y": 100,
-            "width": 150,
-            "height": 150
-        },
-        "confidence": 0.95,
-        "landmarks": {
-            "leftEye": {"x": 125, "y": 125},
-            "rightEye": {"x": 175, "y": 125},
-            "nose": {"x": 150, "y": 150},
-            "leftMouth": {"x": 140, "y": 175},
-            "rightMouth": {"x": 160, "y": 175}
-        }
-    })];
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let result = service_guard
+        .detect_faces(&image_path)
+        .map_err(|e| e.to_string())?;
+
+    // Convert result to JSON
+    let faces_json: Vec<serde_json::Value> = result
+        .faces
+        .iter()
+        .map(|face| {
+            json!({
+                "id": face.id,
+                "bounds": {
+                    "x": face.bounds.x,
+                    "y": face.bounds.y,
+                    "width": face.bounds.width,
+                    "height": face.bounds.height
+                },
+                "confidence": face.confidence,
+                "landmarks": face.landmarks.as_ref().map(|landmarks| json!({
+                    "leftEye": {"x": landmarks.left_eye.x, "y": landmarks.left_eye.y},
+                    "rightEye": {"x": landmarks.right_eye.x, "y": landmarks.right_eye.y},
+                    "nose": {"x": landmarks.nose.x, "y": landmarks.nose.y},
+                    "leftMouth": {"x": landmarks.left_mouth.x, "y": landmarks.left_mouth.y},
+                    "rightMouth": {"x": landmarks.right_mouth.x, "y": landmarks.right_mouth.y}
+                }))
+            })
+        })
+        .collect();
 
     Ok(json!({
-        "faces": faces,
-        "processingTime": 150,
-        "modelUsed": "MockFaceDetector",
-        "imagePath": image_path
+        "faces": faces_json,
+        "processingTime": result.processing_time,
+        "modelUsed": result.model_used,
+        "imagePath": result.image_path
     }))
 }
 
 #[tauri::command]
-async fn extract_embeddings(face_ids: Vec<String>) -> Result<serde_json::Value, String> {
-    use serde_json::{Value, json};
+fn extract_embeddings(face_ids: Vec<String>) -> Result<serde_json::Value, String> {
+    use serde_json::json;
 
-    // Mock embedding extraction
-    let faces = face_ids
-        .into_iter()
-        .map(|face_id| {
-            // Generate mock 128D embedding
-            let embedding: Vec<f32> = (0..128)
-                .map(|_| (rand::random::<f32>() - 0.5) * 2.0)
-                .collect();
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let result = service_guard
+        .extract_embeddings(face_ids)
+        .map_err(|e| e.to_string())?;
 
+    // Convert result to JSON
+    let faces_json: Vec<serde_json::Value> = result
+        .faces
+        .iter()
+        .map(|face| {
             json!({
-                "id": face_id,
-                "embedding": embedding
+                "id": face.id,
+                "embedding": face.embedding
             })
         })
-        .collect::<Vec<Value>>();
+        .collect();
 
     Ok(json!({
-        "faces": faces,
-        "processingTime": 200,
-        "modelUsed": "MockEmbeddingExtractor"
+        "faces": faces_json,
+        "processingTime": result.processing_time,
+        "modelUsed": result.model_used
     }))
 }
 
@@ -600,76 +586,258 @@ async fn find_similar_faces(
 }
 
 #[tauri::command]
-async fn cluster_faces(algorithm: Option<String>) -> Result<serde_json::Value, String> {
-    use serde_json::{Value, json};
+fn cluster_faces(algorithm: Option<String>) -> Result<serde_json::Value, String> {
+    use serde_json::json;
 
-    let algorithm = algorithm.unwrap_or_else(|| "dbscan".to_string());
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let result = service_guard.cluster_faces().map_err(|e| e.to_string())?;
 
-    // Mock person groups
-    let person_groups = vec![json!({
-        "id": "person_1",
-        "name": null,
-        "faceIds": ["face_1", "face_2", "face_3"],
-        "representativeFaceId": "face_1",
-        "confidence": 0.88,
-        "createdAt": chrono::Utc::now().to_rfc3339()
-    })];
+    // Convert result to JSON
+    let person_groups_json: Vec<serde_json::Value> = result
+        .person_groups
+        .iter()
+        .map(|person| {
+            json!({
+                "id": person.id,
+                "name": person.name,
+                "faceIds": person.face_ids,
+                "representativeFaceId": person.representative_face_id,
+                "confidence": person.confidence,
+                "createdAt": person.created_at.to_rfc3339()
+            })
+        })
+        .collect();
 
     Ok(json!({
-        "personGroups": person_groups,
-        "algorithm": algorithm
+        "personGroups": person_groups_json,
+        "algorithm": result.algorithm
     }))
 }
 
 #[tauri::command]
-async fn get_people() -> Result<serde_json::Value, String> {
-    use serde_json::{Value, json};
+fn get_people() -> Result<serde_json::Value, String> {
+    use serde_json::json;
 
-    let people = vec![json!({
-        "id": "person_1",
-        "name": "John Doe",
-        "faceIds": ["face_1", "face_2", "face_3"],
-        "representativeFaceId": "face_1",
-        "confidence": 0.88,
-        "createdAt": chrono::Utc::now().to_rfc3339()
-    })];
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let people = service_guard.get_people().map_err(|e| e.to_string())?;
 
-    Ok(json!(people))
+    // Convert result to JSON
+    let people_json: Vec<serde_json::Value> = people
+        .iter()
+        .map(|person| {
+            json!({
+                "id": person.id,
+                "name": person.name,
+                "faceIds": person.face_ids,
+                "representativeFaceId": person.representative_face_id,
+                "confidence": person.confidence,
+                "createdAt": person.created_at.to_rfc3339()
+            })
+        })
+        .collect();
+
+    Ok(serde_json::Value::Array(people_json))
 }
 
 #[tauri::command]
-async fn update_person(person_id: String, name: String) -> Result<(), String> {
-    // Mock person update
-    println!("Updating person {} with name {}", person_id, name);
+fn update_person(person_id: String, name: String) -> Result<(), String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    service_guard
+        .update_person(&person_id, &name)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-async fn get_processing_status() -> Result<serde_json::Value, String> {
-    use serde_json::json;
+fn get_processing_status() -> Result<serde_json::Value, String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let status = service_guard
+        .get_processing_status()
+        .map_err(|e| e.to_string())?;
 
-    Ok(json!({
-        "isProcessing": false,
-        "queueLength": 0,
-        "progress": 100
+    Ok(serde_json::json!({
+        "isProcessing": status.is_processing,
+        "queueLength": status.queue_length,
+        "currentImage": status.current_image,
+        "progress": status.progress,
+        "estimatedTimeRemaining": status.estimated_time_remaining,
+        "currentStage": status.current_stage,
+        "processedImages": status.processed_images,
+        "totalImages": status.total_images,
+        "facesDetected": status.faces_detected,
+        "processingSpeed": status.processing_speed
     }))
 }
 
 #[tauri::command]
-async fn get_capabilities() -> Result<serde_json::Value, String> {
-    use serde_json::json;
+fn get_capabilities() -> Result<serde_json::Value, String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let capabilities = service_guard.get_capabilities();
 
-    Ok(json!({
-        "platform": "desktop",
-        "cpuCores": 8,
-        "memoryGB": 16.0,
-        "hasGPU": true
+    Ok(serde_json::json!({
+        "platform": capabilities.platform,
+        "cpuCores": capabilities.cpu_cores,
+        "memoryGB": capabilities.memory_gb,
+        "hasGPU": capabilities.has_gpu,
+        "batteryLevel": capabilities.battery_level,
+        "isCharging": capabilities.is_charging,
+        "thermalState": capabilities.thermal_state
     }))
 }
 
 #[tauri::command]
-async fn set_processing_mode(mode: String) -> Result<(), String> {
-    println!("Setting processing mode to: {}", mode);
+async fn generate_video_thumbnail(video_path: &str, size: u32) -> Result<String, String> {
+    use std::fs;
+    use std::process::Command;
+
+    // Check if ffmpeg is available
+    let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
+
+    if ffmpeg_check.is_err() {
+        return Err("FFmpeg not available for video thumbnail generation".to_string());
+    }
+
+    // Create temporary output path for thumbnail
+    let temp_dir = std::env::temp_dir();
+    let output_path = temp_dir.join(format!("thumb_{}.jpg", chrono::Utc::now().timestamp()));
+
+    // Extract frame at 10% into video using ffmpeg
+    let duration_output = Command::new("ffprobe")
+        .args(&[
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            video_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to get video duration: {}", e))?;
+
+    let duration_json: serde_json::Value = serde_json::from_slice(&duration_output.stdout)
+        .map_err(|e| format!("Failed to parse duration JSON: {}", e))?;
+
+    let duration = duration_json["format"]["duration"]
+        .as_str()
+        .and_then(|d| d.parse::<f64>().ok())
+        .unwrap_or(10.0);
+
+    let seek_time = duration * 0.1; // 10% into video
+
+    let ffmpeg_result = Command::new("ffmpeg")
+        .args(&[
+            "-ss",
+            &seek_time.to_string(),
+            "-i",
+            video_path,
+            "-vframes",
+            "1",
+            "-q:v",
+            "2", // High quality
+            "-vf",
+            &format!(
+                "scale='min({},iw)':'min({},ih)':force_original_aspect_ratio=decrease",
+                size, size
+            ),
+            "-y", // Overwrite output
+            &output_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("FFmpeg thumbnail generation failed: {}", e))?;
+
+    if !ffmpeg_result.status.success() {
+        return Err(format!(
+            "FFmpeg failed: {}",
+            String::from_utf8_lossy(&ffmpeg_result.stderr)
+        ));
+    }
+
+    // Read the generated thumbnail and convert to base64
+    let thumbnail_data =
+        fs::read(&output_path).map_err(|e| format!("Failed to read thumbnail: {}", e))?;
+
+    // Clean up temp file
+    let _ = fs::remove_file(&output_path);
+
+    let base64_string = base64::encode(&thumbnail_data);
+
+    Ok(format!("data:image/jpeg;base64,{}", base64_string))
+}
+
+#[tauri::command]
+async fn detect_media_type(file_path: &str) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(file_path);
+
+    // First check extension
+    if let Some(extension) = path.extension() {
+        if let Some(ext_str) = extension.to_str() {
+            let ext_lower = ext_str.to_lowercase();
+
+            // Video extensions
+            if ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v"].contains(&ext_str) {
+                return Ok("video".to_string());
+            }
+
+            // Image extensions
+            if [
+                "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff", "tif",
+            ]
+            .contains(&ext_str)
+            {
+                return Ok("image".to_string());
+            }
+        }
+    }
+
+    // Fallback: read file header to detect by magic bytes
+    match fs::read(file_path) {
+        Ok(data) if data.len() >= 12 => {
+            // Check for video signatures
+            if data.starts_with(&[0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]) {
+                return Ok("video".to_string()); // MP4
+            }
+            if data.starts_with(&[0x52, 0x49, 0x46, 0x46])
+                && data[8..12] == [0x41, 0x56, 0x49, 0x20]
+            {
+                return Ok("video".to_string()); // AVI
+            }
+
+            // Check for image signatures
+            if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+                return Ok("image".to_string()); // JPEG
+            }
+            if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+                return Ok("image".to_string()); // PNG
+            }
+            if data.starts_with(&[0x47, 0x49, 0x46, 0x38]) {
+                return Ok("image".to_string()); // GIF
+            }
+            if data.starts_with(&[0x42, 0x4D]) {
+                return Ok("image".to_string()); // BMP
+            }
+
+            Ok("unknown".to_string())
+        }
+        _ => Ok("unknown".to_string()),
+    }
+}
+
+#[tauri::command]
+fn set_processing_mode(mode: String) -> Result<(), String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    let processing_mode = match mode.as_str() {
+        "fast" => ProcessingMode::Fast,
+        "balanced" => ProcessingMode::Balanced,
+        "accurate" => ProcessingMode::HighAccuracy,
+        _ => return Err(format!("Invalid processing mode: {}", mode)),
+    };
+
+    service_guard
+        .set_processing_mode(processing_mode)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -683,6 +851,113 @@ async fn queue_images_for_processing(image_paths: Vec<String>) -> Result<(), Str
 async fn process_next_image() -> Result<bool, String> {
     // Mock processing
     Ok(false) // No images in queue
+}
+
+#[tauri::command]
+fn process_folder(folder_path: String) -> Result<serde_json::Value, String> {
+    use walkdir::WalkDir;
+    use std::path::Path;
+
+    let folder_path = Path::new(&folder_path);
+    if !folder_path.exists() || !folder_path.is_dir() {
+        return Err("Invalid folder path".to_string());
+    }
+
+    let mut image_paths = Vec::new();
+    let image_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
+
+    // Collect all image files in the folder
+    for entry in WalkDir::new(folder_path)
+        .max_depth(5) // Limit depth to prevent excessive scanning
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_file() {
+            if let Some(extension) = entry.path().extension() {
+                if let Some(ext_str) = extension.to_str() {
+                    if image_extensions.contains(&ext_str.to_lowercase().as_str()) {
+                        if let Some(path_str) = entry.path().to_str() {
+                            image_paths.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+
+    let mut total_faces = 0;
+    let start_time = std::time::Instant::now();
+
+    // Process each image
+    for image_path in &image_paths {
+        match service_guard.detect_faces(image_path) {
+            Ok(result) => {
+                total_faces += result.faces.len();
+            }
+            Err(e) => {
+                eprintln!("Error processing {}: {}", image_path, e);
+                // Continue with other images
+            }
+        }
+    }
+
+    let processing_time = start_time.elapsed().as_millis();
+
+    // Run clustering on all detected faces
+    match service_guard.cluster_faces() {
+        Ok(clustering_result) => {
+            Ok(serde_json::json!({
+                "success": true,
+                "folderPath": folder_path.to_string_lossy(),
+                "imagesProcessed": image_paths.len(),
+                "totalFacesDetected": total_faces,
+                "peopleCreated": clustering_result.person_groups.len(),
+                "processingTime": processing_time
+            }))
+        }
+        Err(e) => {
+            Ok(serde_json::json!({
+                "success": false,
+                "folderPath": folder_path.to_string_lossy(),
+                "imagesProcessed": image_paths.len(),
+                "totalFacesDetected": total_faces,
+                "error": e,
+                "processingTime": processing_time
+            }))
+        }
+    }
+}
+
+#[tauri::command]
+fn get_face_statistics() -> Result<serde_json::Value, String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+
+    let face_count = service_guard.database.get_face_count().map_err(|e| e.to_string())?;
+    let person_count = service_guard.database.get_person_count().map_err(|e| e.to_string())?;
+    let faces = service_guard.database.get_faces().map_err(|e| e.to_string())?;
+
+    // Calculate some statistics
+    let avg_confidence = if !faces.is_empty() {
+        faces.iter().map(|f| f.confidence).sum::<f32>() / faces.len() as f32
+    } else {
+        0.0
+    };
+
+    Ok(serde_json::json!({
+        "totalFaces": face_count,
+        "totalPeople": person_count,
+        "averageConfidence": avg_confidence,
+        "faces": faces.len()
+    }))
+}
+
+#[tauri::command]
+fn clear_database() -> Result<(), String> {
+    let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
+    service_guard.database.clear_all().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn main() {
@@ -712,7 +987,12 @@ fn main() {
             get_capabilities,
             set_processing_mode,
             queue_images_for_processing,
-            process_next_image
+            process_next_image,
+            process_folder,
+            get_face_statistics,
+            clear_database,
+            generate_video_thumbnail,
+            detect_media_type
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

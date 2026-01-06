@@ -10,25 +10,23 @@ interface LazyImageContainerProps {
   onClick?: () => void;
   onLoad?: () => void;
   onError?: (error: string) => void;
+  onDoubleTap?: () => void;
   placeholderVariant?: 'skeleton' | 'shimmer' | 'wave' | 'simple';
   imageAnimation?: 'scale' | 'slide' | 'fade' | 'bounce';
   priority?: 'high' | 'normal' | 'low';
+  enableTouchGestures?: boolean;
 }
-
-type LoadingState = 'idle' | 'loading' | 'loaded' | 'error';
 
 const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   imagePath,
-  width = 300,
-  height = 300,
   aspectRatio = 1,
   onClick,
   onLoad,
   onError,
-  placeholderVariant = 'wave',
+  placeholderVariant = 'skeleton',
   imageAnimation = 'scale',
-  priority = 'normal'
 }) => {
+  type LoadingState = 'idle' | 'loading' | 'loaded' | 'error';
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,42 +36,31 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   // Debug logging
   if (process.env.NODE_ENV === 'development') {
     console.log('LazyImageContainer received imagePath:', imagePath);
+    console.log('Image path exists check:', imagePath ? 'path provided' : 'no path');
+    console.log('Image path type:', typeof imagePath);
   }
 
   // Async image loading function with proper error handling
   const loadImageAsync = useCallback(async (imagePath: string): Promise<void> => {
+    console.log('LazyImage: Starting load for:', imagePath);
+
     try {
-      // Import dependencies dynamically to avoid circular imports
-      const { previewCache } = await import('../utils/previewCache');
-      const { generateImagePreview } = await import('../utils/previewGenerator');
+      // Simple approach: use convertFileSrc directly
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      const imageUrl = convertFileSrc(imagePath);
 
-      // Step 1: Check cache first (fast operation)
-      const cachedUrl = await previewCache.get(imagePath);
-      if (cachedUrl) {
-        setImageUrl(cachedUrl);
-        setLoadingState('loaded');
-        onLoad?.();
-        return;
-      }
+      console.log('LazyImage: Generated URL:', imageUrl, 'for path:', imagePath);
 
-      // Step 2: Generate preview if not cached (slower operation)
-      const generatedUrl = await generateImagePreview(imagePath, {
-        maxWidth: width,
-        maxHeight: height,
-        quality: priority === 'high' ? 0.8 : 0.7,
-        format: 'jpeg'
-      });
-
-      setImageUrl(generatedUrl);
+      setImageUrl(imageUrl);
       setLoadingState('loaded');
       onLoad?.();
 
     } catch (error) {
-      console.error('LazyImage: Async loading failed for', imagePath.split('/').pop(), error);
+      console.error('LazyImage: Failed to generate URL for', imagePath, error);
       setLoadingState('error');
-      onError?.(error instanceof Error ? error.message : 'Unknown error');
+      onError?.(error instanceof Error ? error.message : 'Failed to load image');
     }
-  }, [width, height, priority, onLoad, onError, imagePath]);
+  }, [onLoad, onError, imagePath]);
 
   // Loading timeout to prevent infinite loading states
   const startLoadingTimeout = useCallback(() => {

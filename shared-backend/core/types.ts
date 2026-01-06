@@ -17,6 +17,18 @@ export enum ProcessingMode {
   HighAccuracy = 'accurate' // RetinaFace + ArcFace embeddings
 }
 
+export enum RelationshipType {
+  PARENT = 'parent',
+  CHILD = 'child',
+  SIBLING = 'sibling',
+  SPOUSE = 'spouse',
+  GRANDPARENT = 'grandparent',
+  GRANDCHILD = 'grandchild',
+  AUNT_UNCLE = 'aunt_uncle',
+  NIECE_NEPHEW = 'niece_nephew',
+  COUSIN = 'cousin'
+}
+
 export interface Face {
   id: string;
   bounds: FaceBounds;
@@ -73,6 +85,8 @@ export interface PersonGroup {
   representativeFaceId: string;
   confidence: number;
   createdAt: Date;
+  generation?: number;
+  isAdmin?: boolean;
 }
 
 export interface ProcessingStatus {

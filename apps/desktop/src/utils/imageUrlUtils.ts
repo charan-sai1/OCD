@@ -7,6 +7,11 @@ export function getImageUrl(imagePath: string): string {
   return convertFileSrc(imagePath);
 }
 
+export async function getDirectImageUrl(imagePath: string): Promise<string> {
+  // Async version for components that need to handle async operations
+  return convertFileSrc(imagePath);
+}
+
 export function getAssetUrl(imagePath: string): string {
   // Alternative method using asset protocol
   return `asset://${imagePath}`;
