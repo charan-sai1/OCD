@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import LazyImageContainer from "./LazyImageContainer";
 import { userBehaviorPredictor } from "../utils/userBehaviorPredictor";
 import { systemResourceManager } from "../utils/systemResourceManager";
@@ -20,6 +21,8 @@ interface VirtualGridProps {
   enableSmoothScroll?: boolean; // Enable Lenis smooth scrolling
   lenisConfig?: LenisConfig; // Lenis scroll configuration
   delayedLoading?: DelayedLoadConfig; // Delayed loading configuration
+  showStatusIndicator?: boolean; // Show image count indicator
+  totalFilesInDirectory?: number; // Total files in the directory (for status display)
 }
 
 // Lazy image container with intersection-based visibility detection
@@ -91,12 +94,15 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   aggressivePreloading = false,
   enableSmoothScroll = true,
   lenisConfig,
-  delayedLoading
+  delayedLoading,
+  showStatusIndicator = false,
+  totalFilesInDirectory
 }) => {
   const gridRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 });
   const [scrollVelocity, setScrollVelocity] = useState(0);
   const [preloadRange, setPreloadRange] = useState({ start: 0, end: 100 });
+  const [showAllImages, setShowAllImages] = useState(false);
   const lastScrollY = useRef(0);
   const lastScrollTime = useRef(Date.now());
   const lenisInitialized = useRef(false);
@@ -135,22 +141,37 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
 
   // Adaptive overscan based on scroll velocity for better performance
   const adaptiveOverscan = useMemo(() => {
-    if (scrollVelocity > 10) return overscan * 2; // Fast scrolling, render more
-    if (scrollVelocity > 5) return overscan * 1.5; // Medium scrolling
-    return overscan; // Slow scrolling, minimal overscan
-  }, [scrollVelocity, overscan]);
+    if (images.length <= 100) return 0; // No overscan needed for small collections
+
+    // More aggressive overscan for larger collections
+    const baseOverscan = Math.max(overscan, Math.ceil(images.length / 50)); // Scale with collection size
+
+    if (scrollVelocity > 10) return baseOverscan * 3; // Fast scrolling, render much more
+    if (scrollVelocity > 5) return baseOverscan * 2; // Medium scrolling
+    return baseOverscan; // Slow scrolling, moderate overscan
+  }, [scrollVelocity, overscan, images.length]);
 
   // Only render visible items + adaptive buffer
   const renderedImages = useMemo(() => {
-    if (images.length <= 100) {
-      return images; // Small collections: render all
+    // If user requested to show all images, or collection is small, render everything
+    if (showAllImages || images.length <= 100) {
+      return images;
     }
 
+    // For larger collections, ensure we have a reasonable visible range
+    const minVisibleItems = Math.min(50, images.length); // Always show at least 50 items
     const start = Math.max(0, visibleRange.start - adaptiveOverscan);
-    const end = Math.min(images.length, visibleRange.end + adaptiveOverscan);
+    const end = Math.min(images.length, Math.max(visibleRange.end + adaptiveOverscan, start + minVisibleItems));
 
-    return images.slice(start, end);
-  }, [images, visibleRange, adaptiveOverscan]);
+    const result = images.slice(start, end);
+
+    // Debug logging for large collections
+    if (process.env.NODE_ENV === 'development' && images.length > 500) {
+      console.log(`VirtualGrid: Rendering ${result.length} images (${start}-${end}) of ${images.length} total`);
+    }
+
+    return result;
+  }, [images, visibleRange, adaptiveOverscan, showAllImages]);
 
   // Calculate image priority based on page position
   const getImagePriority = useCallback((index: number): 'high' | 'normal' | 'low' => {
@@ -192,27 +213,23 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     // Note: We could track visibility patterns here for more sophisticated learning
   }, []);
 
-  // Unified scroll handler with optional explicit scroll position/velocity
+  // Unified scroll handler with reliable scroll detection
   const updateVisibleRange = useCallback((explicitScrollY?: number, explicitVelocity?: number) => {
     if (!gridRef.current) return;
 
     const now = Date.now();
-    // Use explicit parameters if provided, otherwise detect scroll
+
+    // Prioritize explicit scroll position (from smooth scroll libraries), fallback to window scroll
     let currentScrollY: number;
     let velocity: number;
 
     if (explicitScrollY !== undefined) {
-      // Explicit scroll position provided (from Lenis callback)
+      // Explicit scroll position provided (highest priority)
       currentScrollY = explicitScrollY;
       velocity = explicitVelocity || 0;
-    } else if (lenisScrollManager.isActive()) {
-      // Use Lenis scroll info as fallback
-      const scrollInfo = lenisScrollManager.getScrollInfo();
-      currentScrollY = scrollInfo.scroll;
-      velocity = scrollInfo.velocity;
     } else {
-      // Use native scroll detection
-      currentScrollY = window.scrollY;
+      // Use window scroll position (reliable fallback)
+      currentScrollY = window.scrollY || window.pageYOffset || 0;
       const timeDelta = now - lastScrollTime.current;
       const scrollDelta = currentScrollY - lastScrollY.current;
       velocity = timeDelta > 0 ? Math.abs(scrollDelta / (timeDelta / 1000)) : 0;
@@ -223,21 +240,31 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     lastScrollTime.current = now;
 
     const container = gridRef.current;
-    const itemHeight = container.offsetWidth / columnCount;
+    const containerRect = container.getBoundingClientRect();
+    const itemHeight = containerRect.width / columnCount;
     const visibleHeight = window.innerHeight;
-    const scrollTop = currentScrollY;
+    const scrollTop = Math.max(0, currentScrollY - containerRect.top); // Relative to container
 
-    // Calculate which rows are visible with hysteresis for smoother scrolling
-    const startRow = Math.floor(scrollTop / itemHeight) - 1; // Extra row for hysteresis
-    const endRow = Math.floor((scrollTop + visibleHeight) / itemHeight) + 1;
+    // Calculate which rows are visible with better bounds checking
+    const startRow = Math.max(0, Math.floor(scrollTop / itemHeight) - 2); // More buffer
+    const endRow = Math.min(
+      Math.ceil(images.length / columnCount),
+      Math.floor((scrollTop + visibleHeight) / itemHeight) + 3 // More buffer
+    );
 
-    // Convert rows to image indices
+    // Convert rows to image indices with safety bounds
     const startIndex = Math.max(0, startRow * columnCount);
-    const endIndex = Math.min(images.length, (endRow + 1) * columnCount);
+    const maxEndIndex = images.length;
+    const calculatedEndIndex = Math.min(maxEndIndex, (endRow + 1) * columnCount);
+    const endIndex = Math.max(startIndex + 20, calculatedEndIndex); // Minimum 20 items visible
+
+    // Ensure we don't go beyond bounds
+    const safeStartIndex = Math.min(startIndex, maxEndIndex - 20);
+    const safeEndIndex = Math.min(endIndex, maxEndIndex);
 
     setVisibleRange({
-      start: startIndex,
-      end: endIndex
+      start: safeStartIndex,
+      end: safeEndIndex
     });
 
     // Debug logging to identify scrolling issues
@@ -413,6 +440,17 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     return gridRef.current.getBoundingClientRect().width / columnCount;
   }, [columnCount]);
 
+  // Calculate total content height for proper scrolling
+  const totalContentHeight = useMemo(() => {
+    if (images.length <= 100) return 'auto'; // Let browser handle small collections
+
+    const rows = Math.ceil(images.length / columnCount);
+    const gapSize = 8; // 8px gap between items
+    const totalHeight = rows * (itemHeight + gapSize) - gapSize; // Subtract last gap
+
+    return `${totalHeight}px`;
+  }, [images.length, columnCount, itemHeight]);
+
   // Calculate distance from viewport center for loading priority
   const calculateDistanceFromViewport = useCallback((index: number): number => {
     if (!gridRef.current) return Infinity;
@@ -433,11 +471,110 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         width: "100%",
         padding: 1,
         boxSizing: "border-box",
-        // Basic container for scrolling - removed potential conflicting styles
-        overflow: "visible", // Let parent handle scrolling
         position: "relative",
+        minHeight: totalContentHeight, // Ensure container is tall enough for all content
+        overflow: "visible", // Let parent handle scrolling
       }}
     >
+      {showStatusIndicator && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 16,
+            left: 16,
+            zIndex: 1000,
+            backgroundColor: "rgba(0, 0, 0, 0.85)",
+            color: "white",
+            padding: "10px 16px",
+            borderRadius: "10px",
+            fontSize: "0.8rem",
+            fontWeight: 500,
+            backdropFilter: "blur(10px)",
+            boxShadow: "0 6px 16px rgba(0, 0, 0, 0.3)",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            minWidth: "220px",
+          }}
+        >
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Visible in Grid:</span>
+            <span style={{ fontWeight: 700, color: "#4ade80" }}>{renderedImages.length}</span>
+          </Box>
+
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Total Imported:</span>
+            <span style={{ fontWeight: 700 }}>
+              {totalFilesInDirectory !== undefined ? totalFilesInDirectory : images.length}
+            </span>
+          </Box>
+
+          {images.length > 100 && (
+            <Box sx={{ mt: "6px", pt: "6px", borderTop: "1px solid rgba(255, 255, 255, 0.2)" }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: "4px" }}>
+                <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>Scroll Progress:</span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  {Math.round((visibleRange.end / images.length) * 100)}%
+                </span>
+              </Box>
+              <Box
+                sx={{
+                  width: "100%",
+                  height: "3px",
+                  backgroundColor: "rgba(255, 255, 255, 0.2)",
+                  borderRadius: "2px",
+                  overflow: "hidden",
+                  mb: "6px",
+                }}
+              >
+                <Box
+                  sx={{
+                    width: `${Math.min(100, (visibleRange.end / images.length) * 100)}%`,
+                    height: "100%",
+                    backgroundColor: "#3b82f6",
+                    borderRadius: "2px",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </Box>
+
+              {!showAllImages && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setShowAllImages(true)}
+                  sx={{
+                    width: "100%",
+                    fontSize: "0.7rem",
+                    padding: "2px 8px",
+                    minHeight: "24px",
+                    borderColor: "rgba(255, 255, 255, 0.3)",
+                    color: "white",
+                    "&:hover": {
+                      borderColor: "rgba(255, 255, 255, 0.5)",
+                      backgroundColor: "rgba(255, 255, 255, 0.1)",
+                    },
+                  }}
+                >
+                  Load All Images
+                </Button>
+              )}
+
+              {showAllImages && (
+                <Box sx={{
+                  fontSize: "0.7rem",
+                  color: "#4ade80",
+                  textAlign: "center",
+                  fontWeight: 600
+                }}>
+                  ✓ All images loaded
+                </Box>
+              )}
+            </Box>
+          )}
+        </Box>
+      )}
       <Box
         sx={{
           display: "grid",

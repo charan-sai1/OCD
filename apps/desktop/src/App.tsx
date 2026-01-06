@@ -84,8 +84,9 @@ function App() {
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
-   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
-   const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
+  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [totalFilesInDirectory, setTotalFilesInDirectory] = useState<number | undefined>(undefined);
    const [optimizationState, setOptimizationState] = useState<OptimizationState>({
      isScanning: false,
      isGenerating: false,
@@ -142,6 +143,7 @@ function App() {
       });
     } else {
       setImages([]);
+      setTotalFilesInDirectory(0);
       setIsLoadingImages(false);
     }
   }, [directoryPaths]);
@@ -379,6 +381,7 @@ function App() {
       );
 
       setImages(allImagePaths);
+      setTotalFilesInDirectory(allImagePaths.length);
       setLoadingProgress(100);
 
       performanceMonitor.end('total-image-loading');
@@ -457,6 +460,7 @@ function App() {
 
         console.log(`Fallback scanning complete - total unique images: ${allImagePaths.length}`);
         setImages(allImagePaths);
+        setTotalFilesInDirectory(allImagePaths.length);
         setLoadingProgress(100);
 
         setTimeout(() => {
@@ -516,17 +520,30 @@ function App() {
 
         console.log(`Found ${allPaths.length} total images`);
 
-        // Take only the first N images for initial load
-        const initialPaths = allPaths.slice(0, initialImageCount);
+        // For smaller collections (< 1000 images), load all at once
+        // For larger collections, use progressive loading
+        if (allPaths.length <= 1000) {
+          console.log(`Loading all ${allPaths.length} images at once`);
+          setImages(allPaths);
+          setTotalFilesInDirectory(allPaths.length);
+          setLoadingProgress(100);
+          setTimeout(() => {
+            setIsLoadingImages(false);
+          }, 1000);
+        } else {
+          // Take only the first N images for initial load
+          const initialPaths = allPaths.slice(0, initialImageCount);
 
-        console.log(`Loading ${initialPaths.length} initial images`);
-        setImages(initialPaths);
-        setLoadingProgress(100);
+          console.log(`Loading ${initialPaths.length} initial images (${allPaths.length} total)`);
+          setImages(initialPaths);
+          setTotalFilesInDirectory(allPaths.length);
+          setLoadingProgress(100);
 
-        // Start background loading of remaining images asynchronously
-        asyncScheduler.schedule(() => {
-          loadRemainingImages(allPaths, initialImageCount);
-        }, { timeout: 2000 }); // Timeout ensures it runs even if not idle
+          // Start background loading of remaining images asynchronously
+          asyncScheduler.schedule(() => {
+            loadRemainingImages(allPaths, initialImageCount);
+          }, { timeout: 2000 }); // Timeout ensures it runs even if not idle
+        }
 
       } catch (error) {
         console.error("Error loading initial viewport images:", error);
@@ -697,6 +714,8 @@ function App() {
                   directoryPaths={directoryPaths}
                   imageSize={imageSize}
                   isLoadingImages={isLoadingImages}
+                  showStatusIndicator={true}
+                  totalFilesInDirectory={totalFilesInDirectory}
                 />
               ) : selectedSection === "folders" ? (
               <FolderView
@@ -706,14 +725,22 @@ function App() {
               />
              ) : selectedSection === "devices" ? (
                <DeviceBrowser
-                 onFileSelect={async (files: string[]) => {
-                   // When images are selected from a device, add them to the current images
-                   setImages((prev) => [...prev, ...files]);
-                 }}
-                 onImportImages={(importedImages: string[]) => {
-                   // When images are imported from a device, add them to the current images
-                   setImages((prev) => [...prev, ...importedImages]);
-                 }}
+                  onFileSelect={async (files: string[]) => {
+                    // When images are selected from a device, add them to the current images
+                    setImages((prev) => {
+                      const newImages = [...prev, ...files];
+                      setTotalFilesInDirectory(newImages.length);
+                      return newImages;
+                    });
+                  }}
+                  onImportImages={(importedImages: string[]) => {
+                    // When images are imported from a device, add them to the current images
+                    setImages((prev) => {
+                      const newImages = [...prev, ...importedImages];
+                      setTotalFilesInDirectory(newImages.length);
+                      return newImages;
+                    });
+                  }}
                />
              ) : selectedSection === "faces" ? (
                <FaceRecognitionPanel

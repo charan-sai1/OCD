@@ -14,6 +14,8 @@ interface PhotoGridProps {
   directoryPaths: string[];
   imageSize: number;
   isLoadingImages?: boolean;
+  showStatusIndicator?: boolean;
+  totalFilesInDirectory?: number;
 }
 
 // Fast image component for ImageList
@@ -94,6 +96,8 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
   directoryPaths,
   imageSize,
   isLoadingImages = false,
+  showStatusIndicator = false,
+  totalFilesInDirectory,
 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const theme = useTheme();
@@ -185,6 +189,8 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
             imageSize={imageSize}
             pagesToPreload={2}
             enableSmoothScroll={false}
+            showStatusIndicator={showStatusIndicator}
+            totalFilesInDirectory={totalFilesInDirectory}
             onImageClick={(imagePath) => {
               console.log('Image clicked:', imagePath);
             }}
