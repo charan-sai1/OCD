@@ -71,54 +71,83 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   const thumbnailStyles = useMemo(() => ({
     container: {
       flexShrink: 0,
-      width: isImmersiveMode ? 48 : 56,
-      height: isImmersiveMode ? 48 : 56,
-      borderRadius: 2,
+      width: 60,
+      height: 60,
+      borderRadius: '12px',
       overflow: 'hidden',
       cursor: isTransitioning ? 'default' : 'pointer',
-      border: '2px solid transparent',
-      opacity: isImmersiveMode ? 0.5 : 0.6,
+      border: '2px solid rgba(255, 255, 255, 0.2)',
+      opacity: 0.8,
       transform: 'scale(1)',
       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       position: 'relative' as const,
-      backgroundColor: 'rgba(255, 255, 255, 0.05)'
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      backdropFilter: 'blur(10px) saturate(150%)',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: '12px',
+        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 100%)',
+        opacity: 0,
+        transition: 'opacity 0.3s ease',
+        zIndex: 1,
+      }
     },
     active: {
       opacity: 1,
-      transform: isImmersiveMode ? 'scale(1.05)' : 'scale(1.1)',
-      border: '2px solid white',
-      boxShadow: isImmersiveMode ? '0 0 0 1px rgba(255, 255, 255, 0.2)' : '0 0 0 2px rgba(255, 255, 255, 0.3)'
+      transform: 'scale(1.15)',
+      border: '3px solid rgba(255, 255, 255, 0.9)',
+      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+      '&::before': {
+        opacity: 1,
+      }
     },
     transitioning: {
-      opacity: isImmersiveMode ? 0.7 : 0.8,
-      transform: isImmersiveMode ? 'scale(1.02)' : 'scale(1.05)'
+      opacity: 0.9,
+      transform: 'scale(1.08)'
     },
     hover: {
       opacity: 1,
-      transform: isImmersiveMode ? 'scale(1.1)' : 'scale(1.15)',
-      boxShadow: isImmersiveMode ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.5)'
+      transform: 'scale(1.2)',
+      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
+      border: '2px solid rgba(255, 255, 255, 0.4)',
+      '&::before': {
+        opacity: 0.8,
+      }
     },
     loading: {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       width: '100%',
-      height: '100%'
+      height: '100%',
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: '10px',
+      backdropFilter: 'blur(5px)',
     },
     pulse: {
       position: 'absolute' as const,
-      top: 2,
-      right: 2,
-      width: 6,
-      height: 6,
+      top: 3,
+      right: 3,
+      width: 8,
+      height: 8,
       borderRadius: '50%',
-      backgroundColor: '#2196f3',
-      animation: 'pulse 1.5s ease-in-out infinite'
+      backgroundColor: 'rgba(33, 150, 243, 0.8)',
+      backdropFilter: 'blur(4px)',
+      border: '1px solid rgba(255, 255, 255, 0.3)',
+      boxShadow: '0 2px 8px rgba(33, 150, 243, 0.4)',
+      animation: 'pulse 1.5s ease-in-out infinite',
+      zIndex: 2,
     }
   }), [isTransitioning, isImmersiveMode]);
 
-  // Show minimal navigation even in immersive mode
-  if (images.length <= 1) return null;
+  // Hide in immersive mode for true full-screen experience
+  if (images.length <= 1 || isImmersiveMode) return null;
 
   // Calculate total width for virtual scrolling
   const totalWidth = images.length * THUMBNAIL_WIDTH;
@@ -129,39 +158,52 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
       onScroll={handleScroll}
       sx={{
         position: 'fixed',
-        bottom: isImmersiveMode ? 20 : 100,
+        bottom: 30,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: isImmersiveMode ? '95vw' : '90vw',
-        maxWidth: isImmersiveMode ? 1200 : 800,
-        height: isImmersiveMode ? 60 : 80,
-        backgroundColor: isImmersiveMode ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.9)',
-        backdropFilter: isImmersiveMode ? 'blur(10px)' : 'blur(20px)',
-        borderRadius: isImmersiveMode ? 2 : 3,
+        width: '90vw',
+        maxWidth: 1200,
+        height: 85,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backdropFilter: 'blur(25px) saturate(180%)',
+        borderRadius: 35,
         display: 'flex',
         alignItems: 'center',
-        px: 1,
+        justifyContent: 'center',
+        px: 2,
         overflowX: 'auto',
         overflowY: 'hidden',
         scrollbarWidth: 'thin',
-        scrollbarColor: isImmersiveMode ? 'rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0.3)',
-        border: isImmersiveMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(255, 255, 255, 0.15)',
-        boxShadow: isImmersiveMode ? '0 4px 16px rgba(0, 0, 0, 0.4)' : '0 8px 32px rgba(0, 0, 0, 0.6)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        opacity: isTransitioning ? 0.7 : (isImmersiveMode ? 0.8 : 1),
+        scrollbarColor: 'rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        opacity: isTransitioning ? 0.7 : 0.95,
         zIndex: 1300,
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 35,
+          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.02) 100%)',
+          opacity: 0.8,
+          pointerEvents: 'none',
+        },
         '&::-webkit-scrollbar': {
-          height: 4
+          height: 6
         },
         '&::-webkit-scrollbar-track': {
-          backgroundColor: 'rgba(0, 0, 0, 0.4)',
-          borderRadius: 2
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: 3
         },
         '&::-webkit-scrollbar-thumb': {
-          backgroundColor: 'rgba(255, 255, 255, 0.4)',
-          borderRadius: 2,
+          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+          borderRadius: 3,
           '&:hover': {
-            backgroundColor: 'rgba(255, 255, 255, 0.6)'
+            backgroundColor: 'rgba(255, 255, 255, 0.5)'
           }
         }
       }}
@@ -202,8 +244,10 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    filter: isActive ? 'brightness(1.1) contrast(1.1)' : 'none',
-                    transition: 'filter 0.3s ease'
+                    borderRadius: '10px',
+                    filter: isActive ? 'brightness(1.2) contrast(1.1) saturate(1.1)' : 'brightness(0.9) contrast(0.95)',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transform: isActive ? 'scale(1.05)' : 'scale(1)',
                   }}
                 />
               ) : (

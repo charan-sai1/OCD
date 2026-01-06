@@ -32,6 +32,7 @@ sysinfo = "0.30"
    linfa = "0.7"
    linfa-clustering = "0.7"
    rusqlite = { version = "0.31", features = ["bundled"] }
+   tempfile = "3.0"
 
 [features]
 default = ["custom-protocol"]

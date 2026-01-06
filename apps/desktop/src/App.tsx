@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import React, { Suspense, lazy } from "react";
@@ -28,6 +28,7 @@ const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
 const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
 const SearchBar = lazy(() => import("./components/SearchBar"));
 const FaceRecognitionPanel = lazy(() => import("./components/FaceRecognitionPanel"));
+const ImageViewerModal = lazy(() => import("./components/ImageViewerModal"));
 import { open } from "@tauri-apps/plugin-dialog";
 import { performanceMonitor } from "./utils/performanceMonitor";
 import { workerManager } from "./utils/workerManager";
@@ -87,16 +88,20 @@ function App() {
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [totalFilesInDirectory, setTotalFilesInDirectory] = useState<number | undefined>(undefined);
-   const [optimizationState, setOptimizationState] = useState<OptimizationState>({
-     isScanning: false,
-     isGenerating: false,
-     scanProgress: 0,
-     generationProgress: 0,
-     totalImages: 0,
-     processedImages: 0,
-     currentFile: undefined,
-     canMinimize: true
-   });
+  const [optimizationState, setOptimizationState] = useState<OptimizationState>({
+      isScanning: false,
+      isGenerating: false,
+      scanProgress: 0,
+      generationProgress: 0,
+      totalImages: 0,
+      processedImages: 0,
+      currentFile: undefined,
+      canMinimize: true
+    });
+
+  // Image viewer modal state
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState<boolean>(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
 
   // Register service worker for caching (only in production)
   useEffect(() => {
@@ -498,6 +503,18 @@ function App() {
     console.log("Import functionality to be implemented");
   };
 
+  const handleImageClick = useCallback((imagePath: string) => {
+    const index = images.findIndex(img => img === imagePath);
+    if (index !== -1) {
+      setCurrentImageIndex(index);
+      setIsImageViewerOpen(true);
+    }
+  }, [images]);
+
+  const handleImageChange = useCallback((newIndex: number) => {
+    setCurrentImageIndex(newIndex);
+  }, []);
+
   const loadInitialViewportImages = async () => {
     // Schedule initial loading asynchronously to prevent blocking
     asyncScheduler.schedule(async () => {
@@ -716,6 +733,7 @@ function App() {
                   isLoadingImages={isLoadingImages}
                   showStatusIndicator={true}
                   totalFilesInDirectory={totalFilesInDirectory}
+                  onImageClick={handleImageClick}
                 />
               ) : selectedSection === "folders" ? (
               <FolderView
@@ -915,8 +933,19 @@ function App() {
           setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false }));
         }}
       />
+
+      {/* Image Viewer Modal */}
+      <Suspense fallback={null}>
+        <ImageViewerModal
+          open={isImageViewerOpen}
+          onClose={() => setIsImageViewerOpen(false)}
+          images={images}
+          currentImageIndex={currentImageIndex}
+          onImageChange={handleImageChange}
+        />
+      </Suspense>
+
     </ThemeProvider>
   );
 }
-
 export default App;

@@ -10,7 +10,6 @@ import useTouchGestures from '../hooks/useTouchGestures';
 
 import ImageViewerCore from './ImageViewerCore';
 import ImageViewerControls from './ImageViewerControls';
-import ImageViewerInfo from './ImageViewerInfo';
 
 const PreviewStrip = React.lazy(() => import('./ImageViewerPreviewStrip').catch(() => ({ default: () => null })));
 
@@ -45,8 +44,7 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
 }) => {
   // Core state
   const [currentIndex, setCurrentIndex] = useState(currentImageIndex);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [rotation, setRotation] = useState(0);
+   const [zoomLevel, setZoomLevel] = useState(1);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
   const [isSlideshowActive, setIsSlideshowActive] = useState(false);
@@ -148,19 +146,18 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }, 16); // Next frame
 
     // Complete transition after CSS animation duration
-    setTimeout(() => {
-      onImageChange?.(newIndex);
-      setTransitionState({
-        isTransitioning: false,
-        direction: null,
-        progress: 0,
-        startIndex: newIndex,
-        targetIndex: newIndex
-      });
-      // Reset zoom and rotation for new image
-      setZoomLevel(1);
-      setRotation(0);
-    }, TRANSITION_DURATION);
+       setTimeout(() => {
+         onImageChange?.(newIndex);
+         setTransitionState({
+           isTransitioning: false,
+           direction: null,
+           progress: 0,
+           startIndex: newIndex,
+           targetIndex: newIndex
+         });
+         // Reset zoom for new image
+         setZoomLevel(1);
+       }, TRANSITION_DURATION);
   }, [currentIndex, images.length, transitionState.isTransitioning, onImageChange]);
 
   // Update current index when prop changes
@@ -367,25 +364,9 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     });
   }, []);
 
-  const handleRotateLeft = useCallback(() => {
-    setRotation(prev => (prev - 90) % 360);
-  }, []);
 
-  const handleRotateRight = useCallback(() => {
-    setRotation(prev => (prev + 90) % 360);
-  }, []);
 
-  const handleFitToScreen = useCallback(() => {
-    setZoomLevel(1);
-    setRotation(0);
-  }, []);
-
-  const handleActualSize = useCallback(() => {
-    setZoomLevel(1); // Assuming 1 = 100% actual size
-    // Could add logic to calculate actual size based on image dimensions
-  }, []);
-
-  const handleShare = useCallback(async () => {
+   const handleShare = useCallback(async () => {
     const currentImage = images[currentIndex];
     const cachedImage = imageCache[currentIndex];
     if (!cachedImage) return;
@@ -509,8 +490,7 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
           startIndex: index,
           targetIndex: index
         });
-        setZoomLevel(1);
-        setRotation(0);
+         setZoomLevel(1);
       }, TRANSITION_DURATION);
     }, [currentIndex, transitionState.isTransitioning, onImageChange, imageCache, loadingStates, loadImage]);
 
@@ -656,45 +636,30 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
         >
           {/* Core image viewer functionality */}
           <ImageViewerCore
-            currentIndex={currentIndex}
-            onClose={onClose}
-            isImmersiveMode={isImmersiveMode}
-            onToggleImmersiveMode={() => setIsImmersiveMode(prev => !prev)}
-            zoomLevel={zoomLevel}
-            rotation={rotation}
-            transitionState={transitionState}
-            displayImage={displayImage}
-            imageName={imageName}
-            isCurrentLoading={isCurrentLoading}
-          />
+             currentIndex={currentIndex}
+             isImmersiveMode={isImmersiveMode}
+             onToggleImmersiveMode={() => setIsImmersiveMode(prev => !prev)}
+             zoomLevel={zoomLevel}
+             transitionState={transitionState}
+             displayImage={displayImage}
+             imageName={imageName}
+             isCurrentLoading={isCurrentLoading}
+           />
 
           {/* Zoom and rotation controls */}
           <ImageViewerControls
             zoomLevel={zoomLevel}
-            rotation={rotation}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             onResetZoom={() => setZoomLevel(1)}
-            onRotateLeft={handleRotateLeft}
-            onRotateRight={handleRotateRight}
-            onFitToScreen={handleFitToScreen}
-            onActualSize={handleActualSize}
             onShare={handleShare}
             onDownload={handleDownload}
             onToggleSlideshow={handleToggleSlideshow}
+            onClose={onClose}
             isSlideshowActive={isSlideshowActive}
             isTransitioning={transitionState.isTransitioning}
             isImmersiveMode={isImmersiveMode}
-          />
-
-          {/* Image info display */}
-          <ImageViewerInfo
-            imageName={imageName}
-            currentIndex={currentIndex}
-            totalImages={images.length}
-            metadata={imageMetadata[currentIndex]}
-            isImmersiveMode={isImmersiveMode}
-            isTransitioning={transitionState.isTransitioning}
+            displayImage={displayImage}
           />
 
           {/* Lazy-loaded preview strip */}

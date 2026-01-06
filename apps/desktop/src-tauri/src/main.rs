@@ -10,6 +10,8 @@ use walkdir::WalkDir;
 mod database;
 mod face_recognition;
 mod sqlite_db;
+#[cfg(test)]
+mod tests;
 
 use face_recognition::{FaceRecognitionService, ProcessingMode};
 
@@ -117,7 +119,7 @@ async fn list_files(path: &str, file_type: &str) -> Result<Vec<String>, String> 
                 tokio::task::yield_now().await;
             }
         }
-    } 
+    }
 
     Ok(files)
 }
@@ -855,8 +857,8 @@ async fn process_next_image() -> Result<bool, String> {
 
 #[tauri::command]
 fn process_folder(folder_path: String) -> Result<serde_json::Value, String> {
-    use walkdir::WalkDir;
     use std::path::Path;
+    use walkdir::WalkDir;
 
     let folder_path = Path::new(&folder_path);
     if !folder_path.exists() || !folder_path.is_dir() {
@@ -907,26 +909,22 @@ fn process_folder(folder_path: String) -> Result<serde_json::Value, String> {
 
     // Run clustering on all detected faces
     match service_guard.cluster_faces() {
-        Ok(clustering_result) => {
-            Ok(serde_json::json!({
-                "success": true,
-                "folderPath": folder_path.to_string_lossy(),
-                "imagesProcessed": image_paths.len(),
-                "totalFacesDetected": total_faces,
-                "peopleCreated": clustering_result.person_groups.len(),
-                "processingTime": processing_time
-            }))
-        }
-        Err(e) => {
-            Ok(serde_json::json!({
-                "success": false,
-                "folderPath": folder_path.to_string_lossy(),
-                "imagesProcessed": image_paths.len(),
-                "totalFacesDetected": total_faces,
-                "error": e,
-                "processingTime": processing_time
-            }))
-        }
+        Ok(clustering_result) => Ok(serde_json::json!({
+            "success": true,
+            "folderPath": folder_path.to_string_lossy(),
+            "imagesProcessed": image_paths.len(),
+            "totalFacesDetected": total_faces,
+            "peopleCreated": clustering_result.person_groups.len(),
+            "processingTime": processing_time
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "success": false,
+            "folderPath": folder_path.to_string_lossy(),
+            "imagesProcessed": image_paths.len(),
+            "totalFacesDetected": total_faces,
+            "error": e,
+            "processingTime": processing_time
+        })),
     }
 }
 
@@ -934,9 +932,18 @@ fn process_folder(folder_path: String) -> Result<serde_json::Value, String> {
 fn get_face_statistics() -> Result<serde_json::Value, String> {
     let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
 
-    let face_count = service_guard.database.get_face_count().map_err(|e| e.to_string())?;
-    let person_count = service_guard.database.get_person_count().map_err(|e| e.to_string())?;
-    let faces = service_guard.database.get_faces().map_err(|e| e.to_string())?;
+    let face_count = service_guard
+        .database
+        .get_face_count()
+        .map_err(|e| e.to_string())?;
+    let person_count = service_guard
+        .database
+        .get_person_count()
+        .map_err(|e| e.to_string())?;
+    let faces = service_guard
+        .database
+        .get_faces()
+        .map_err(|e| e.to_string())?;
 
     // Calculate some statistics
     let avg_confidence = if !faces.is_empty() {
@@ -956,7 +963,10 @@ fn get_face_statistics() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn clear_database() -> Result<(), String> {
     let service_guard = FACE_RECOGNITION_SERVICE.lock().map_err(|e| e.to_string())?;
-    service_guard.database.clear_all().map_err(|e| e.to_string())?;
+    service_guard
+        .database
+        .clear_all()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

@@ -1,12 +1,5 @@
 import React, { useCallback } from 'react';
-import { Box, IconButton, Typography, Paper } from '@mui/material';
-
-// Lightweight inline SVG icons (Apple-style)
-const CloseIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/>
-  </svg>
-);
+import { Box, Typography, Paper } from '@mui/material';
 
 interface CachedImage {
   url: string;
@@ -24,11 +17,9 @@ interface TransitionState {
 
 interface ImageViewerCoreProps {
   currentIndex: number;
-  onClose: () => void;
   isImmersiveMode: boolean;
   onToggleImmersiveMode: () => void;
   zoomLevel: number;
-  rotation: number;
   transitionState: TransitionState;
   displayImage: CachedImage | undefined;
   imageName: string;
@@ -37,11 +28,9 @@ interface ImageViewerCoreProps {
 
 const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
   currentIndex,
-  onClose,
   isImmersiveMode,
   onToggleImmersiveMode,
   zoomLevel,
-  rotation,
   transitionState,
   displayImage,
   imageName,
@@ -115,49 +104,6 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
 
   return (
     <>
-      {/* Close button and immersive mode indicator */}
-      <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1300, display: 'flex', gap: 1 }}>
-        {isImmersiveMode && (
-          <Box
-            sx={{
-              backgroundColor: 'rgba(0, 0, 0, 0.7)',
-              backdropFilter: 'blur(10px)',
-              borderRadius: 2,
-              px: 2,
-              py: 0.5,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              fontSize: '0.75rem',
-              color: 'white',
-              fontWeight: 500
-            }}
-            role="status"
-            aria-live="polite"
-          >
-            Immersive Mode
-          </Box>
-        )}
-        <IconButton
-          onClick={onClose}
-          disabled={transitionState.isTransitioning}
-          aria-label="Close image viewer"
-          sx={{
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            color: 'white',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              backgroundColor: 'rgba(0, 0, 0, 0.7)',
-              transform: 'scale(1.1)'
-            },
-            '&:disabled': {
-              opacity: 0.5
-            }
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
-      </Box>
 
 
 
@@ -259,28 +205,30 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
           }}
         >
           {displayImage ? (
-            <img
-              src={displayImage.url}
-              alt={imageName}
-              style={{
-                width: zoomLevel > 1 ? `${100 * zoomLevel}vw` : '100%',
-                height: zoomLevel > 1 ? `${100 * zoomLevel}vh` : '100%',
-                objectFit: zoomLevel > 1 ? 'none' : 'contain',
-                borderRadius: zoomLevel > 1 ? 0 : 8,
-                boxShadow: zoomLevel > 1 ? 'none' : '0 8px 32px rgba(0, 0, 0, 0.3)',
-                transition: zoomLevel === 1 ? 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
-                cursor: zoomLevel > 1 ? 'grab' : 'default',
-                // Performance optimizations and rotation with pan support
-                transform: `translateZ(0) translate(${panPosition.x}px, ${panPosition.y}px) rotate(${rotation}deg)`,
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden',
-                // Proper sizing for zoom levels
-                transformOrigin: 'center center',
-                // Ensure image fills viewport when not zoomed
-                minWidth: zoomLevel === 1 ? '100%' : 'auto',
-                minHeight: zoomLevel === 1 ? '100%' : 'auto'
-              }}
-            />
+             <img
+               src={displayImage.url}
+               alt={imageName}
+               style={{
+                 width: zoomLevel > 1 ? `${100 * zoomLevel}vw` : '100vw',
+                 height: zoomLevel > 1 ? `${100 * zoomLevel}vh` : '100vh',
+                 objectFit: zoomLevel > 1 ? 'none' : 'contain',
+                 borderRadius: zoomLevel > 1 ? 0 : 8,
+                 boxShadow: zoomLevel > 1 ? 'none' : '0 8px 32px rgba(0, 0, 0, 0.3)',
+                 transition: zoomLevel === 1 ? 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+                 cursor: zoomLevel > 1 ? 'grab' : 'default',
+                 // Performance optimizations with pan support
+                 transform: `translateZ(0) translate(${panPosition.x}px, ${panPosition.y}px)`,
+                 backfaceVisibility: 'hidden',
+                 WebkitBackfaceVisibility: 'hidden',
+                 // Proper sizing for zoom levels
+                 transformOrigin: 'center center',
+                 // Ensure image fills viewport when not zoomed
+                 minWidth: zoomLevel === 1 ? '100vw' : 'auto',
+                 minHeight: zoomLevel === 1 ? '100vh' : 'auto',
+                 maxWidth: zoomLevel === 1 ? '100vw' : 'none',
+                 maxHeight: zoomLevel === 1 ? '100vh' : 'none'
+               }}
+             />
           ) : (
             <Paper
               sx={{
