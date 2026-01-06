@@ -150,12 +150,19 @@ function App() {
 
   // Handle scroll detection for search bar visibility
   useEffect(() => {
+    let scrollCount = 0;
     const handleScroll = () => {
       const scrollY = window.scrollY || window.pageYOffset;
       setIsScrolled(scrollY > 50); // Hide search bar when scrolled down more than 50px
+
+      // Debug logging for scroll issues
+      scrollCount++;
+      if (scrollCount % 20 === 0 && process.env.NODE_ENV === 'development') {
+        console.log('App: Scroll event detected', { scrollY, scrollCount, timestamp: Date.now() });
+      }
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 

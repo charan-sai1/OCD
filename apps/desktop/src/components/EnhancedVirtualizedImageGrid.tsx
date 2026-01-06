@@ -139,7 +139,6 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 100 });
   const [scrollVelocity, setScrollVelocity] = useState(0);
   const [preloadRange, setPreloadRange] = useState({ start: 0, end: 100 });
-
   const lastScrollY = useRef(0);
   const lastScrollTime = useRef(Date.now());
   const lenisInitialized = useRef(false);
@@ -282,6 +281,17 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
       start: startIndex,
       end: endIndex
     });
+
+    // Debug logging to identify scrolling issues
+    if (process.env.NODE_ENV === 'development') {
+      console.log('VirtualGrid: Updated visible range', {
+        startIndex,
+        endIndex,
+        currentScrollY,
+        velocity,
+        renderedImagesCount: renderedImages.length
+      });
+    }
 
     // Apple-style intelligence: predict and preload based on behavior
     const currentPosition = Math.floor(scrollTop / (container.offsetWidth / columnCount));
@@ -465,9 +475,9 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         width: "100%",
         padding: 1,
         boxSizing: "border-box",
-        // Hardware acceleration for smooth scrolling
-        transform: "translateZ(0)",
-        willChange: "transform",
+        // Basic container for scrolling - removed potential conflicting styles
+        overflow: "visible", // Let parent handle scrolling
+        position: "relative",
       }}
     >
       <Box

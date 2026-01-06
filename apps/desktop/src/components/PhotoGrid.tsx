@@ -176,15 +176,15 @@ const PhotoGrid: React.FC<PhotoGridProps> = memo(({
     if (images.length === 0 && directoryPaths.length > 0) {
       return renderNoImages();
     }
-      // Use enhanced virtual scrolling for large collections (>50 images)
-      // Basic version first to test scrolling
-      if (images.length > 50) {
+      // Temporarily use regular grid for testing scrolling issues
+      // TODO: Re-enable virtual scrolling after fixing scroll conflicts
+      if (images.length > 100) {  // Only for very large collections
         return (
           <EnhancedVirtualizedImageGrid
             images={images}
             imageSize={imageSize}
-            pagesToPreload={1}  // Minimal preloading
-            enableSmoothScroll={false}  // Disable Lenis for now
+            pagesToPreload={1}
+            enableSmoothScroll={false}
             onImageClick={(imagePath) => {
               console.log('Image clicked:', imagePath);
             }}
