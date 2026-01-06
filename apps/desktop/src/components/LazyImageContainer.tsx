@@ -12,7 +12,6 @@ interface LazyImageContainerProps {
   onLoad?: () => void;
   onError?: (error: string) => void;
   placeholderVariant?: 'skeleton' | 'shimmer' | 'simple';
-  transitionDuration?: number;
   priority?: 'high' | 'normal' | 'low';
 }
 
@@ -27,11 +26,9 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   onLoad,
   onError,
   placeholderVariant = 'shimmer',
-  transitionDuration = 300,
   priority = 'normal'
 }) => {
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
-  const [showPlaceholder, setShowPlaceholder] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const hasBeenVisible = useRef(false);
 
@@ -43,9 +40,21 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('LazyImage intersection:', {
+              imagePath: imagePath.split('/').pop(),
+              isIntersecting: entry.isIntersecting,
+              hasBeenVisible: hasBeenVisible.current
+            });
+          }
+
           if (entry.isIntersecting && !hasBeenVisible.current) {
             hasBeenVisible.current = true;
             setLoadingState('loading');
+
+            if (process.env.NODE_ENV === 'development') {
+              console.log('LazyImage: Starting load for', imagePath.split('/').pop());
+            }
           }
         });
       },
@@ -64,23 +73,23 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
 
   // Handle image load completion
   const handleImageLoad = useCallback(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('LazyImage: Image loaded successfully', imagePath.split('/').pop());
+    }
+
     setLoadingState('loaded');
     onLoad?.();
-
-    // Smooth transition to hide placeholder
-    setTimeout(() => {
-      setShowPlaceholder(false);
-    }, 50); // Small delay for smooth transition
-  }, [onLoad]);
+  }, [onLoad, imagePath]);
 
   // Handle image load error
   const handleImageError = useCallback((error: string) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('LazyImage: Image load failed', imagePath.split('/').pop(), error);
+    }
+
     setLoadingState('error');
     onError?.(error);
-
-    // Keep placeholder visible on error
-    setShowPlaceholder(true);
-  }, [onError]);
+  }, [onError, imagePath]);
 
   return (
     <Box
@@ -93,90 +102,57 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
         aspectRatio: aspectRatio.toString(),
         cursor: onClick ? 'pointer' : 'default',
         borderRadius: 2,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        border: '2px solid transparent',
+        '&:hover': {
+          borderColor: 'primary.main'
+        }
       }}
     >
-      {/* Placeholder Layer */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          opacity: showPlaceholder ? 1 : 0,
-          transition: `opacity ${transitionDuration}ms ease-out`,
-          zIndex: 1
-        }}
-      >
+      {/* Show placeholder initially */}
+      {loadingState !== 'loaded' && (
         <ImagePlaceholder
-          width={width}
-          height={height}
           aspectRatio={aspectRatio}
           showLoadingIndicator={loadingState === 'loading'}
           variant={loadingState === 'error' ? 'simple' : placeholderVariant}
         />
-      </Box>
-
-      {/* Actual Image Layer */}
-      {loadingState === 'loading' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            opacity: showPlaceholder ? 0 : 1,
-            transition: `opacity ${transitionDuration}ms ease-in`,
-            zIndex: 2
-          }}
-        >
-          <FastImage
-            imagePath={imagePath}
-            alt={`Image ${imagePath.split('/').pop()}`}
-            width={width}
-            height={height}
-            priority={priority}
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius: 8
-            }}
-          />
-        </Box>
       )}
 
-      {/* Error State Overlay */}
-      {loadingState === 'error' && (
+      {/* Show actual image when loaded */}
+      {loadingState === 'loaded' && (
+        <FastImage
+          imagePath={imagePath}
+          alt={`Image ${imagePath.split('/').pop()}`}
+          width={width}
+          height={height}
+          priority={priority}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius: 8
+          }}
+        />
+      )}
+
+      {/* Debug info */}
+      {process.env.NODE_ENV === 'development' && (
         <Box
           sx={{
             position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
+            top: 4,
+            right: 4,
             backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 2,
-            zIndex: 3
+            color: 'white',
+            fontSize: '0.6rem',
+            padding: '2px 4px',
+            borderRadius: 1,
+            zIndex: 10
           }}
         >
-          <Box
-            sx={{
-              color: 'white',
-              textAlign: 'center',
-              fontSize: '0.75rem',
-              px: 1
-            }}
-          >
-            Failed to load
-          </Box>
+          {loadingState}
         </Box>
       )}
     </Box>

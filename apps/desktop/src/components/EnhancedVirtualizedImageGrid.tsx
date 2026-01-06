@@ -74,7 +74,6 @@ const LazyImageWithIntersection: React.FC<{
         console.warn(`Image failed to load: ${imagePath}`, error);
       }}
       placeholderVariant="shimmer"
-      transitionDuration={300}
       priority={currentPriority}
     />
   );
