@@ -65,6 +65,7 @@ class LenisScrollManager {
           easing: defaultConfig.easing,
         });
 
+        console.log('Lenis initialized successfully');
         // Set up scroll event handling
         this.setupScrollEvents();
 

@@ -235,21 +235,33 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     // Note: We could track visibility patterns here for more sophisticated learning
   }, []);
 
-  // Enhanced scroll handler with magical coordination between Lenis and delayed loading
-  const updateVisibleRange = useCallback(() => {
+  // Unified scroll handler with optional explicit scroll position/velocity
+  const updateVisibleRange = useCallback((explicitScrollY?: number, explicitVelocity?: number) => {
     if (!gridRef.current) return;
 
     const now = Date.now();
-    // Use Lenis scroll position if available, fallback to native
-    const scrollInfo = lenisScrollManager.isActive() ? lenisScrollManager.getScrollInfo() : null;
-    const currentScrollY = scrollInfo ? scrollInfo.scroll : window.scrollY;
-    const timeDelta = now - lastScrollTime.current;
-    const scrollDelta = currentScrollY - lastScrollY.current;
+    // Use explicit parameters if provided, otherwise detect scroll
+    let currentScrollY: number;
+    let velocity: number;
 
-    // Calculate scroll velocity (pixels per second)
-    const velocity = scrollInfo ? scrollInfo.velocity : (timeDelta > 0 ? Math.abs(scrollDelta / (timeDelta / 1000)) : 0);
+    if (explicitScrollY !== undefined) {
+      // Explicit scroll position provided (from Lenis callback)
+      currentScrollY = explicitScrollY;
+      velocity = explicitVelocity || 0;
+    } else if (lenisScrollManager.isActive()) {
+      // Use Lenis scroll info as fallback
+      const scrollInfo = lenisScrollManager.getScrollInfo();
+      currentScrollY = scrollInfo.scroll;
+      velocity = scrollInfo.velocity;
+    } else {
+      // Use native scroll detection
+      currentScrollY = window.scrollY;
+      const timeDelta = now - lastScrollTime.current;
+      const scrollDelta = currentScrollY - lastScrollY.current;
+      velocity = timeDelta > 0 ? Math.abs(scrollDelta / (timeDelta / 1000)) : 0;
+    }
+
     setScrollVelocity(velocity);
-
     lastScrollY.current = currentScrollY;
     lastScrollTime.current = now;
 
@@ -262,8 +274,6 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     const startRow = Math.floor(scrollTop / itemHeight) - 1; // Extra row for hysteresis
     const endRow = Math.floor((scrollTop + visibleHeight) / itemHeight) + 1;
 
-
-
     // Convert rows to image indices
     const startIndex = Math.max(0, startRow * columnCount);
     const endIndex = Math.min(images.length, (endRow + 1) * columnCount);
@@ -275,6 +285,8 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
 
     // Apple-style intelligence: predict and preload based on behavior
     const currentPosition = Math.floor(scrollTop / (container.offsetWidth / columnCount));
+    // Calculate scroll direction based on last scroll position
+    const scrollDelta = currentScrollY - lastScrollY.current;
     const scrollDirection = scrollDelta > 0 ? 'down' : 'up';
 
     // Record scroll behavior for learning
@@ -368,57 +380,58 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     };
   }, [enableSmoothScroll, lenisConfig, delayedLoading]);
 
-  // Throttled scroll listener with magical coordination
+  // Clean scroll event handling - only use one scroll source to avoid conflicts
   useEffect(() => {
-    let ticking = false;
-    let rafId: number;
-
-    const handleScroll = () => {
-      if (!ticking) {
-        rafId = requestAnimationFrame(() => {
-          updateVisibleRange();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
     // Start user behavior session
     userBehaviorPredictor.startSession();
 
-    // Use Lenis scroll events if available, fallback to native
-    if (lenisScrollManager.isActive()) {
-      lenisScrollManager.onScroll((scrollInfo) => {
-        // Update our scroll tracking
-        lastScrollY.current = scrollInfo.scroll;
-        setScrollVelocity(scrollInfo.velocity);
+    // Set up scroll event handling based on what's available
+    let cleanup: (() => void) | null = null;
 
+    if (lenisScrollManager.isActive()) {
+      // Use Lenis scroll events - clean and direct
+      const unsubscribeLenis = lenisScrollManager.onScroll((scrollInfo) => {
         // Update delayed loader with scroll velocity
         delayedImageLoader.updateScrollVelocity(scrollInfo.velocity);
 
-        // Trigger range updates
-        updateVisibleRange();
+        // Trigger range updates with explicit scroll position
+        updateVisibleRange(scrollInfo.scroll, scrollInfo.velocity);
       });
+
+      cleanup = unsubscribeLenis;
     } else {
-      // Fallback to native scroll events
-      window.addEventListener('scroll', handleScroll, { passive: true });
+      // Use native scroll events with throttling
+      let ticking = false;
+      let rafId: number;
+
+      const handleNativeScroll = () => {
+        if (!ticking) {
+          rafId = requestAnimationFrame(() => {
+            updateVisibleRange();
+            ticking = false;
+          });
+          ticking = true;
+        }
+      };
+
+      window.addEventListener('scroll', handleNativeScroll, { passive: true });
+
+      cleanup = () => {
+        window.removeEventListener('scroll', handleNativeScroll);
+        if (rafId) cancelAnimationFrame(rafId);
+      };
     }
 
-    updateVisibleRange(); // Initial calculation
+    // Initial calculation
+    updateVisibleRange();
 
     // Subscribe to system resource changes
     const unsubscribeResources = systemResourceManager.onBudgetUpdate((budget) => {
       console.log('System resource budget updated:', budget);
-      // Could trigger re-evaluation of loading strategy
     });
 
     return () => {
-      if (lenisScrollManager.isActive()) {
-        // Lenis cleanup handled automatically
-      } else {
-        window.removeEventListener('scroll', handleScroll);
-        if (rafId) cancelAnimationFrame(rafId);
-      }
+      if (cleanup) cleanup();
       unsubscribeResources();
 
       // End user behavior session
