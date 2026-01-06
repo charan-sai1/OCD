@@ -313,8 +313,11 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         const row = Math.floor(nextPos / columnCount);
         const col = nextPos % columnCount;
 
+        // Use actual image path from images array instead of fake path
+        const actualImagePath = images[nextPos];
+
         imagesToPreload.push({
-          imagePath: `image_${nextPos}`,
+          imagePath: actualImagePath,
           confidence: adjustedPrediction.confidence * (1 - i * 0.1), // Decrease confidence for further images
           expectedTimeToNeed: adjustedPrediction.expectedTimeToNeed + (i * 100), // Later images take longer
           size: 50000 // Estimated 50KB per image
@@ -323,7 +326,7 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         // Schedule delayed loading for magical cascade effect
         const priority: 'high' | 'normal' | 'low' = i === 1 ? 'high' : i === 2 ? 'normal' : 'low';
         delayedImageLoader.scheduleLoad(
-          `image_${nextPos}`,
+          actualImagePath,
           { row, col },
           priority
         );
@@ -341,8 +344,9 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     setPreloadRange(newPreloadRange);
 
     // Handle rapid scrolling with visual continuity
-    if (velocity > 50) {
-      visualContinuityManager.handleRapidScroll(velocity, `image_${currentPosition}`);
+    if (velocity > 50 && currentPosition >= 0 && currentPosition < images.length) {
+      const actualImagePath = images[currentPosition];
+      visualContinuityManager.handleRapidScroll(velocity, actualImagePath);
     }
 
     // Update delayed loader with current row context for cascading effects
