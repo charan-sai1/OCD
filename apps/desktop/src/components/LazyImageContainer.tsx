@@ -10,7 +10,8 @@ interface LazyImageContainerProps {
   onClick?: () => void;
   onLoad?: () => void;
   onError?: (error: string) => void;
-  placeholderVariant?: 'skeleton' | 'shimmer' | 'simple';
+  placeholderVariant?: 'skeleton' | 'shimmer' | 'wave' | 'simple';
+  imageAnimation?: 'scale' | 'slide' | 'fade' | 'bounce';
   priority?: 'high' | 'normal' | 'low';
 }
 
@@ -24,7 +25,8 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   onClick,
   onLoad,
   onError,
-  placeholderVariant = 'shimmer',
+  placeholderVariant = 'wave',
+  imageAnimation = 'scale',
   priority = 'normal'
 }) => {
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
@@ -204,9 +206,30 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
             left: 0,
             width: '100%',
             height: '100%',
-            opacity: loadingState === 'loaded' ? 1 : 0,
-            transition: 'opacity 0.3s ease-in',
-            zIndex: 2
+            zIndex: 2,
+            boxShadow: loadingState === 'loaded' ? '0 4px 12px rgba(0,0,0,0.1)' : 'none',
+            // Dynamic animation based on type
+            ...(imageAnimation === 'scale' && {
+              opacity: loadingState === 'loaded' ? 1 : 0,
+              transform: loadingState === 'loaded' ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(8px)',
+              transition: 'all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              filter: loadingState === 'loaded' ? 'none' : 'blur(2px)'
+            }),
+            ...(imageAnimation === 'slide' && {
+              opacity: loadingState === 'loaded' ? 1 : 0,
+              transform: loadingState === 'loaded' ? 'translateY(0)' : 'translateY(20px)',
+              transition: 'all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+            }),
+            ...(imageAnimation === 'fade' && {
+              opacity: loadingState === 'loaded' ? 1 : 0,
+              transition: 'opacity 0.4s ease-out'
+            }),
+            ...(imageAnimation === 'bounce' && {
+              opacity: loadingState === 'loaded' ? 1 : 0,
+              transform: loadingState === 'loaded' ? 'scale(1)' : 'scale(0.8)',
+              transition: 'all 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+              filter: loadingState === 'loaded' ? 'none' : 'brightness(0.8)'
+            })
           }}
         >
           <img

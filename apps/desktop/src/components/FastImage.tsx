@@ -232,7 +232,7 @@ const FastImage: React.FC<FastImageProps> = memo(({
         ...style
       }}
       onClick={onClick}
-      loading="lazy"
+
       decoding="async"
       onError={(e) => {
         console.error(`Image load error for ${imagePath}`);

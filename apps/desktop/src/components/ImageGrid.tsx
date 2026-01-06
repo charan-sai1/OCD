@@ -90,7 +90,7 @@ const ImageGrid: React.FC<ImageGridProps> = () => {
               <img
                 src={convertFileSrc(imagePath)}
                 alt={imagePath.split("/").pop() || `Image ${index + 1}`}
-                loading="lazy"
+
                 style={{
                   borderRadius: 12,
                   width: "100%",
