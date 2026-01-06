@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { Box } from '@mui/material';
 import ImagePlaceholder from './ImagePlaceholder';
-import FastImage from './FastImage';
 
 interface LazyImageContainerProps {
   imagePath: string;
@@ -29,8 +28,71 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   priority = 'normal'
 }) => {
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hasBeenVisible = useRef(false);
+  const loadTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Debug logging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('LazyImageContainer received imagePath:', imagePath);
+  }
+
+  // Async image loading function with proper error handling
+  const loadImageAsync = useCallback(async (imagePath: string): Promise<void> => {
+    try {
+      // Import dependencies dynamically to avoid circular imports
+      const { previewCache } = await import('../utils/previewCache');
+      const { generateImagePreview } = await import('../utils/previewGenerator');
+
+      // Step 1: Check cache first (fast operation)
+      const cachedUrl = await previewCache.get(imagePath);
+      if (cachedUrl) {
+        setImageUrl(cachedUrl);
+        setLoadingState('loaded');
+        onLoad?.();
+        return;
+      }
+
+      // Step 2: Generate preview if not cached (slower operation)
+      const generatedUrl = await generateImagePreview(imagePath, {
+        maxWidth: width,
+        maxHeight: height,
+        quality: priority === 'high' ? 0.8 : 0.7,
+        format: 'jpeg'
+      });
+
+      setImageUrl(generatedUrl);
+      setLoadingState('loaded');
+      onLoad?.();
+
+    } catch (error) {
+      console.error('LazyImage: Async loading failed for', imagePath.split('/').pop(), error);
+      setLoadingState('error');
+      onError?.(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }, [width, height, priority, onLoad, onError, imagePath]);
+
+  // Loading timeout to prevent infinite loading states
+  const startLoadingTimeout = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+    }
+
+    loadTimeoutRef.current = setTimeout(() => {
+      console.warn('LazyImage: Load timeout for', imagePath.split('/').pop());
+      setLoadingState('error');
+      onError?.('Load timeout');
+    }, 15000); // 15 second timeout
+  }, [imagePath, onError]);
+
+  // Clear loading timeout
+  const clearLoadingTimeout = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = undefined;
+    }
+  }, [imagePath, loadImageAsync, startLoadingTimeout]);
 
   // Intersection Observer for lazy loading
   useEffect(() => {
@@ -51,10 +113,16 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
           if (entry.isIntersecting && !hasBeenVisible.current) {
             hasBeenVisible.current = true;
             setLoadingState('loading');
+            startLoadingTimeout();
 
             if (process.env.NODE_ENV === 'development') {
-              console.log('LazyImage: Starting load for', imagePath.split('/').pop());
+              console.log('LazyImage: Starting async load for', imagePath.split('/').pop());
             }
+
+            // Actually start the async loading
+            loadImageAsync(imagePath).catch((error) => {
+              console.error('LazyImage: Load failed in intersection handler:', error);
+            });
           }
         });
       },
@@ -69,27 +137,36 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [imagePath, loadImageAsync, startLoadingTimeout]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearLoadingTimeout();
+    };
+  }, [clearLoadingTimeout]);
 
   // Handle image load completion
   const handleImageLoad = useCallback(() => {
+    clearLoadingTimeout();
     if (process.env.NODE_ENV === 'development') {
       console.log('LazyImage: Image loaded successfully', imagePath.split('/').pop());
     }
 
     setLoadingState('loaded');
     onLoad?.();
-  }, [onLoad, imagePath]);
+  }, [onLoad, imagePath, clearLoadingTimeout]);
 
   // Handle image load error
   const handleImageError = useCallback((error: string) => {
+    clearLoadingTimeout();
     if (process.env.NODE_ENV === 'development') {
       console.error('LazyImage: Image load failed', imagePath.split('/').pop(), error);
     }
 
     setLoadingState('error');
     onError?.(error);
-  }, [onError, imagePath]);
+  }, [onError, imagePath, clearLoadingTimeout]);
 
   return (
     <Box
@@ -109,32 +186,42 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
         }
       }}
     >
-      {/* Show placeholder initially */}
-      {loadingState !== 'loaded' && (
+      {/* Show placeholder while idle or loading */}
+      {(loadingState === 'idle' || loadingState === 'loading') && (
         <ImagePlaceholder
           aspectRatio={aspectRatio}
           showLoadingIndicator={loadingState === 'loading'}
-          variant={loadingState === 'error' ? 'simple' : placeholderVariant}
+          variant={placeholderVariant}
         />
       )}
 
-      {/* Show actual image when loaded */}
-      {loadingState === 'loaded' && (
-        <FastImage
-          imagePath={imagePath}
-          alt={`Image ${imagePath.split('/').pop()}`}
-          width={width}
-          height={height}
-          priority={priority}
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-          style={{
+      {/* Show actual image when loading has started (not just when loaded) */}
+      {loadingState !== 'idle' && imageUrl && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
-            borderRadius: 8
+            opacity: loadingState === 'loaded' ? 1 : 0,
+            transition: 'opacity 0.3s ease-in',
+            zIndex: 2
           }}
-        />
+        >
+          <img
+            src={imageUrl}
+            alt={`Image ${imagePath.split('/').pop()}`}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              borderRadius: 8
+            }}
+            onLoad={handleImageLoad}
+            onError={() => handleImageError('Image failed to load')}
+          />
+        </Box>
       )}
 
       {/* Debug info */}
