@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Modal,
   Box,
@@ -7,11 +7,12 @@ import {
 } from '@mui/material';
 import { errorHandler } from '../utils/errorHandler';
 import useTouchGestures from '../hooks/useTouchGestures';
-
-import ImageViewerCore from './ImageViewerCore';
+import useZoom from '../hooks/useZoom';
 import ImageViewerControls from './ImageViewerControls';
+import ImageViewerInfo from './ImageViewerInfo';
+import ImageViewerCore from './ImageViewerCore';
 
-const PreviewStrip = React.lazy(() => import('./ImageViewerPreviewStrip').catch(() => ({ default: () => null })));
+
 
 interface ImageViewerModalProps {
   open: boolean;
@@ -44,9 +45,21 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
 }) => {
   // Core state
   const [currentIndex, setCurrentIndex] = useState(currentImageIndex);
-   const [zoomLevel, setZoomLevel] = useState(1);
+   const {
+     zoomLevel,
+     panPosition,
+     zoomIn,
+     zoomOut,
+     zoomToFit,
+     resetZoom,
+     handleWheel,
+     handleDoubleClick,
+     handlePan,
+     isZoomed
+   } = useZoom();
+
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
-  const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
   const [isSlideshowActive, setIsSlideshowActive] = useState(false);
   const slideshowInterval = 3000;
 
@@ -77,12 +90,9 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
 
     try {
       const imagePath = images[index];
-      console.log(`[ImageViewerModal] Loading image at index ${index}: ${imagePath}`);
 
       const { getDirectImageUrl } = await import('../utils/imageUrlUtils');
       const imageUrl = await getDirectImageUrl(imagePath);
-
-      console.log(`[ImageViewerModal] Got image URL: ${imageUrl}`);
 
       setImageCache(prev => ({
         ...prev,
@@ -92,8 +102,6 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
           size: 0
         }
       }));
-
-      console.log(`[ImageViewerModal] Successfully cached image ${index}`);
     } catch (error) {
       console.error(`[ImageViewerModal] Failed to load image ${index}:`, error);
       errorHandler.handleImageLoadError(images[index], error, {
@@ -146,19 +154,19 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }, 16); // Next frame
 
     // Complete transition after CSS animation duration
-       setTimeout(() => {
-         onImageChange?.(newIndex);
-         setTransitionState({
-           isTransitioning: false,
-           direction: null,
-           progress: 0,
-           startIndex: newIndex,
-           targetIndex: newIndex
-         });
-         // Reset zoom for new image
-         setZoomLevel(1);
-       }, TRANSITION_DURATION);
-  }, [currentIndex, images.length, transitionState.isTransitioning, onImageChange]);
+    setTimeout(() => {
+       onImageChange?.(newIndex);
+       setTransitionState({
+         isTransitioning: false,
+         direction: null,
+         progress: 0,
+         startIndex: newIndex,
+         targetIndex: newIndex
+       });
+        // Reset zoom for new image
+        resetZoom();
+    }, TRANSITION_DURATION);
+  }, [currentIndex, images.length, transitionState.isTransitioning, onImageChange, resetZoom]);
 
   // Update current index when prop changes
   useEffect(() => {
@@ -168,15 +176,16 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
       startIndex: currentImageIndex,
       targetIndex: currentImageIndex
     }));
-  }, [currentImageIndex]);
+    // Reset zoom and rotation when changing images
+            resetZoom();
+  }, [currentImageIndex, resetZoom]);
 
   // Load current image immediately when modal opens or index changes
   useEffect(() => {
     if (open && currentIndex >= 0 && currentIndex < images.length) {
-      console.log(`[ImageViewerModal] Modal open, loading image at index ${currentIndex}`);
       loadImage(currentIndex);
     }
-  }, [open, currentIndex, images.length]);
+  }, [open, currentIndex, images.length, loadImage]);
 
   // Viewport meta tag management for fullscreen mode
   useEffect(() => {
@@ -324,45 +333,16 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     return () => clearTimeout(timeoutId);
   }, [currentIndex, images.length, transitionState.isTransitioning]);
 
-  // Touch gesture integration with pinch support
+  // Touch gesture integration
   useTouchGestures({
     onSwipeLeft: () => startTransition('left'),
     onSwipeRight: () => startTransition('right'),
-    onPinch: (scale) => {
-      // Convert pinch scale to zoom level (relative to current zoom)
-      const zoomFactor = scale > 1 ? 1.1 : 0.9;
-      const newZoom = Math.min(Math.max(zoomLevel * zoomFactor, 0.5), 5);
-      setZoomLevel(newZoom);
-    },
+    onDoubleTap: () => handleDoubleClick({} as React.MouseEvent),
     swipeThreshold: 80,
-    pinchThreshold: 0.05,
     preventBrowserGestures: true
   });
 
-  const handlePrevious = useCallback(() => startTransition('right'), [startTransition]);
-  const handleNext = useCallback(() => startTransition('left'), [startTransition]);
 
-  const handleZoomIn = useCallback(() => {
-    setZoomLevel(prev => {
-      const newZoom = Math.min(prev * 1.2, 5); // Max zoom 5x
-      // Provide haptic feedback-like visual feedback
-      if (newZoom !== prev) {
-        // Could add visual feedback here if needed
-      }
-      return newZoom;
-    });
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoomLevel(prev => {
-      const newZoom = Math.max(prev / 1.2, 0.5); // Min zoom 0.5x
-      // Provide haptic feedback-like visual feedback
-      if (newZoom !== prev) {
-        // Could add visual feedback here if needed
-      }
-      return newZoom;
-    });
-  }, []);
 
 
 
@@ -384,7 +364,6 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(cachedImage.url);
-        console.log('Image URL copied to clipboard');
       }
     } catch (error) {
       console.error('Sharing failed:', error);
@@ -458,41 +437,14 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }
   }, [transitionState.isTransitioning, isSlideshowActive]);
 
-
-
-   const handleImageSelect = useCallback(async (index: number) => {
-      if (index === currentIndex || transitionState.isTransitioning) return;
-
-      if (!imageCache[index] && !loadingStates[index]) {
-        loadImage(index);
-      }
-
-      const direction = index > currentIndex ? 'left' : 'right';
-
-      setTransitionState({
-        isTransitioning: true,
-        direction,
-        progress: 0,
-        startIndex: currentIndex,
-        targetIndex: index
-      });
-
-      setTimeout(() => {
-        setTransitionState(prev => ({ ...prev, progress: 1 }));
-      }, 16);
-
-      setTimeout(() => {
-        onImageChange?.(index);
-        setTransitionState({
-          isTransitioning: false,
-          direction: null,
-          progress: 0,
-          startIndex: index,
-          targetIndex: index
-        });
-         setZoomLevel(1);
-      }, TRANSITION_DURATION);
-    }, [currentIndex, transitionState.isTransitioning, onImageChange, imageCache, loadingStates, loadImage]);
+  const handlePrevious = useCallback(() => {
+    console.log('⬅️ Previous navigation triggered');
+    startTransition('right');
+  }, [startTransition]);
+  const handleNext = useCallback(() => {
+    console.log('➡️ Next navigation triggered');
+    startTransition('left');
+  }, [startTransition]);
 
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
     if (!open || transitionState.isTransitioning) return;
@@ -509,56 +461,75 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
         break;
       case '+':
       case '=':
-        handleZoomIn();
+        zoomIn();
         break;
       case '-':
-        handleZoomOut();
+        zoomOut();
         break;
       case '0':
-        setZoomLevel(1);
+        resetZoom();
+        break;
+
+      case 'f':
+      case 'F':
+        handleZoomToFit();
         break;
     }
-  }, [open, transitionState.isTransitioning, handlePrevious, handleNext, onClose, handleZoomIn, handleZoomOut]);
+   }, [open, transitionState.isTransitioning, handlePrevious, handleNext, onClose, zoomIn, zoomOut, resetZoom]);
 
-  const handleWheel = useCallback((event: WheelEvent) => {
+  const localHandleWheel = useCallback((event: WheelEvent) => {
     if (!open) return;
-
-    event.preventDefault();
-    if (event.deltaY < 0) {
-      handleZoomIn();
-    } else {
-      handleZoomOut();
-    }
-  }, [open, handleZoomIn, handleZoomOut]);
+    handleWheel(event);
+  }, [open, handleWheel]);
 
   // Add keyboard and wheel event listeners with proper cleanup
   useEffect(() => {
     if (open) {
       document.addEventListener('keydown', handleKeyPress);
-      document.addEventListener('wheel', handleWheel, { passive: false });
+      document.addEventListener('wheel', localHandleWheel, { passive: false });
 
       return () => {
         document.removeEventListener('keydown', handleKeyPress);
-        document.removeEventListener('wheel', handleWheel);
+        document.removeEventListener('wheel', localHandleWheel);
       };
     }
 
     // Cleanup when modal closes
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
-      document.removeEventListener('wheel', handleWheel);
+      document.removeEventListener('wheel', localHandleWheel);
     };
-  }, [open, handleKeyPress, handleWheel]);
+  }, [open, handleKeyPress, localHandleWheel]);
+
+  // Cleanup blob URLs when image cache changes (not just on unmount)
+  const prevImageCacheRef = React.useRef<Record<number, CachedImage>>({});
+  useEffect(() => {
+    // Revoke blob URLs for images that are no longer in cache
+    const prevUrls = Object.values(prevImageCacheRef.current)
+      .map(img => img.url)
+      .filter(url => url.startsWith('blob:'));
+
+    const currentUrls = new Set(Object.values(imageCache).map(img => img.url));
+
+    prevUrls.forEach(url => {
+      if (!currentUrls.has(url)) {
+        URL.revokeObjectURL(url);
+      }
+    });
+
+    prevImageCacheRef.current = imageCache;
+  }, [imageCache]);
 
   useEffect(() => {
     return () => {
+      // Final cleanup on unmount
       Object.values(imageCache).forEach(image => {
         if (image.url.startsWith('blob:')) {
           URL.revokeObjectURL(image.url);
         }
       });
     };
-  }, [imageCache]);
+  }, []); // Empty dependency array for unmount cleanup
 
   const currentImage = images[currentIndex];
   const imageName = currentImage ? currentImage.split('/').pop() || 'Unknown' : 'No image';
@@ -568,7 +539,21 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     return imageCache[currentIndex];
   }, [currentIndex, imageCache]);
 
-  const isCurrentLoading = loadingStates[currentIndex] && !imageCache[currentIndex];
+  const handleZoomToFit = useCallback(() => {
+    if (!displayImage) {
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      zoomToFit(img.naturalWidth, img.naturalHeight, viewportWidth, viewportHeight);
+    };
+    img.src = displayImage.url;
+  }, [displayImage, zoomToFit]);
+
+
 
   // Extract image metadata
   const [imageMetadata, setImageMetadata] = useState<{[key: number]: any}>({});
@@ -621,80 +606,81 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
           aria-labelledby="image-viewer-title"
           aria-describedby="image-viewer-description"
           sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
+            position: 'fixed', // Changed from absolute to fixed
+            top: 0,
+            left: 0,
             width: '100vw',
             height: '100vh',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             outline: 'none',
-            overflow: 'hidden'
+            overflow: 'visible' // Changed from hidden to visible
           }}
-        >
-          {/* Core image viewer functionality */}
-          <ImageViewerCore
-             currentIndex={currentIndex}
-             isImmersiveMode={isImmersiveMode}
-             onToggleImmersiveMode={() => setIsImmersiveMode(prev => !prev)}
-             zoomLevel={zoomLevel}
-             transitionState={transitionState}
-             displayImage={displayImage}
-             imageName={imageName}
-             isCurrentLoading={isCurrentLoading}
-           />
-
-          {/* Zoom and rotation controls */}
-          <ImageViewerControls
-            zoomLevel={zoomLevel}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onResetZoom={() => setZoomLevel(1)}
-            onShare={handleShare}
-            onDownload={handleDownload}
-            onToggleSlideshow={handleToggleSlideshow}
-            onClose={onClose}
-            isSlideshowActive={isSlideshowActive}
-            isTransitioning={transitionState.isTransitioning}
-            isImmersiveMode={isImmersiveMode}
-            displayImage={displayImage}
-          />
-
-          {/* Lazy-loaded preview strip */}
-          <Suspense fallback={null}>
-            <PreviewStrip
-              images={images}
+          >
+            {/* Core image viewer functionality */}
+            <ImageViewerCore
               currentIndex={currentIndex}
-              previewUrls={previewUrls}
-              loadingStates={loadingStates}
-              onImageSelect={handleImageSelect}
+              isImmersiveMode={isImmersiveMode}
+              onToggleImmersiveMode={() => setIsImmersiveMode((prev: boolean) => !prev)}
+              zoomLevel={zoomLevel}
+              panPosition={panPosition}
+              isZoomed={isZoomed}
+              handlePan={handlePan}
+              handleDoubleClick={handleDoubleClick}
+              transitionState={transitionState}
+              displayImage={displayImage}
+              imageName={imageName}
+              isCurrentLoading={loadingStates[currentIndex]}
+            />
+
+            {/* Image details/info */}
+            <ImageViewerInfo
+              imageName={imageName}
+              currentIndex={currentIndex}
+              totalImages={images.length}
+              metadata={imageMetadata[currentIndex]}
               isImmersiveMode={isImmersiveMode}
               isTransitioning={transitionState.isTransitioning}
+              isZoomed={isZoomed}
             />
-          </Suspense>
 
-          {/* Screen reader announcements for image changes */}
-          <Box
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            sx={{
-              position: 'absolute',
-              left: '-10000px',
-              top: 'auto',
-              width: '1px',
-              height: '1px',
-              overflow: 'hidden'
-            }}
-          >
-            {transitionState.isTransitioning ? `Loading image ${transitionState.targetIndex + 1} of ${images.length}` : `Viewing image ${currentIndex + 1} of ${images.length}: ${imageName}`}
+            {/* Full viewport overlay for controls */}
+            <Box
+              sx={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                zIndex: 10000, // Higher than controls
+                pointerEvents: 'none' // Allow clicks to pass through to controls
+              }}
+            >
+              {/* Zoom and rotation controls */}
+              <ImageViewerControls
+             zoomLevel={zoomLevel}
+             onZoomIn={zoomIn}
+             onZoomOut={zoomOut}
+             onResetZoom={resetZoom}
+             onRotate={() => {}}
+              onZoomToFit={handleZoomToFit}
+              onShare={handleShare}
+              onDownload={handleDownload}
+              onToggleSlideshow={handleToggleSlideshow}
+              onClose={onClose}
+              isSlideshowActive={isSlideshowActive}
+              isTransitioning={transitionState.isTransitioning}
+              isImmersiveMode={isImmersiveMode}
+              displayImage={displayImage}
+               canZoomIn={zoomLevel < 8}
+               canZoomOut={zoomLevel > 0.5}
+              />
+            </Box>
           </Box>
-        </Box>
-      </Fade>
-    </Modal>
-  );
+        </Fade>
+     </Modal>
+   );
 };
 
 export default ImageViewerModal;

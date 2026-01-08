@@ -65,14 +65,12 @@ function App() {
   };
 
   const persistedData = loadPersistedData();
-  console.log('Loaded persisted data:', persistedData);
 
   const [selectedSection, setSelectedSection] = useState<string>("photos");
   const [images, setImages] = useState<string[]>([]);
   const [directoryPaths, setDirectoryPaths] = useState<string[]>(
     persistedData.directories,
   );
-  console.log('Initial directory paths:', directoryPaths);
 
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(
@@ -106,20 +104,19 @@ function App() {
   // Register service worker for caching (only in production)
   useEffect(() => {
     // Temporarily skip service worker to avoid conflicts
-    console.log('Skipping service worker registration');
     return;
 
     asyncScheduler.schedule(() => {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            console.log('Service Worker registered successfully:', registration);
+          .then((_registration) => {
+            // Service Worker registered successfully
           })
-          .catch((error) => {
-            console.log('Service Worker registration failed:', error);
+          .catch((_error) => {
+            // Service Worker registration failed
           });
       } else {
-        console.log('Service Worker not supported in this browser');
+        // Service Worker not supported in this browser
       }
     });
   }, []);
@@ -130,7 +127,6 @@ function App() {
       try {
         await previewCache.init();
         await advancedImageCache.init();
-        console.log('Image caches initialized successfully');
       } catch (error) {
         console.error('Failed to initialize caches:', error);
       }
@@ -162,11 +158,7 @@ function App() {
       const scrollY = window.scrollY || window.pageYOffset;
       setIsScrolled(scrollY > 50); // Hide search bar when scrolled down more than 50px
 
-      // Debug logging for scroll issues
       scrollCount++;
-      if (scrollCount % 20 === 0 && process.env.NODE_ENV === 'development') {
-        console.log('App: Scroll event detected', { scrollY, scrollCount, timestamp: Date.now() });
-      }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -259,7 +251,7 @@ function App() {
          isGenerating: false
        }));
 
-       console.log('Thumbnail optimization complete!');
+
 
        // Now load the images (they should load instantly from cache)
        asyncScheduler.schedule(() => loadImagesFromPaths(newPaths), { timeout: 100 });
@@ -307,10 +299,8 @@ function App() {
 
   const loadImagesFromPaths = async (pathsToLoad?: string[]) => {
     const paths = pathsToLoad || directoryPaths;
-    console.log("Loading images from paths:", paths);
 
     if (paths.length === 0) {
-      console.log("No paths to load from");
       return;
     }
 
@@ -321,11 +311,8 @@ function App() {
       setLoadingProgress(0);
 
       // Try to use web worker for directory scanning
-      console.log('Attempting to use directory scanner worker...');
-
       const directoryScanner = await workerManager.getDirectoryScanner();
       const scanResults = await directoryScanner.scanDirectories(paths, directoryCache);
-      console.log('Directory scanner worker succeeded');
 
       const allImagePaths: string[] = [];
       const seenPaths = new Set<string>();
@@ -360,9 +347,8 @@ function App() {
               timestamp: now,
             }
           }));
-          console.log(`Scanned ${images.length} images in ${path}`);
         } else {
-          console.log(`Using cached data for ${path} (${images.length} images)`);
+          // Using cached data
         }
 
         // Add to collection with deduplication
@@ -381,9 +367,7 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
 
-      console.log(
-        `Loading complete - total unique images: ${allImagePaths.length}`
-      );
+
 
       setImages(allImagePaths);
       setTotalFilesInDirectory(allImagePaths.length);
@@ -406,7 +390,6 @@ function App() {
       console.error("Worker scanning failed, attempting fallback:", err);
 
       // Fallback to synchronous scanning
-      console.log('Attempting fallback synchronous scanning...');
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const scanResults: any[] = [];
@@ -432,7 +415,6 @@ function App() {
             }));
 
             scanResults.push({ path, images });
-            console.log(`Scanned ${images.length} images from ${path}`);
           } catch (scanError) {
             console.error(`Error scanning ${path}:`, scanError);
             const errorMessage = scanError instanceof Error ? scanError.message : 'Unknown error';
@@ -463,7 +445,7 @@ function App() {
           }
         }
 
-        console.log(`Fallback scanning complete - total unique images: ${allImagePaths.length}`);
+
         setImages(allImagePaths);
         setTotalFilesInDirectory(allImagePaths.length);
         setLoadingProgress(100);
@@ -485,9 +467,8 @@ function App() {
     setDirectoryPaths((prev) => prev.filter((path) => path !== pathToRemove));
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = (_query: string) => {
     // TODO: Implement search filtering logic
-    console.log("Search query:", query);
   };
 
   const handleIncreaseImageSize = () => {
@@ -500,7 +481,6 @@ function App() {
 
   const handleImport = () => {
     // TODO: Implement import functionality
-    console.log("Import functionality to be implemented");
   };
 
   const handleImageClick = useCallback((imagePath: string) => {
@@ -527,20 +507,15 @@ function App() {
         const rowsInViewport = Math.ceil(viewportHeight / itemHeight);
         const initialImageCount = rowsInViewport * imagesPerRow * 2; // 2x viewport for smooth scrolling
 
-        console.log(`Loading ${initialImageCount} images for initial viewport`);
-
         setIsLoadingImages(true);
         setLoadingProgress(0);
 
         // Get all available image paths from cache or quick scan
         const allPaths = await getAllImagePaths();
 
-        console.log(`Found ${allPaths.length} total images`);
-
         // For smaller collections (< 1000 images), load all at once
         // For larger collections, use progressive loading
         if (allPaths.length <= 1000) {
-          console.log(`Loading all ${allPaths.length} images at once`);
           setImages(allPaths);
           setTotalFilesInDirectory(allPaths.length);
           setLoadingProgress(100);
@@ -550,8 +525,6 @@ function App() {
         } else {
           // Take only the first N images for initial load
           const initialPaths = allPaths.slice(0, initialImageCount);
-
-          console.log(`Loading ${initialPaths.length} initial images (${allPaths.length} total)`);
           setImages(initialPaths);
           setTotalFilesInDirectory(allPaths.length);
           setLoadingProgress(100);
@@ -585,7 +558,6 @@ function App() {
         if (cached && (now - cached.timestamp) < CACHE_DURATION) {
           // Use cached data
           allPaths.push(...cached.images);
-          console.log(`Using cached data for ${path}: ${cached.images.length} images`);
         } else {
           // Quick scan of directory
           try {
@@ -594,7 +566,6 @@ function App() {
               fileType: "images",
             });
             allPaths.push(...imagePaths);
-            console.log(`Scanned ${imagePaths.length} images from ${path}`);
 
             // Update cache
             setDirectoryCache(prev => ({
@@ -614,7 +585,6 @@ function App() {
       }
 
       const deduplicated = Array.from(new Set(allPaths));
-      console.log(`Total unique images found: ${deduplicated.length}`);
       return deduplicated;
     } catch (error) {
       console.error('Error in getAllImagePaths:', error);
@@ -635,7 +605,6 @@ function App() {
 
       try {
         // Try to use async processor worker
-        console.log('Attempting to use async processor worker...');
         const asyncProcessor = await workerManager.getAsyncProcessor();
         result = await asyncProcessor.processBatch({
           id: 'load-remaining-images',
@@ -643,7 +612,6 @@ function App() {
           batchSize: 50,
           delay: 10,
         });
-        console.log('Async processor worker succeeded');
       } catch (workerError) {
         console.warn('Async processor worker failed, falling back to direct processing:', workerError);
 
@@ -657,7 +625,6 @@ function App() {
       if (result.completed) {
         // Update images state with all processed items
         setImages(prev => [...prev, ...result.processed]);
-        console.log(`Loaded ${result.processed.length} additional images`);
       }
     } catch (error) {
       console.error('Error in loadRemainingImages:', error);
@@ -731,7 +698,7 @@ function App() {
                   directoryPaths={directoryPaths}
                   imageSize={imageSize}
                   isLoadingImages={isLoadingImages}
-                  showStatusIndicator={true}
+                  showStatusIndicator={false}
                   totalFilesInDirectory={totalFilesInDirectory}
                   onImageClick={handleImageClick}
                 />

@@ -82,9 +82,8 @@ const UntrackedFacesView: React.FC = () => {
     }
   };
 
-  const handleAddAsPerson = (face: UntrackedFace) => {
+  const handleAddAsPerson = (_face: UntrackedFace) => {
     // TODO: Open person addition dialog with relationship selection
-    console.log('Add face as person:', face);
   };
 
   const getProcessingStatusText = () => {
@@ -334,7 +333,7 @@ const UntrackedFacesView: React.FC = () => {
                       variant="outlined"
                       size="small"
                       startIcon={<GroupIcon />}
-                      onClick={() => console.log('Group similar faces')}
+                      onClick={() => {}}
                     >
                       Group
                     </Button>

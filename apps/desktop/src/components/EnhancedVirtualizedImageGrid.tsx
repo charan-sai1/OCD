@@ -69,9 +69,6 @@ const LazyImageWithIntersection: React.FC<{
       onClick={onClick}
       onLoad={() => {
         // Could trigger additional logic when image loads
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Image loaded: ${imagePath.split('/').pop()}`);
-        }
       }}
       onError={(error) => {
         console.warn(`Image failed to load: ${imagePath}`, error);
@@ -111,7 +108,7 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     return null;
   }
   const columnCount = Math.max(1, imageSize || 4);
-  const [scrollVelocity, setScrollVelocity] = useState(0);
+  const [_scrollVelocity, _setScrollVelocity] = useState(0);
 
   const gap = 8; // theme.spacing(1)
   const itemSize = useMemo(() => {
@@ -210,7 +207,6 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     lastScrollTime.current = now;
 
     const container = gridRef.current;
-    const itemHeight = container.offsetWidth / columnCount;
     const visibleHeight = container.offsetHeight;
     const scrollTop = currentScrollY; // Container scroll position is already relative
 
@@ -231,14 +227,7 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     });
 
     // Debug logging to identify scrolling issues
-    if (process.env.NODE_ENV === 'development') {
-      console.log('VirtualGrid: Updated visible range', {
-        startIndex,
-        endIndex,
-        currentScrollY,
-        velocity,
-      });
-    }
+
 
     // Apple-style intelligence: predict and preload based on behavior
     const currentPosition = Math.floor(scrollTop / (container.offsetWidth / columnCount));
@@ -322,7 +311,6 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         try {
           await lenisScrollManager.initialize(lenisConfig);
           lenisInitialized.current = true;
-          console.log('Magical smooth scrolling enabled');
         } catch (error) {
           console.warn('Lenis initialization failed, using native scrolling:', error);
         }
@@ -390,9 +378,7 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
     updateVisibleRange();
 
     // Subscribe to system resource changes
-    const unsubscribeResources = systemResourceManager.onBudgetUpdate((budget) => {
-      console.log('System resource budget updated:', budget);
-    });
+    const unsubscribeResources = systemResourceManager.onBudgetUpdate(() => {});
 
     return () => {
       if (cleanup) cleanup();

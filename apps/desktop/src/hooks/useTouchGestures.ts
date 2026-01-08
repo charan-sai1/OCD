@@ -6,6 +6,7 @@ export interface TouchGestureConfig {
   onSwipeUp?: () => void;
   onSwipeDown?: () => void;
   onPinch?: (scale: number) => void;
+  onPinchEnd?: (finalScale: number) => void;
   onDoubleTap?: () => void;
   swipeThreshold?: number;
   pinchThreshold?: number;
@@ -25,6 +26,7 @@ export interface TouchState {
   lastTapTime: number;
   isHorizontalSwipe: boolean;
   isVerticalSwipe: boolean;
+  lastPinchUpdate: number;
 }
 
 const useTouchGestures = (config: TouchGestureConfig) => {
@@ -40,6 +42,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
     lastTapTime: 0,
     isHorizontalSwipe: false,
     isVerticalSwipe: false,
+    lastPinchUpdate: 0,
   });
 
   const {
@@ -48,6 +51,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
     onSwipeUp,
     onSwipeDown,
     onPinch,
+    onPinchEnd,
     onDoubleTap,
     swipeThreshold = 50,
     pinchThreshold = 0.1,
@@ -76,7 +80,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
       touchState.touchCount = 1;
       touchState.isHorizontalSwipe = false;
       touchState.isVerticalSwipe = false;
-    } else if (touches.length === 2 && onPinch) {
+    } else if (touches.length === 2 && (onPinch || onPinchEnd)) {
       // Pinch gesture - prevent browser zoom
       e.preventDefault();
 
@@ -92,6 +96,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
       touchState.scale = 1;
       touchState.touchCount = 2;
       touchState.isTracking = true;
+      touchState.lastPinchUpdate = Date.now();
     }
   }, [onPinch, preventBrowserGestures]);
 
@@ -143,22 +148,30 @@ const useTouchGestures = (config: TouchGestureConfig) => {
       );
 
       const newScale = currentDistance / touchState.startX;
-      const scaleDelta = newScale - touchState.scale;
+      const scaleDelta = Math.abs(newScale - touchState.scale);
+      const now = Date.now();
 
-      if (Math.abs(scaleDelta) > pinchThreshold) {
+      // Throttle pinch updates to prevent excessive calls (max 60fps)
+      if (scaleDelta > pinchThreshold && (now - touchState.lastPinchUpdate) > 16) {
         onPinch(newScale);
         touchState.scale = newScale;
+        touchState.lastPinchUpdate = now;
       }
     }
   }, [onPinch, pinchThreshold, onSwipeUp, onSwipeDown]);
 
-  const handleTouchEnd = useCallback((_e: TouchEvent) => {
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
     const touchState = touchStateRef.current;
 
     if (!touchState.isTracking) return;
 
     const endTime = Date.now();
     const duration = endTime - touchState.startTime;
+
+    // Handle pinch end
+    if (touchState.touchCount === 2 && onPinchEnd && e.touches.length === 0) {
+      onPinchEnd(touchState.scale);
+    }
 
     // Handle single touch gestures
     if (touchState.touchCount === 1) {
@@ -207,6 +220,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
     onSwipeRight,
     onSwipeUp,
     onSwipeDown,
+    onPinchEnd,
     onDoubleTap,
     swipeThreshold,
     doubleTapDelay,
@@ -220,6 +234,7 @@ const useTouchGestures = (config: TouchGestureConfig) => {
     touchState.touchCount = 0;
     touchState.isHorizontalSwipe = false;
     touchState.isVerticalSwipe = false;
+    touchState.lastPinchUpdate = 0;
   }, []);
 
   // Add orientation change listener

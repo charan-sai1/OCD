@@ -228,7 +228,7 @@ const AddedPeopleView: React.FC = () => {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => console.log('Add new person')}
+          onClick={() => {}}
         >
           Add Person
         </Button>

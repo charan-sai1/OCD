@@ -103,8 +103,8 @@ const PeoplePage: React.FC = () => {
     }
   };
 
-  const handleAddAsPerson = (face: UntrackedFace) => {
-    console.log('Add face as person:', face);
+  const handleAddAsPerson = (_face: UntrackedFace) => {
+    // TODO: Implement add face as person functionality
   };
 
   const getRelationshipLabel = (relationship?: RelationshipType, generation?: number) => {

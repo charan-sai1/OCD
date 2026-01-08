@@ -376,7 +376,6 @@ const FolderView: React.FC<FolderViewProps> = ({
                         }}
                         onClick={() => {
                           // TODO: Open file with system default application
-                          console.log("Open file:", file.path);
                         }}
                       >
                         <Box

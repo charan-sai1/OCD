@@ -15,6 +15,7 @@ interface ImageViewerInfoProps {
   metadata?: ImageMetadata;
   isImmersiveMode: boolean;
   isTransitioning: boolean;
+  isZoomed?: boolean;
 }
 
 const ImageViewerInfo: React.FC<ImageViewerInfoProps> = React.memo(({
@@ -23,9 +24,11 @@ const ImageViewerInfo: React.FC<ImageViewerInfoProps> = React.memo(({
   totalImages,
   metadata,
   isImmersiveMode,
-  isTransitioning
+  isTransitioning,
+  isZoomed = false
 }) => {
-  if (isImmersiveMode) return null;
+  // Show details when zoomed, or when not in immersive mode
+  if (isImmersiveMode && !isZoomed) return null;
 
   return (
     <Box

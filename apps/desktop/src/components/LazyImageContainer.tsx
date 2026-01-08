@@ -33,23 +33,12 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   const hasBeenVisible = useRef(false);
   const loadTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Debug logging
-  if (process.env.NODE_ENV === 'development') {
-    console.log('LazyImageContainer received imagePath:', imagePath);
-    console.log('Image path exists check:', imagePath ? 'path provided' : 'no path');
-    console.log('Image path type:', typeof imagePath);
-  }
-
   // Async image loading function with proper error handling
   const loadImageAsync = useCallback(async (imagePath: string): Promise<void> => {
-    console.log('LazyImage: Starting load for:', imagePath);
-
     try {
       // Simple approach: use convertFileSrc directly
       const { convertFileSrc } = await import('@tauri-apps/api/core');
       const imageUrl = convertFileSrc(imagePath);
-
-      console.log('LazyImage: Generated URL:', imageUrl, 'for path:', imagePath);
 
       setImageUrl(imageUrl);
       setLoadingState('loaded');
@@ -91,22 +80,12 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('LazyImage intersection:', {
-              imagePath: imagePath.split('/').pop(),
-              isIntersecting: entry.isIntersecting,
-              hasBeenVisible: hasBeenVisible.current
-            });
-          }
-
           if (entry.isIntersecting && !hasBeenVisible.current) {
             hasBeenVisible.current = true;
             setLoadingState('loading');
             startLoadingTimeout();
 
-            if (process.env.NODE_ENV === 'development') {
-              console.log('LazyImage: Starting async load for', imagePath.split('/').pop());
-            }
+
 
             // Actually start the async loading
             loadImageAsync(imagePath).catch((error) => {
@@ -138,9 +117,7 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   // Handle image load completion
   const handleImageLoad = useCallback(() => {
     clearLoadingTimeout();
-    if (process.env.NODE_ENV === 'development') {
-      console.log('LazyImage: Image loaded successfully', imagePath.split('/').pop());
-    }
+
 
     setLoadingState('loaded');
     onLoad?.();

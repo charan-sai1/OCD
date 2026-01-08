@@ -120,7 +120,6 @@ const OptimizationSettings: React.FC<OptimizationSettingsProps> = ({ onSettingsC
     // If device adaptive is on, show recommendation
     if (settings.deviceAdaptive && quality !== deviceProfile.recommendedSettings.quality) {
       // Could show a toast or alert here
-      console.log(`Note: Your device recommends ${deviceProfile.recommendedSettings.quality} quality`);
     }
   };
 

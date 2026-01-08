@@ -20,6 +20,10 @@ interface ImageViewerCoreProps {
   isImmersiveMode: boolean;
   onToggleImmersiveMode: () => void;
   zoomLevel: number;
+  panPosition: { x: number, y: number };
+  isZoomed: boolean;
+  handlePan: (event: React.MouseEvent | React.TouchEvent) => void;
+  handleDoubleClick: (event: React.MouseEvent) => void;
   transitionState: TransitionState;
   displayImage: CachedImage | undefined;
   imageName: string;
@@ -27,20 +31,19 @@ interface ImageViewerCoreProps {
 }
 
 const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
-  currentIndex,
   isImmersiveMode,
   onToggleImmersiveMode,
   zoomLevel,
+  panPosition,
+  isZoomed,
+  handlePan,
+  handleDoubleClick,
   transitionState,
   displayImage,
   imageName,
   isCurrentLoading
 }) => {
-  // Pan state for zoomed images
-  const [panPosition, setPanPosition] = React.useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = React.useState(false);
-  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
-  // Calculate transition transform
+
   const getTransitionTransform = useCallback(() => {
     if (!transitionState.isTransitioning) return 'translateX(0)';
 
@@ -53,63 +56,10 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
     onToggleImmersiveMode();
   }, [onToggleImmersiveMode]);
 
-  // Pan functionality for zoomed images
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (zoomLevel <= 1) return;
 
-    e.preventDefault();
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - panPosition.x, y: e.clientY - panPosition.y });
-  }, [zoomLevel, panPosition]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || zoomLevel <= 1) return;
-
-    const newX = e.clientX - dragStart.x;
-    const newY = e.clientY - dragStart.y;
-    setPanPosition({ x: newX, y: newY });
-  }, [isDragging, zoomLevel, dragStart]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  // Reset pan position when zoom changes or image changes
-  React.useEffect(() => {
-    setPanPosition({ x: 0, y: 0 });
-  }, [zoomLevel, currentIndex]);
-
-  // Touch pan support
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (zoomLevel <= 1 || e.touches.length !== 1) return;
-
-    const touch = e.touches[0];
-    setIsDragging(true);
-    setDragStart({ x: touch.clientX - panPosition.x, y: touch.clientY - panPosition.y });
-  }, [zoomLevel, panPosition]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!isDragging || zoomLevel <= 1 || e.touches.length !== 1) return;
-
-    e.preventDefault();
-    const touch = e.touches[0];
-    const newX = touch.clientX - dragStart.x;
-    const newY = touch.clientY - dragStart.y;
-    setPanPosition({ x: newX, y: newY });
-  }, [isDragging, zoomLevel, dragStart]);
-
-  const handleTouchEnd = useCallback(() => {
-    setIsDragging(false);
-  }, []);
 
   return (
     <>
-
-
-
-
-
-      {/* Image container with smooth transitions - Full viewport usage */}
       <Box
         sx={{
           width: '100vw',
@@ -119,8 +69,7 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
-          cursor: zoomLevel > 1 ? 'grab' : 'default',
-          // GPU acceleration for smooth transitions
+          cursor: isZoomed ? 'grab' : 'default',
           transform: 'translateZ(0)',
           willChange: 'transform',
           '&::before': transitionState.isTransitioning ? {
@@ -136,7 +85,6 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
           } : {}
         }}
       >
-        {/* Loading indicator */}
         {isCurrentLoading && (
           <Paper
             sx={{
@@ -157,29 +105,19 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
             </Typography>
           </Paper>
         )}
-
-        {/* Main image with smooth transitions */}
         <Box
-          onClick={zoomLevel > 1 ? undefined : handleImageClick}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              if (zoomLevel <= 1) handleImageClick();
-            }
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            if (isImmersiveMode) {
-              onToggleImmersiveMode();
-            }
-          }}
-          onMouseDown={zoomLevel > 1 ? handleMouseDown : undefined}
-          onMouseMove={zoomLevel > 1 ? handleMouseMove : undefined}
-          onMouseUp={zoomLevel > 1 ? handleMouseUp : undefined}
-          onMouseLeave={zoomLevel > 1 ? handleMouseUp : undefined}
-          onTouchStart={zoomLevel > 1 ? handleTouchStart : undefined}
-          onTouchMove={zoomLevel > 1 ? handleTouchMove : undefined}
-          onTouchEnd={zoomLevel > 1 ? handleTouchEnd : undefined}
+          onClick={isZoomed ? undefined : handleImageClick}
+          onDoubleClick={handleDoubleClick}
+          onMouseDown={handlePan}
+          onMouseMove={handlePan}
+          onMouseUp={handlePan}
+          onMouseLeave={handlePan}
+          onTouchStart={handlePan}
+          onTouchMove={handlePan}
+          onTouchEnd={handlePan}
+          onDragStart={(e) => e.preventDefault()}
+          onDrag={(e) => e.preventDefault()}
+          onDragEnd={(e) => e.preventDefault()}
           tabIndex={0}
           role="button"
           aria-label={zoomLevel > 1 ? "Pan image" : (isImmersiveMode ? "Exit immersive mode" : "Enter immersive mode")}
@@ -195,41 +133,48 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
               ? `transform 350ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`
               : 'none',
             willChange: 'transform',
-            cursor: zoomLevel > 1 ? (isDragging ? 'grabbing' : 'grab') : (isImmersiveMode ? 'none' : 'pointer'),
+            cursor: zoomLevel > 1 ? 'grabbing' : (isImmersiveMode ? 'none' : 'pointer'),
             outline: 'none',
             userSelect: 'none',
             '&:focus-visible': {
               outline: '2px solid white',
               outlineOffset: 2
-            }
+            },
+            overflow: zoomLevel > 1 ? 'visible' : 'hidden'
           }}
         >
           {displayImage ? (
-             <img
-               src={displayImage.url}
-               alt={imageName}
-               style={{
-                 width: zoomLevel > 1 ? `${100 * zoomLevel}vw` : '100vw',
-                 height: zoomLevel > 1 ? `${100 * zoomLevel}vh` : '100vh',
-                 objectFit: zoomLevel > 1 ? 'none' : 'contain',
-                 borderRadius: zoomLevel > 1 ? 0 : 8,
-                 boxShadow: zoomLevel > 1 ? 'none' : '0 8px 32px rgba(0, 0, 0, 0.3)',
-                 transition: zoomLevel === 1 ? 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
-                 cursor: zoomLevel > 1 ? 'grab' : 'default',
-                 // Performance optimizations with pan support
-                 transform: `translateZ(0) translate(${panPosition.x}px, ${panPosition.y}px)`,
-                 backfaceVisibility: 'hidden',
-                 WebkitBackfaceVisibility: 'hidden',
-                 // Proper sizing for zoom levels
-                 transformOrigin: 'center center',
-                 // Ensure image fills viewport when not zoomed
-                 minWidth: zoomLevel === 1 ? '100vw' : 'auto',
-                 minHeight: zoomLevel === 1 ? '100vh' : 'auto',
-                 maxWidth: zoomLevel === 1 ? '100vw' : 'none',
-                 maxHeight: zoomLevel === 1 ? '100vh' : 'none'
-               }}
-             />
-          ) : (
+            <Box
+              sx={{
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: zoomLevel > 1 ? 'visible' : 'hidden'
+              }}
+            >
+              <img
+                src={displayImage.url}
+                alt={imageName}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  transition: transitionState.isTransitioning ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  transform: zoomLevel === 1 ? 'none' : `scale(${zoomLevel}) translate(${panPosition.x / zoomLevel}px, ${panPosition.y / zoomLevel}px)`,
+                  cursor: zoomLevel === 1 ? 'default' : 'grab',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transformOrigin: 'center center',
+                  position: 'relative',
+                }}
+              />
+            </Box>
+           ) : (
             <Paper
               sx={{
                 p: 4,
