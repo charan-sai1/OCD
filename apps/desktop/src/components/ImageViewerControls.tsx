@@ -468,20 +468,7 @@ const ImageViewerControls: React.FC<ImageViewerControlsProps> = React.memo(({
           <X />
         </Box>
 
-        {/* Zoom level display */}
-        <Box
-          sx={{
-            ...controlStyles.display,
-            minWidth: 70,
-            mx: 1,
-            fontSize: '0.9rem',
-            fontWeight: 700,
-            letterSpacing: '0.05em'
-          }}
-          aria-label={`Current zoom level: ${zoomLevel}x`}
-        >
-          {zoomLevel}x
-        </Box>
+
 
         {/* Zoom controls - separate from close button */}
         <Box

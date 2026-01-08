@@ -11,6 +11,7 @@ import useZoom from '../hooks/useZoom';
 import ImageViewerControls from './ImageViewerControls';
 import ImageViewerInfo from './ImageViewerInfo';
 import ImageViewerCore from './ImageViewerCore';
+import PreviewStrip from './ImageViewerPreviewStrip';
 
 
 
@@ -430,6 +431,40 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     };
   }, [isSlideshowActive, currentIndex, images.length, onImageChange, slideshowInterval]);
 
+  const handleImageSelect = useCallback((index: number) => {
+    if (index === currentIndex || transitionState.isTransitioning) return;
+
+    if (!imageCache[index] && !loadingStates[index]) {
+      loadImage(index);
+    }
+
+    const direction = index > currentIndex ? 'left' : 'right';
+
+    setTransitionState({
+      isTransitioning: true,
+      direction,
+      progress: 0,
+      startIndex: currentIndex,
+      targetIndex: index
+    });
+
+    setTimeout(() => {
+      setTransitionState(prev => ({ ...prev, progress: 1 }));
+    }, 16);
+
+    setTimeout(() => {
+      onImageChange?.(index);
+      setTransitionState({
+        isTransitioning: false,
+        direction: null,
+        progress: 0,
+        startIndex: index,
+        targetIndex: index
+      });
+      resetZoom();
+    }, TRANSITION_DURATION);
+  }, [currentIndex, transitionState.isTransitioning, onImageChange, imageCache, loadingStates, loadImage, resetZoom]);
+
   // Pause slideshow during transitions
   useEffect(() => {
     if (transitionState.isTransitioning && isSlideshowActive) {
@@ -643,6 +678,17 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
               isImmersiveMode={isImmersiveMode}
               isTransitioning={transitionState.isTransitioning}
               isZoomed={isZoomed}
+            />
+
+            {/* Navigation preview strip */}
+            <PreviewStrip
+              images={images}
+              currentIndex={currentIndex}
+              previewUrls={previewUrls}
+              loadingStates={loadingStates}
+              onImageSelect={handleImageSelect}
+              isImmersiveMode={isImmersiveMode}
+              isTransitioning={transitionState.isTransitioning}
             />
 
             {/* Full viewport overlay for controls */}
