@@ -23,9 +23,26 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   const stripRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [containerWidth, setContainerWidth] = useState(800);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
+  // Responsive thumbnail sizing
+  const responsiveSizing = useMemo(() => {
+    const screenWidth = window.innerWidth;
+    const maxStripWidth = screenWidth * 0.9; // 90% of screen
+    const availableSpace = maxStripWidth / images.length;
+
+    // Calculate optimal size (between 40px and 80px)
+    const optimalSize = Math.min(80, Math.max(40, availableSpace - 4));
+
+    return {
+      size: optimalSize,
+      gap: Math.max(2, optimalSize * 0.1), // 10% of size as gap
+      borderRadius: optimalSize * 0.17 // 17% of size for rounded corners
+    };
+  }, [images.length]);
 
   // Virtualization constants
-  const THUMBNAIL_WIDTH = 64;
+  const THUMBNAIL_WIDTH = responsiveSizing.size + responsiveSizing.gap;
   const BUFFER_SIZE = 5; // Render extra thumbnails outside viewport
 
   // Calculate visible range for virtualization
@@ -53,6 +70,87 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
     return () => window.removeEventListener('resize', updateContainerWidth);
   }, []);
 
+  // Touch gesture support for mobile/tablet
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Hover handlers for preview tooltips
+  const handleMouseEnter = (index: number) => {
+    if (!isTransitioning) {
+      setHoveredIndex(index);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredIndex(null);
+  };
+
+  // Preview tooltip component
+  const PreviewTooltip = ({ index }: { index: number }) => {
+    if (hoveredIndex !== index || !previewUrls[index]) return null;
+
+    // Get image filename from path
+    const imageName = images[index].split('/').pop() || `Image ${index + 1}`;
+
+    return (
+      <Box
+        sx={{
+          position: 'absolute',
+          bottom: responsiveSizing.size + 10,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          bgcolor: 'rgba(0, 0, 0, 0.9)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: 2,
+          px: 2,
+          py: 1,
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+          zIndex: 1400,
+          pointerEvents: 'none',
+          maxWidth: 200,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'white',
+            fontSize: '0.75rem',
+            fontWeight: 500
+          }}
+        >
+          {imageName}
+        </Typography>
+      </Box>
+    );
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStart.current) return;
+
+    const deltaX = e.changedTouches[0].clientX - touchStart.current.x;
+    const deltaY = e.changedTouches[0].clientY - touchStart.current.y;
+
+    // Horizontal swipe for navigation (more than 50px horizontal, less than 50px vertical)
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 50) {
+      if (deltaX > 0 && currentIndex > 0) {
+        // Swipe right = previous image
+        onImageSelect(currentIndex - 1);
+      } else if (deltaX < 0 && currentIndex < images.length - 1) {
+        // Swipe left = next image
+        onImageSelect(currentIndex + 1);
+      }
+    }
+
+    touchStart.current = null;
+  };
+
   // Smooth scroll to center current image
   useEffect(() => {
     if (!stripRef.current || images.length <= 1 || isImmersiveMode) return;
@@ -71,9 +169,9 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   const thumbnailStyles = useMemo(() => ({
     container: {
       flexShrink: 0,
-      width: 60,
-      height: 60,
-      borderRadius: '12px',
+      width: responsiveSizing.size,
+      height: responsiveSizing.size,
+      borderRadius: `${responsiveSizing.borderRadius}px`,
       overflow: 'hidden',
       cursor: isTransitioning ? 'default' : 'pointer',
       border: '2px solid rgba(255, 255, 255, 0.2)',
@@ -91,7 +189,7 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
         left: 0,
         right: 0,
         bottom: 0,
-        borderRadius: '12px',
+        borderRadius: `${responsiveSizing.borderRadius}px`,
         background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 100%)',
         opacity: 0,
         transition: 'opacity 0.3s ease',
@@ -120,16 +218,7 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
         opacity: 0.8,
       }
     },
-    loading: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '100%',
-      height: '100%',
-      backgroundColor: 'rgba(255, 255, 255, 0.1)',
-      borderRadius: '10px',
-      backdropFilter: 'blur(5px)',
-    },
+
     pulse: {
       position: 'absolute' as const,
       top: 3,
@@ -180,6 +269,35 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
     </Box>
   );
 
+  // Skeleton loading component
+  const ThumbnailSkeleton = () => (
+    <Box
+      sx={{
+        width: '100%',
+        height: '100%',
+        bgcolor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: `${responsiveSizing.borderRadius}px`,
+        backdropFilter: 'blur(5px)',
+        position: 'relative',
+        overflow: 'hidden',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: '-100%',
+          width: '100%',
+          height: '100%',
+          background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
+          animation: 'shimmer 1.5s infinite',
+        },
+        '@keyframes shimmer': {
+          '0%': { left: '-100%' },
+          '100%': { left: '100%' }
+        }
+      }}
+    />
+  );
+
   // Image counter component
   const ImageCounter = () => (
     <Box
@@ -216,7 +334,9 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
       <Box
         ref={stripRef}
         onScroll={handleScroll}
-      sx={{
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        sx={{
         position: 'fixed',
         bottom: 30,
         left: '50%',
@@ -269,16 +389,16 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
       }}
     >
       {/* Virtualized container */}
-      <Box
-        sx={{
-          position: 'relative',
-          width: totalWidth,
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5
-        }}
-      >
+        <Box
+          sx={{
+            position: 'relative',
+            width: totalWidth,
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${responsiveSizing.gap}px`
+          }}
+        >
         {Array.from({ length: visibleRange.end - visibleRange.start }, (_, i) => {
           const index = visibleRange.start + i;
           const isActive = index === currentIndex;
@@ -289,6 +409,8 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
             <Box
               key={index}
               onClick={() => !isTransitioning && onImageSelect(index)}
+              onMouseEnter={() => handleMouseEnter(index)}
+              onMouseLeave={handleMouseLeave}
               sx={{
                 ...thumbnailStyles.container,
                 ...(isActive && thumbnailStyles.active),
@@ -311,25 +433,16 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
                   }}
                 />
               ) : (
-                <Box sx={thumbnailStyles.loading}>
-                  {/* Minimal loading indicator */}
-                  <Box
-                    sx={{
-                      width: 16,
-                      height: 16,
-                      border: '2px solid rgba(255, 255, 255, 0.3)',
-                      borderTop: '2px solid white',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite'
-                    }}
-                  />
-                </Box>
+                <ThumbnailSkeleton />
               )}
 
               {/* Loading indicator for cached images */}
               {isLoading && !hasPreview && (
                 <Box sx={thumbnailStyles.pulse} />
               )}
+
+              {/* Preview tooltip on hover */}
+              <PreviewTooltip index={index} />
             </Box>
           );
         })}
