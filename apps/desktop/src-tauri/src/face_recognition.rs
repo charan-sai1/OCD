@@ -2,10 +2,11 @@
 // Simplified face recognition service that works
 
 use image::{DynamicImage, GenericImageView};
+use rand;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::sqlite_db::SqliteDatabase;
 
@@ -128,8 +129,7 @@ impl FaceRecognitionService {
             return Err("Invalid image dimensions".to_string());
         }
 
-        // For now, use a simple heuristic-based face detection
-        // In a real implementation, this would use the YOLOv5 model
+        // Use heuristic-based face detection (will be replaced with ML models)
         let faces = self.detect_faces_heuristic(&img);
 
         // Store faces in database
@@ -146,7 +146,7 @@ impl FaceRecognitionService {
         Ok(FaceDetectionResult {
             faces,
             processing_time,
-            model_used: "HeuristicFaceDetector".to_string(), // Will be "YOLOv5Face" when real model is integrated
+            model_used: "HeuristicFaceDetector".to_string(),
             image_path: image_path.to_string(),
         })
     }
@@ -156,7 +156,6 @@ impl FaceRecognitionService {
         let mut faces = Vec::new();
 
         // Simple heuristic: look for areas that might contain faces
-        // This is a basic implementation - real face detection would use AI models
         let img_rgb = img.to_rgb8();
         let pixels = img_rgb.as_raw();
 
@@ -273,7 +272,6 @@ impl FaceRecognitionService {
         }
 
         // Simple checks for face-like regions
-        // In a real implementation, this would be much more sophisticated
         let aspect_ratio = w as f32 / h as f32;
         if aspect_ratio < 0.5 || aspect_ratio > 1.5 {
             return false; // Faces are roughly square
@@ -290,7 +288,7 @@ impl FaceRecognitionService {
     pub fn extract_embeddings(&self, face_ids: Vec<String>) -> Result<EmbeddingResult, String> {
         let mut embedded_faces = Vec::new();
         for face_id in face_ids {
-            // Generate mock 128D embedding
+            // Generate mock 128D embedding (will be replaced with actual ML model)
             let embedding: Vec<f32> = (0..128)
                 .map(|_| (rand::random::<f32>() - 0.5) * 2.0)
                 .collect();
@@ -304,19 +302,21 @@ impl FaceRecognitionService {
         Ok(EmbeddingResult {
             faces: embedded_faces,
             processing_time: 200,
-            model_used: "FaceNet".to_string(),
+            model_used: "MockFaceNet".to_string(),
         })
     }
 
     pub fn cluster_faces(&self) -> Result<ClusteringResult, String> {
+        let start_time = std::time::Instant::now();
+
         // Get all faces and create mock person groups
         let faces = self.database.get_faces().map_err(|e| e.to_string())?;
 
         if faces.is_empty() {
             return Ok(ClusteringResult {
                 person_groups: Vec::new(),
-                algorithm: "DBSCAN".to_string(),
-                processing_time: 0,
+                algorithm: "MockDBSCAN".to_string(),
+                processing_time: start_time.elapsed().as_millis(),
             });
         }
 
@@ -338,8 +338,8 @@ impl FaceRecognitionService {
 
         Ok(ClusteringResult {
             person_groups,
-            algorithm: "DBSCAN".to_string(),
-            processing_time: 100,
+            algorithm: "MockDBSCAN".to_string(),
+            processing_time: start_time.elapsed().as_millis(),
         })
     }
 
