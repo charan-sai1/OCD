@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useMemo } from 'react';
-import { Box } from '@mui/material';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { Box, Typography } from '@mui/material';
 
 interface PreviewStripProps {
   images: string[];
@@ -21,6 +21,37 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   isTransitioning
 }) => {
   const stripRef = useRef<HTMLDivElement>(null);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(800);
+
+  // Virtualization constants
+  const THUMBNAIL_WIDTH = 64;
+  const BUFFER_SIZE = 5; // Render extra thumbnails outside viewport
+
+  // Calculate visible range for virtualization
+  const visibleRange = useMemo(() => {
+    const start = Math.max(0, Math.floor(scrollLeft / THUMBNAIL_WIDTH) - BUFFER_SIZE);
+    const end = Math.min(images.length, Math.ceil((scrollLeft + containerWidth) / THUMBNAIL_WIDTH) + BUFFER_SIZE);
+    return { start, end };
+  }, [scrollLeft, containerWidth, images.length]);
+
+  // Handle scroll events for virtualization
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollLeft(e.currentTarget.scrollLeft);
+  }, []);
+
+  // Update container width on resize
+  useEffect(() => {
+    const updateContainerWidth = () => {
+      if (stripRef.current) {
+        setContainerWidth(stripRef.current.clientWidth || 800);
+      }
+    };
+
+    updateContainerWidth();
+    window.addEventListener('resize', updateContainerWidth);
+    return () => window.removeEventListener('resize', updateContainerWidth);
+  }, []);
 
   // Smooth scroll to center current image
   useEffect(() => {
@@ -36,11 +67,6 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
       behavior: 'smooth'
     });
   }, [currentIndex, images.length, isImmersiveMode]);
-
-  // Show all thumbnails for navigation (no virtualization for better UX)
-  const THUMBNAIL_WIDTH = 64;
-
-
 
   const thumbnailStyles = useMemo(() => ({
     container: {
@@ -126,9 +152,70 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   // Calculate total width for virtual scrolling
   const totalWidth = images.length * THUMBNAIL_WIDTH;
 
-  return (
+  // Progress indicator component
+  const ProgressIndicator = () => (
     <Box
-      ref={stripRef}
+      sx={{
+        position: 'absolute',
+        top: -25,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '80%',
+        height: 4,
+        bgcolor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 2,
+        overflow: 'hidden',
+        zIndex: 1301
+      }}
+    >
+      <Box
+        sx={{
+          width: `${((currentIndex + 1) / images.length) * 100}%`,
+          height: '100%',
+          bgcolor: 'white',
+          borderRadius: 2,
+          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      />
+    </Box>
+  );
+
+  // Image counter component
+  const ImageCounter = () => (
+    <Box
+      sx={{
+        position: 'absolute',
+        top: -30,
+        right: 16,
+        bgcolor: 'rgba(0, 0, 0, 0.7)',
+        backdropFilter: 'blur(10px)',
+        borderRadius: 2,
+        px: 2,
+        py: 0.5,
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        zIndex: 1301
+      }}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          color: 'white',
+          fontWeight: 600,
+          fontSize: '0.75rem'
+        }}
+      >
+        {currentIndex + 1} / {images.length}
+      </Typography>
+    </Box>
+  );
+
+  return (
+    <>
+      <ProgressIndicator />
+      <ImageCounter />
+      <Box
+        ref={stripRef}
+        onScroll={handleScroll}
       sx={{
         position: 'fixed',
         bottom: 30,
@@ -192,7 +279,8 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
           gap: 0.5
         }}
       >
-        {Array.from({ length: images.length }, (_, index) => {
+        {Array.from({ length: visibleRange.end - visibleRange.start }, (_, i) => {
+          const index = visibleRange.start + i;
           const isActive = index === currentIndex;
           const isLoading = loadingStates[index];
           const hasPreview = previewUrls[index];
@@ -247,6 +335,7 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
         })}
       </Box>
     </Box>
+    </>
   );
 });
 

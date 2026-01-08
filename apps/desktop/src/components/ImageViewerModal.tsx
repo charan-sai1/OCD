@@ -188,6 +188,44 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }
   }, [open, currentIndex, images.length, loadImage]);
 
+  // Keyboard navigation for thumbnail strip
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle when not focused on input elements
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (currentIndex > 0) {
+            onImageChange?.(currentIndex - 1);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (currentIndex < images.length - 1) {
+            onImageChange?.(currentIndex + 1);
+          }
+          break;
+        case 'Home':
+          e.preventDefault();
+          onImageChange?.(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          onImageChange?.(images.length - 1);
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, currentIndex, images.length, onImageChange]);
+
   // Viewport meta tag management for fullscreen mode
   useEffect(() => {
     if (open) {
@@ -288,20 +326,73 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
 
       try {
         const { getDirectImageUrl } = await import('../utils/imageUrlUtils');
-        const previewUrl = await getDirectImageUrl(images[index]);
+        const imageUrl = await getDirectImageUrl(images[index]);
 
-        if (previewUrl && !isCancelled) {
-          setPreviewUrls(prev => ({ ...prev, [index]: previewUrl }));
+        if (imageUrl && !isCancelled) {
+          setPreviewUrls(prev => ({ ...prev, [index]: imageUrl }));
         }
       } catch (error) {
         console.warn(`Failed to load preview for image ${index}:`, error);
       }
     };
 
-    // Load previews for all images since navigation pane shows all thumbnails
-    for (let i = 0; i < images.length; i++) {
-      setTimeout(() => loadPreview(i), i * 5); // Stagger loading to avoid overwhelming
-    }
+    // Smart loading strategy with priority-based loading
+    const loadThumbnailsByPriority = async () => {
+      if (isCancelled) return;
+
+
+
+      const getVisibleIndices = () => {
+        // For now, assume first 10 thumbnails are visible
+        // This will be improved when virtualization is added
+        return Array.from({ length: Math.min(10, images.length) }, (_, i) => i);
+      };
+
+      const getAdjacentIndices = () => {
+        const adjacent = [];
+        for (let i = Math.max(0, currentIndex - 3); i <= Math.min(images.length - 1, currentIndex + 3); i++) {
+          if (i !== currentIndex) adjacent.push(i); // Don't duplicate current
+        }
+        return adjacent;
+      };
+
+      const getRecentIndices = () => {
+        // For now, return empty array - can be enhanced later
+        return [];
+      };
+
+      const getRemainingIndices = () => {
+        const visible = getVisibleIndices();
+        const adjacent = getAdjacentIndices();
+        const recent = getRecentIndices();
+        const usedIndices = new Set([...visible, ...adjacent, ...recent, currentIndex]);
+
+        return Array.from({ length: images.length }, (_, i) => i)
+          .filter(i => !usedIndices.has(i));
+      };
+
+      // Load each priority group with delays
+      const priorityGroups = [
+        { indices: getVisibleIndices(), delay: 0 },
+        { indices: getAdjacentIndices(), delay: 200 },
+        { indices: getRecentIndices(), delay: 500 },
+        { indices: getRemainingIndices(), delay: 1000 }
+      ];
+
+      for (const group of priorityGroups) {
+        if (isCancelled) break;
+
+        setTimeout(() => {
+          if (!isCancelled) {
+            group.indices.forEach(index => {
+              setTimeout(() => loadPreview(index), 0);
+            });
+          }
+        }, group.delay);
+      }
+    };
+
+    loadThumbnailsByPriority();
 
     return () => {
       isCancelled = true;
