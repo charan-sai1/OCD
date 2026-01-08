@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Box } from '@mui/material';
 
 interface PreviewStripProps {
@@ -21,8 +21,6 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   isTransitioning
 }) => {
   const stripRef = useRef<HTMLDivElement>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [containerWidth, setContainerWidth] = useState(800);
 
   // Smooth scroll to center current image
   useEffect(() => {
@@ -39,34 +37,10 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
     });
   }, [currentIndex, images.length, isImmersiveMode]);
 
-  // Virtualization constants
+  // Show all thumbnails for navigation (no virtualization for better UX)
   const THUMBNAIL_WIDTH = 64;
-  const BUFFER_SIZE = 5; // Render extra thumbnails outside viewport
 
-  // Calculate visible range for virtualization
-  const visibleRange = useMemo(() => {
-    const start = Math.max(0, Math.floor(scrollLeft / THUMBNAIL_WIDTH) - BUFFER_SIZE);
-    const end = Math.min(images.length, Math.ceil((scrollLeft + containerWidth) / THUMBNAIL_WIDTH) + BUFFER_SIZE);
-    return { start, end };
-  }, [scrollLeft, containerWidth, images.length]);
 
-  // Handle scroll events for virtualization
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollLeft(e.currentTarget.scrollLeft);
-  }, []);
-
-  // Update container width on resize
-  useEffect(() => {
-    const updateContainerWidth = () => {
-      if (stripRef.current) {
-        setContainerWidth(stripRef.current.clientWidth || 800);
-      }
-    };
-
-    updateContainerWidth();
-    window.addEventListener('resize', updateContainerWidth);
-    return () => window.removeEventListener('resize', updateContainerWidth);
-  }, []);
 
   const thumbnailStyles = useMemo(() => ({
     container: {
@@ -155,7 +129,6 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
   return (
     <Box
       ref={stripRef}
-      onScroll={handleScroll}
       sx={{
         position: 'fixed',
         bottom: 30,
@@ -219,8 +192,7 @@ const PreviewStrip: React.FC<PreviewStripProps> = React.memo(({
           gap: 0.5
         }}
       >
-        {Array.from({ length: visibleRange.end - visibleRange.start }, (_, i) => {
-          const index = visibleRange.start + i;
+        {Array.from({ length: images.length }, (_, index) => {
           const isActive = index === currentIndex;
           const isLoading = loadingStates[index];
           const hasPreview = previewUrls[index];

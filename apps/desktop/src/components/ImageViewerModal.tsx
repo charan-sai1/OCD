@@ -298,24 +298,10 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
       }
     };
 
-    // Load previews for current and nearby images, plus a few more for navigation pane
-    const indicesToLoad = new Set<number>();
-
-    // Add current and adjacent images (existing logic)
-    indicesToLoad.add(currentIndex);
-    if (currentIndex + 1 < images.length) indicesToLoad.add(currentIndex + 1);
-    if (currentIndex - 1 >= 0) indicesToLoad.add(currentIndex - 1);
-
-    // Add more images for navigation pane (visible range)
-    const startIdx = Math.max(0, currentIndex - 5);
-    const endIdx = Math.min(images.length, currentIndex + 6);
-    for (let i = startIdx; i < endIdx; i++) {
-      indicesToLoad.add(i);
+    // Load previews for all images since navigation pane shows all thumbnails
+    for (let i = 0; i < images.length; i++) {
+      setTimeout(() => loadPreview(i), i * 5); // Stagger loading to avoid overwhelming
     }
-
-    Array.from(indicesToLoad).forEach(index => {
-      setTimeout(() => loadPreview(index), 0);
-    });
 
     return () => {
       isCancelled = true;
