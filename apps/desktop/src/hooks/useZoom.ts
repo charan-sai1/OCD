@@ -54,24 +54,32 @@ const useZoom = (minZoom = 0.5, maxZoom = 8): ZoomHook => {
       if (clampedZoom === prevZoom) {
         return prevZoom;
       }
-      
+
       const zoomFactor = clampedZoom / prevZoom;
 
-       setPanPosition(prevPan => {
-         let newX = clientX - (clientX - prevPan.x) * zoomFactor;
-         let newY = clientY - (clientY - prevPan.y) * zoomFactor;
+      setPanPosition(prevPan => {
+        // Zoom towards cursor position
+        // Calculate cursor position relative to viewport center
+        const viewportCenterX = window.innerWidth / 2;
+        const viewportCenterY = window.innerHeight / 2;
+        const cursorOffsetX = clientX - viewportCenterX;
+        const cursorOffsetY = clientY - viewportCenterY;
 
-         // Apply bounds checking for wheel zoom panning
+        // Adjust pan to zoom towards cursor
+        let newX = cursorOffsetX * (1 - zoomFactor) + prevPan.x * zoomFactor;
+        let newY = cursorOffsetY * (1 - zoomFactor) + prevPan.y * zoomFactor;
+
+        // Apply bounds checking for wheel zoom panning
         const scaledImageWidth = window.innerWidth * clampedZoom;
         const scaledImageHeight = window.innerHeight * clampedZoom;
         const maxPanX = Math.max(0, (scaledImageWidth - window.innerWidth) / 2);
         const maxPanY = Math.max(0, (scaledImageHeight - window.innerHeight) / 2);
 
-         newX = Math.max(-maxPanX, Math.min(maxPanX, newX));
-         newY = Math.max(-maxPanY, Math.min(maxPanY, newY));
+        newX = Math.max(-maxPanX, Math.min(maxPanX, newX));
+        newY = Math.max(-maxPanY, Math.min(maxPanY, newY));
 
-         return { x: newX, y: newY };
-       });
+        return { x: newX, y: newY };
+      });
 
       return clampedZoom;
     });

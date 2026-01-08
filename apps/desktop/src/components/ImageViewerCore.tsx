@@ -164,7 +164,7 @@ const ImageViewerCore: React.FC<ImageViewerCoreProps> = React.memo(({
                   width: '100%',
                   height: '100%',
                   objectFit: 'contain',
-                  transition: transitionState.isTransitioning ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  transition: 'none',
                   transform: zoomLevel === 1 ? 'none' : `scale(${zoomLevel}) translate(${panPosition.x / zoomLevel}px, ${panPosition.y / zoomLevel}px)`,
                   cursor: zoomLevel === 1 ? 'default' : 'grab',
                   backfaceVisibility: 'hidden',
