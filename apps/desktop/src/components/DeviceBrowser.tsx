@@ -8,6 +8,7 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
+import Snackbar from "@mui/material/Snackbar";
 import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Link from "@mui/material/Link";
 import Chip from "@mui/material/Chip";
@@ -46,9 +47,9 @@ interface FileItem {
 type ViewMode = "list" | "small_grid" | "large_grid";
 
 interface DeviceBrowserProps {
-  onDeviceSelect?: (device: Device) => void;
   onFileSelect?: (files: string[]) => void;
   onImportImages?: (images: string[]) => void;
+  onDeviceClick?: (devicePath: string) => void;
 }
 
 interface ViewControlsProps {
@@ -318,9 +319,9 @@ const FileGrid: React.FC<FileGridProps> = ({ files, onFileClick, size }) => {
 };
 
 const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
-  onDeviceSelect,
   onFileSelect,
   onImportImages,
+  onDeviceClick,
 }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -330,9 +331,7 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [previousDeviceCount, setPreviousDeviceCount] = useState<number>(0);
-  const [deviceChangeMessage, setDeviceChangeMessage] = useState<string | null>(
-    null,
-  );
+
   const [pathHistory, setPathHistory] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem("deviceBrowserViewMode");
@@ -340,6 +339,15 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
   });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [newDevices, setNewDevices] = useState<Device[]>([]);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'warning' | 'info';
+  }>({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
 
   const changeViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -358,11 +366,17 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
       if (imageFiles.length > 0) {
         // Add images to the main app
         onImportImages?.(imageFiles);
-        setDeviceChangeMessage(`Imported ${imageFiles.length} images from ${device.name || device.mount_point}`);
-        setTimeout(() => setDeviceChangeMessage(null), 3000);
+        setSnackbar({
+          open: true,
+          message: `Imported ${imageFiles.length} images`,
+          severity: 'success'
+        });
       } else {
-        setDeviceChangeMessage(`No images found on ${device.name || device.mount_point}`);
-        setTimeout(() => setDeviceChangeMessage(null), 3000);
+        setSnackbar({
+          open: true,
+          message: 'No images found on device',
+          severity: 'warning'
+        });
       }
     } catch (err) {
       console.error("Error importing from device:", err);
@@ -372,10 +386,13 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
     }
   };
 
-  const handleExportToDevice = async (device: Device) => {
+  const handleExportToDevice = async (_device: Device) => {
     // TODO: Implement export functionality
-    setDeviceChangeMessage(`Export functionality coming soon for ${device.name || device.mount_point}`);
-    setTimeout(() => setDeviceChangeMessage(null), 3000);
+    setSnackbar({
+      open: true,
+      message: 'Export functionality coming soon',
+      severity: 'info'
+    });
   };
 
   // Load connected devices on component mount and set up polling
@@ -412,16 +429,18 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
             setShowImportDialog(true);
           }
 
-          setDeviceChangeMessage(
-            `Device connected (${currentCount - previousDeviceCount} new)`,
-          );
+          setSnackbar({
+            open: true,
+            message: `Device connected (${currentCount - previousDeviceCount} new)`,
+            severity: 'success'
+          });
         } else {
-          setDeviceChangeMessage(
-            `Device disconnected (${previousDeviceCount - currentCount} removed)`,
-          );
+          setSnackbar({
+            open: true,
+            message: `Device disconnected (${previousDeviceCount - currentCount} removed)`,
+            severity: 'warning'
+          });
         }
-        // Clear the message after 3 seconds
-        setTimeout(() => setDeviceChangeMessage(null), 3000);
       }
       setPreviousDeviceCount(currentCount);
 
@@ -435,13 +454,12 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
     }
   };
 
-  const browseDevice = async (device: Device) => {
-    setSelectedDevice(device);
-    setCurrentPath(device.mount_point);
-    setPathHistory([device.mount_point]);
-    await loadDirectoryContents(device.mount_point);
-    onDeviceSelect?.(device);
+  const handleDeviceClick = (device: Device) => {
+    // Call the parent handler to switch to import UI
+    onDeviceClick?.(device.mount_point);
   };
+
+
 
   const loadDirectoryContents = async (path: string) => {
     try {
@@ -622,33 +640,32 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
           </Box>
         </Box>
 
-        {deviceChangeMessage && (
-          <Alert severity="info" sx={{ mx: 2, mb: 1 }}>
-            {deviceChangeMessage}
-          </Alert>
-        )}
+
 
         {viewMode === "list" ? (
           <List sx={{ pt: 0 }}>
             {devices.map((device) => (
               <ListItem key={device.mount_point} disablePadding>
-                <ListItemButton onClick={() => browseDevice(device)}>
+                <ListItemButton onClick={() => handleDeviceClick(device)}>
                   <ListItemIcon>{getDeviceIcon(device.device_type)}</ListItemIcon>
                   <ListItemText
                     primary={device.name || device.mount_point}
-                    secondary={
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
-                          {device.device_type}
-                        </Typography>
-                        {device.total_space && (
-                          <Typography variant="caption" color="text.secondary">
-                            {formatBytes(device.available_space)} free of{" "}
-                            {formatBytes(device.total_space)}
-                          </Typography>
-                        )}
-                      </Box>
-                    }
+                      secondary={
+                        <>
+                          <span style={{ color: 'text.secondary' }}>
+                            {device.device_type} - Click to select folder
+                          </span>
+                          {device.total_space && (
+                            <>
+                              <br />
+                              <span style={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                                {formatBytes(device.available_space)} free of{" "}
+                                {formatBytes(device.total_space)}
+                              </span>
+                            </>
+                          )}
+                        </>
+                      }
                   />
                 </ListItemButton>
               </ListItem>
@@ -665,7 +682,7 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
         ) : (
           <DeviceGrid
             devices={devices}
-            onDeviceClick={browseDevice}
+            onDeviceClick={handleDeviceClick}
             getDeviceIcon={getDeviceIcon}
             formatBytes={formatBytes}
             size={viewMode === "large_grid" ? "large" : "small"}
@@ -790,6 +807,23 @@ const DeviceBrowser: React.FC<DeviceBrowserProps> = ({
         onImportFromDevice={handleImportFromDevice}
         onExportToDevice={handleExportToDevice}
       />
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%', borderRadius: 2 }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

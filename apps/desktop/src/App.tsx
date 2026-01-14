@@ -29,6 +29,7 @@ const FolderManagementDialog = lazy(() => import("./components/FolderManagementD
 const SearchBar = lazy(() => import("./components/SearchBar"));
 const FaceRecognitionPanel = lazy(() => import("./components/FaceRecognitionPanel"));
 const ImageViewerModal = lazy(() => import("./components/ImageViewerModal"));
+const FileImport = lazy(() => import("./components/FileImport"));
 import { open } from "@tauri-apps/plugin-dialog";
 import { performanceMonitor } from "./utils/performanceMonitor";
 import { workerManager } from "./utils/workerManager";
@@ -67,6 +68,7 @@ function App() {
   const persistedData = loadPersistedData();
 
   const [selectedSection, setSelectedSection] = useState<string>("photos");
+  const [selectedDeviceForImport, setSelectedDeviceForImport] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [directoryPaths, setDirectoryPaths] = useState<string[]>(
     persistedData.directories,
@@ -696,27 +698,46 @@ function App() {
                </Box>
              }>
                 {selectedSection === "photos" ? (
-                  <ResponsivePhotoGrid
-                    images={images}
+                   <ResponsivePhotoGrid
+                     images={images}
+                   />
+                ) : selectedSection === "import" ? (
+                  <FileImport
+                    initialSourceDir={selectedDeviceForImport}
+                    onImportComplete={() => {
+                      // Clear the selected device and go back to devices section
+                      setSelectedDeviceForImport(null);
+                      setSelectedSection("devices");
+                    }}
+                    onCancel={() => {
+                      // Go back to devices section when cancelled
+                      setSelectedDeviceForImport(null);
+                      setSelectedSection("devices");
+                    }}
                   />
-              ) : selectedSection === "folders" ? (
-              <FolderView
-                directoryPaths={directoryPaths}
-                onAddFolders={handleAddFolders}
-                onRemoveDirectory={handleRemoveDirectory}
-              />
-             ) : selectedSection === "devices" ? (
-               <DeviceBrowser
-                  onFileSelect={async (files: string[]) => {
-                    // When images are selected from a device, add them to the current images
-                    setImages((prev) => [...prev, ...files]);
-                  }}
-                  onImportImages={(importedImages: string[]) => {
-                    // When images are imported from a device, add them to the current images
-                    setImages((prev) => [...prev, ...importedImages]);
-                  }}
+               ) : selectedSection === "folders" ? (
+               <FolderView
+                 directoryPaths={directoryPaths}
+                 onAddFolders={handleAddFolders}
+                 onRemoveDirectory={handleRemoveDirectory}
                />
-             ) : selectedSection === "faces" ? (
+              ) : selectedSection === "devices" ? (
+                <DeviceBrowser
+                   onFileSelect={async (files: string[]) => {
+                     // When images are selected from a device, add them to the current images
+                     setImages((prev) => [...prev, ...files]);
+                   }}
+                   onImportImages={(importedImages: string[]) => {
+                     // When images are imported from a device, add them to the current images
+                     setImages((prev) => [...prev, ...importedImages]);
+                   }}
+                   onDeviceClick={(devicePath: string) => {
+                     // When a device is clicked, switch to import UI and set the device path
+                     setSelectedDeviceForImport(devicePath);
+                     setSelectedSection("import");
+                   }}
+                />
+              ) : selectedSection === "faces" ? (
                <FaceRecognitionPanel
                  isVisible={true}
                  onClose={() => setSelectedSection("photos")}
@@ -742,31 +763,35 @@ function App() {
         </Box>
       </Box>
 
-      {/* Search Bar */}
-      <Suspense fallback={null}>
-        <SearchBar
-          onSearch={handleSearch}
-          sidebarWidth={isSidebarCollapsed ? 80 : 280}
-          isVisible={!isScrolled}
-        />
-      </Suspense>
+       {/* Search Bar - Hide in devices and import sections */}
+       {selectedSection !== "devices" && selectedSection !== "import" && (
+         <Suspense fallback={null}>
+           <SearchBar
+             onSearch={handleSearch}
+             sidebarWidth={isSidebarCollapsed ? 80 : 280}
+             isVisible={!isScrolled}
+           />
+         </Suspense>
+       )}
 
-      {/* Floating More Options Button */}
-      <Fab
-        color="primary"
-        size="medium"
-        sx={{
-          position: "fixed",
-          top: 24,
-          right: 24,
-          borderRadius: 3,
-          boxShadow: 3,
-          zIndex: 1000,
-        }}
-        onClick={handleMenuOpen}
-      >
-        <MoreVertIcon />
-      </Fab>
+       {/* Floating More Options Button - Hide in devices and import sections */}
+       {selectedSection !== "devices" && selectedSection !== "import" && (
+         <Fab
+           color="primary"
+           size="medium"
+           sx={{
+             position: "fixed",
+             top: 24,
+             right: 24,
+             borderRadius: 3,
+             boxShadow: 3,
+             zIndex: 1000,
+           }}
+           onClick={handleMenuOpen}
+         >
+           <MoreVertIcon />
+         </Fab>
+       )}
 
       {/* More Options Menu */}
       <Menu
