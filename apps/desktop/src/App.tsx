@@ -163,6 +163,26 @@ function App() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Auto-collapse sidebar for medium screen sizes (510px - 620px)
+  useEffect(() => {
+    const handleResize = () => {
+      const windowWidth = window.innerWidth;
+      // Auto-collapse sidebar if window width is between 510px and 620px
+      if (windowWidth >= 510 && windowWidth <= 620) {
+        setIsSidebarCollapsed(true);
+      }
+      // Note: We don't auto-expand here to respect user preference
+      // Users can still manually toggle it back open if desired
+    };
+
+    // Check on mount
+    handleResize();
+
+    // Listen for resize events
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   // Persist all settings to localStorage (batched for performance)
   useEffect(() => {
     try {
