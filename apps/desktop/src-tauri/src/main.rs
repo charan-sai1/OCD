@@ -1046,7 +1046,7 @@ async fn import_files(
             totalFiles: 0, // Will be updated after scanning
             importedFiles: 0,
             skippedFiles: 0,
-            currentFileName: String::new(),
+            currentFileName: "Scanning files...".to_string(),
             estimatedTimeRemaining: None,
         };
     }

@@ -203,7 +203,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && (
               <>
                 <LinearProgress
-                  variant="determinate"
+                  variant={importProgress.totalFiles > 0 ? "determinate" : "indeterminate"}
                   value={importProgress.totalFiles > 0 ? (importProgress.currentFile / importProgress.totalFiles) * 100 : 0}
                   sx={{
                     height: 6,
@@ -225,7 +225,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                       display: 'block',
                     }}
                   >
-                    {importProgress.currentFile} of {importProgress.totalFiles} files
+                    {importProgress.totalFiles > 0
+                      ? `${importProgress.currentFile} of ${importProgress.totalFiles} files`
+                      : "Scanning files..."
+                    }
                   </Typography>
 
                   <Typography
@@ -240,7 +243,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     title={importProgress.currentFileName}
                   >
-                    {importProgress.currentFileName || "Preparing..."}
+                    {importProgress.currentFileName}
                   </Typography>
 
                   {(importProgress.importedFiles > 0 || importProgress.skippedFiles > 0) && (
