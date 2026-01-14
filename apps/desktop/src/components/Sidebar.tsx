@@ -1,23 +1,28 @@
- import React from "react";
- import Box from "@mui/material/Box";
- import Typography from "@mui/material/Typography";
- import Drawer from "@mui/material/Drawer";
- import List from "@mui/material/List";
- import ListItem from "@mui/material/ListItem";
- import ListItemButton from "@mui/material/ListItemButton";
- import ListItemIcon from "@mui/material/ListItemIcon";
- import ListItemText from "@mui/material/ListItemText";
- import Divider from "@mui/material/Divider";
- import IconButton from "@mui/material/IconButton";
- import {
-   Folder as FolderIcon,
-   Favorite as FavoriteIcon,
-   Delete as DeleteIcon,
-   Archive as ArchiveIcon,
-   Devices as DevicesIcon,
-   Face as FaceIcon,
-   ChevronLeft as ChevronLeftIcon,
- } from "@mui/icons-material";
+  import React, { useState, useEffect } from "react";
+  import Box from "@mui/material/Box";
+  import Typography from "@mui/material/Typography";
+  import Drawer from "@mui/material/Drawer";
+  import List from "@mui/material/List";
+  import ListItem from "@mui/material/ListItem";
+  import ListItemButton from "@mui/material/ListItemButton";
+  import ListItemIcon from "@mui/material/ListItemIcon";
+  import ListItemText from "@mui/material/ListItemText";
+  import Divider from "@mui/material/Divider";
+  import IconButton from "@mui/material/IconButton";
+  import LinearProgress from "@mui/material/LinearProgress";
+  import { invoke } from "@tauri-apps/api/core";
+  import {
+    Folder as FolderIcon,
+    Favorite as FavoriteIcon,
+    Delete as DeleteIcon,
+    Archive as ArchiveIcon,
+    Devices as DevicesIcon,
+    Face as FaceIcon,
+    Photo as PhotoIcon,
+    ChevronLeft as ChevronLeftIcon,
+    Cancel as CancelIcon,
+    ImportExport as ImportExportIcon,
+  } from "@mui/icons-material";
 
 interface SidebarProps {
   selectedSection: string;
@@ -26,13 +31,34 @@ interface SidebarProps {
   onToggleSidebar: () => void;
 }
 
+interface ImportProgress {
+  isImporting: boolean;
+  currentFile: number;
+  totalFiles: number;
+  importedFiles: number;
+  skippedFiles: number;
+  currentFileName: string;
+  estimatedTimeRemaining: string | null;
+}
+
 const Sidebar: React.FC<SidebarProps> = ({
   selectedSection,
   onSectionChange,
   collapsed = false,
   onToggleSidebar,
 }) => {
+  const [importProgress, setImportProgress] = useState<ImportProgress>({
+    isImporting: false,
+    currentFile: 0,
+    totalFiles: 0,
+    importedFiles: 0,
+    skippedFiles: 0,
+    currentFileName: "",
+    estimatedTimeRemaining: null,
+  });
+
   const menuItems = [
+    { id: "photos", label: "Photos", icon: PhotoIcon },
     { id: "folders", label: "Folders", icon: FolderIcon },
     { id: "devices", label: "Devices", icon: DevicesIcon },
     { id: "faces", label: "Faces", icon: FaceIcon },
@@ -40,6 +66,39 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: "archive", label: "Archive", icon: ArchiveIcon },
     { id: "trash", label: "Trash", icon: DeleteIcon },
   ];
+
+  // Poll for import progress
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const checkProgress = async () => {
+      try {
+        const progress = await invoke<ImportProgress>("get_import_progress");
+        setImportProgress(progress);
+      } catch (error) {
+        console.error("Failed to get import progress:", error);
+      }
+    };
+
+    // Check immediately and then every 500ms if importing
+    checkProgress();
+    intervalId = setInterval(checkProgress, 500);
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  const handleCancelImport = async () => {
+    try {
+      await invoke("cancel_import");
+      setImportProgress(prev => ({ ...prev, isImporting: false }));
+    } catch (error) {
+      console.error("Failed to cancel import:", error);
+    }
+  };
 
   return (
     <Drawer
@@ -104,6 +163,103 @@ const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </List>
+
+        {/* Import Progress */}
+        {importProgress.isImporting && (
+          <Box sx={{ padding: collapsed ? 1 : 2 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+              {!collapsed && (
+                <ImportExportIcon sx={{ fontSize: 16, color: "primary.main" }} />
+              )}
+              {!collapsed && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "onSurfaceVariant",
+                    fontWeight: 500,
+                    fontSize: '0.75rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.083em',
+                  }}
+                >
+                  Importing
+                </Typography>
+              )}
+              <IconButton
+                size="small"
+                onClick={handleCancelImport}
+                sx={{
+                  color: "error.main",
+                  padding: 0.5,
+                  "&:hover": {
+                    backgroundColor: "rgba(244, 67, 54, 0.1)",
+                  },
+                }}
+              >
+                <CancelIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Box>
+
+            {!collapsed && (
+              <>
+                <LinearProgress
+                  variant="determinate"
+                  value={importProgress.totalFiles > 0 ? (importProgress.currentFile / importProgress.totalFiles) * 100 : 0}
+                  sx={{
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: "rgba(255, 255, 255, 0.12)",
+                    "& .MuiLinearProgress-bar": {
+                      backgroundColor: "primary.main",
+                      borderRadius: 3,
+                    },
+                  }}
+                />
+
+                <Box sx={{ mt: 1 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "onSurfaceVariant",
+                      fontSize: '0.7rem',
+                      display: 'block',
+                    }}
+                  >
+                    {importProgress.currentFile} of {importProgress.totalFiles} files
+                  </Typography>
+
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "onSurfaceVariant",
+                      fontSize: '0.7rem',
+                      display: 'block',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={importProgress.currentFileName}
+                  >
+                    {importProgress.currentFileName || "Preparing..."}
+                  </Typography>
+
+                  {(importProgress.importedFiles > 0 || importProgress.skippedFiles > 0) && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "onSurfaceVariant",
+                        fontSize: '0.7rem',
+                        display: 'block',
+                      }}
+                    >
+                      {importProgress.importedFiles} imported, {importProgress.skippedFiles} skipped
+                    </Typography>
+                  )}
+                </Box>
+              </>
+            )}
+          </Box>
+        )}
 
         <Divider sx={{ marginY: 2, borderColor: "rgba(255, 255, 255, 0.12)" }} />
 

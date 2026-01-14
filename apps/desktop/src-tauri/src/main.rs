@@ -979,6 +979,45 @@ pub struct ImportResult {
     pub totalSizeBytes: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ImportProgress {
+    pub isImporting: bool,
+    pub currentFile: usize,
+    pub totalFiles: usize,
+    pub importedFiles: usize,
+    pub skippedFiles: usize,
+    pub currentFileName: String,
+    pub estimatedTimeRemaining: Option<String>,
+}
+
+// Global state for import progress and cancellation
+static IMPORT_PROGRESS: Lazy<Mutex<ImportProgress>> = Lazy::new(|| {
+    Mutex::new(ImportProgress {
+        isImporting: false,
+        currentFile: 0,
+        totalFiles: 0,
+        importedFiles: 0,
+        skippedFiles: 0,
+        currentFileName: String::new(),
+        estimatedTimeRemaining: None,
+    })
+});
+
+static CANCEL_IMPORT: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+#[tauri::command]
+fn get_import_progress() -> Result<ImportProgress, String> {
+    let progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+    Ok((*progress).clone())
+}
+
+#[tauri::command]
+fn cancel_import() -> Result<(), String> {
+    let mut cancel_flag = CANCEL_IMPORT.lock().map_err(|e| e.to_string())?;
+    *cancel_flag = true;
+    Ok(())
+}
+
 #[tauri::command]
 async fn import_files(
     source_path: String,
@@ -998,11 +1037,36 @@ async fn import_files(
         source_path, destination_path, import_mode
     );
 
+    // Initialize progress tracking
+    {
+        let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+        *progress = ImportProgress {
+            isImporting: true,
+            currentFile: 0,
+            totalFiles: 0, // Will be updated after scanning
+            importedFiles: 0,
+            skippedFiles: 0,
+            currentFileName: String::new(),
+            estimatedTimeRemaining: None,
+        };
+    }
+
+    // Reset cancel flag
+    {
+        let mut cancel_flag = CANCEL_IMPORT.lock().map_err(|e| e.to_string())?;
+        *cancel_flag = false;
+    }
+
     let source_path = Path::new(&source_path);
     let destination_path = Path::new(&destination_path);
 
     // Validate source and destination
     if !source_path.exists() || !source_path.is_dir() {
+        // Reset progress on error
+        {
+            let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+            progress.isImporting = false;
+        }
         return Err(format!(
             "Source path does not exist or is not a directory: {}",
             source_path.display()
@@ -1085,13 +1149,38 @@ async fn import_files(
     }
 
     totalFiles = files_to_import.len();
+
+    // Update progress with total files
+    {
+        let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+        progress.totalFiles = totalFiles;
+    }
+
     println!("Found {} files to process", totalFiles);
 
     // Process files in batches to avoid overwhelming the system
     const BATCH_SIZE: usize = 10;
 
     for batch in files_to_import.chunks(BATCH_SIZE) {
+        // Check for cancellation at batch level
+        {
+            let cancel_flag = CANCEL_IMPORT.lock().map_err(|e| e.to_string())?;
+            if *cancel_flag {
+                println!("Import cancelled by user");
+                break;
+            }
+        }
+
         for source_file_path in batch {
+            // Check for cancellation at file level
+            {
+                let cancel_flag = CANCEL_IMPORT.lock().map_err(|e| e.to_string())?;
+                if *cancel_flag {
+                    println!("Import cancelled by user");
+                    break;
+                }
+            }
+
             let filename = match source_file_path.file_name() {
                 Some(name) => name.to_string_lossy().to_string(),
                 None => {
@@ -1102,6 +1191,25 @@ async fn import_files(
                     continue;
                 }
             };
+
+            // Update progress with current file
+            {
+                let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+                progress.currentFile += 1;
+                progress.currentFileName = filename.clone();
+            }
+
+            // Check for duplicates in smart mode
+            if skip_duplicates && existing_files.contains(&filename) {
+                println!("Skipping duplicate file: {}", filename);
+                skippedFiles += 1;
+                // Update progress
+                {
+                    let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+                    progress.skippedFiles = skippedFiles;
+                }
+                continue;
+            }
 
             // Check for duplicates in smart mode
             if skip_duplicates && existing_files.contains(&filename) {
@@ -1143,6 +1251,13 @@ async fn import_files(
                 Ok(bytes_copied) => {
                     importedFiles += 1;
                     totalSizeBytes += bytes_copied;
+
+                    // Update progress
+                    {
+                        let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+                        progress.importedFiles = importedFiles;
+                    }
+
                     println!(
                         "Imported: {} ({} bytes)",
                         dest_file_path.display(),
@@ -1166,20 +1281,48 @@ async fn import_files(
         tokio::task::yield_now().await;
     }
 
-    println!(
-        "Import completed. Imported: {}, Skipped: {}, Errors: {}",
-        importedFiles,
-        skippedFiles,
-        errors.len()
-    );
+    // Check if import was cancelled
+    let was_cancelled = {
+        let cancel_flag = CANCEL_IMPORT.lock().map_err(|e| e.to_string())?;
+        *cancel_flag
+    };
 
-    Ok(ImportResult {
-        importedFiles,
-        totalFiles,
-        skippedFiles,
-        errors,
-        totalSizeBytes,
-    })
+    // Reset progress
+    {
+        let mut progress = IMPORT_PROGRESS.lock().map_err(|e| e.to_string())?;
+        progress.isImporting = false;
+        progress.currentFileName = String::new();
+    }
+
+    if was_cancelled {
+        println!(
+            "Import was cancelled. Imported: {}, Skipped: {}",
+            importedFiles, skippedFiles
+        );
+        // Return partial results for cancelled import
+        Ok(ImportResult {
+            importedFiles,
+            totalFiles,
+            skippedFiles,
+            errors,
+            totalSizeBytes,
+        })
+    } else {
+        println!(
+            "Import completed. Imported: {}, Skipped: {}, Errors: {}",
+            importedFiles,
+            skippedFiles,
+            errors.len()
+        );
+
+        Ok(ImportResult {
+            importedFiles,
+            totalFiles,
+            skippedFiles,
+            errors,
+            totalSizeBytes,
+        })
+    }
 }
 
 fn main() {
@@ -1199,6 +1342,8 @@ fn main() {
             extract_or_generate_thumbnail,
             test_exif_extraction,
             import_files,
+            get_import_progress,
+            cancel_import,
             initialize_face_recognition,
             detect_faces,
             extract_embeddings,
