@@ -3,20 +3,17 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import React, { Suspense, lazy } from "react";
 import Fab from "@mui/material/Fab";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
-import IconButton from "@mui/material/IconButton";
+import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
 import { previewCache } from "./utils/previewCache";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
-import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import AddIcon from "@mui/icons-material/Add";
-import RemoveIcon from "@mui/icons-material/Remove";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import AiIcon from "@mui/icons-material/AutoAwesome";
 import { theme } from "./theme";
 import "./styles/animations.css";
 
@@ -44,21 +41,18 @@ function App() {
   const loadPersistedData = () => {
     try {
       const savedDirectories = localStorage.getItem('ocd-selected-directories');
-      const savedImageSize = localStorage.getItem('ocd-image-size');
       const savedSidebarState = localStorage.getItem('ocd-sidebar-collapsed');
       const savedDirectoryCache = localStorage.getItem('ocd-directory-cache');
 
       return {
-        directories: savedDirectories ? JSON.parse(savedDirectories) : [],
-        imageSize: savedImageSize ? parseInt(savedImageSize, 10) : 4,
+        directoryPaths: savedDirectories ? JSON.parse(savedDirectories) : [],
         sidebarCollapsed: savedSidebarState ? JSON.parse(savedSidebarState) : false,
         directoryCache: savedDirectoryCache ? JSON.parse(savedDirectoryCache) : {},
       };
     } catch (error) {
       console.error('Error loading persisted data:', error);
       return {
-        directories: [],
-        imageSize: 4,
+        directoryPaths: [],
         sidebarCollapsed: false,
         directoryCache: {},
       };
@@ -71,7 +65,7 @@ function App() {
   const [selectedDeviceForImport, setSelectedDeviceForImport] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [directoryPaths, setDirectoryPaths] = useState<string[]>(
-    persistedData.directories,
+    persistedData.directoryPaths,
   );
 
 
@@ -80,10 +74,8 @@ function App() {
   );
   const [isFolderManagementOpen, setIsFolderManagementOpen] =
     useState<boolean>(false);
-  const [imageSize, setImageSize] = useState<number>(persistedData.imageSize);
-  const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState<boolean>(false);
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [isScrolled, setIsScrolled] = useState<boolean>(false);
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [topBarHidden, setTopBarHidden] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
    const [loadingProgress, setLoadingProgress] = useState<number>(0);
@@ -151,14 +143,32 @@ function App() {
 
 
 
-  // Handle scroll detection for search bar visibility
+  // Handle scroll detection for top bar visibility
   useEffect(() => {
-    let scrollCount = 0;
-    const handleScroll = () => {
-      const scrollY = window.scrollY || window.pageYOffset;
-      setIsScrolled(scrollY > 50); // Hide search bar when scrolled down more than 50px
+    let lastScrollY = 0;
+    let ticking = false;
 
-      scrollCount++;
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const scrollY = window.scrollY || window.pageYOffset;
+          const scrollDirection = scrollY > lastScrollY ? 'down' : 'up';
+          const scrollDelta = Math.abs(scrollY - lastScrollY);
+
+          // Hide/show top bar based on scroll direction and distance
+          if (scrollDirection === 'down' && scrollDelta > 10 && scrollY > 100) {
+            setTopBarHidden(true);
+          } else if (scrollDirection === 'up' && scrollDelta > 10) {
+            setTopBarHidden(false);
+          }
+
+
+
+          lastScrollY = scrollY;
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -189,7 +199,6 @@ function App() {
   useEffect(() => {
     try {
       localStorage.setItem("ocd-selected-directories", JSON.stringify(directoryPaths));
-      localStorage.setItem("ocd-image-size", imageSize.toString());
       localStorage.setItem("ocd-sidebar-collapsed", JSON.stringify(isSidebarCollapsed));
       const recentCache = Object.fromEntries(
         Object.entries(directoryCache)
@@ -200,7 +209,7 @@ function App() {
     } catch (error) {
       console.error("Error saving settings to localStorage:", error);
     }
-  }, [directoryPaths, imageSize, isSidebarCollapsed, directoryCache]);
+  }, [directoryPaths, isSidebarCollapsed, directoryCache]);
 
    const handleAddFolders = async () => {
      // Schedule directory selection asynchronously
@@ -330,9 +339,9 @@ function App() {
       setIsLoadingImages(true);
       setLoadingProgress(0);
 
-      // Try to use web worker for directory scanning
-      const directoryScanner = await workerManager.getDirectoryScanner();
-      const scanResults = await directoryScanner.scanDirectories(paths, directoryCache);
+       // Try to use web worker for directory scanning
+       const directoryScanner = await workerManager.getDirectoryScanner();
+       const scanResults = await directoryScanner.scanDirectories(paths, directoryCache);
 
       const allImagePaths: string[] = [];
       const seenPaths = new Set<string>();
@@ -385,11 +394,40 @@ function App() {
 
         // Yield control between directories
         await new Promise(resolve => setTimeout(resolve, 0));
-      }
+       }
 
-
-
-      setImages(allImagePaths);
+       // Sort images based on sort order
+       if (sortOrder === "newest") {
+         // Sort by modification time (newest first)
+         const { invoke } = await import('@tauri-apps/api/core');
+         const imageStats = await Promise.all(
+           allImagePaths.map(async (path) => {
+             try {
+               const stat = await invoke("get_file_info", { path });
+               return { path, mtime: (stat as any).modified };
+             } catch {
+               return { path, mtime: 0 };
+             }
+           })
+         );
+         imageStats.sort((a, b) => b.mtime - a.mtime);
+         setImages(imageStats.map(item => item.path));
+       } else {
+         // Sort by modification time (oldest first)
+         const { invoke } = await import('@tauri-apps/api/core');
+         const imageStats = await Promise.all(
+           allImagePaths.map(async (path) => {
+             try {
+               const stat = await invoke("get_file_info", { path });
+               return { path, mtime: (stat as any).modified };
+             } catch {
+               return { path, mtime: 0 };
+             }
+           })
+         );
+         imageStats.sort((a, b) => a.mtime - b.mtime);
+         setImages(imageStats.map(item => item.path));
+       }
       setLoadingProgress(100);
 
       performanceMonitor.end('total-image-loading');
@@ -489,17 +527,7 @@ function App() {
     // TODO: Implement search filtering logic
   };
 
-  const handleIncreaseImageSize = () => {
-    setImageSize((prev) => Math.min(prev + 1, 8)); // Max 8 columns
-  };
 
-  const handleDecreaseImageSize = () => {
-    setImageSize((prev) => Math.max(prev - 1, 2)); // Min 2 columns
-  };
-
-  const handleImport = () => {
-    // TODO: Implement import functionality
-  };
 
    const handleImageChange = useCallback((newIndex: number) => {
      setCurrentImageIndex(newIndex);
@@ -643,15 +671,7 @@ function App() {
     setIsLoadingImages(false);
   };
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setMenuAnchorEl(event.currentTarget);
-    setIsMoreOptionsOpen(true);
-  };
 
-  const handleMenuClose = () => {
-    setMenuAnchorEl(null);
-    setIsMoreOptionsOpen(false);
-  };
 
   // Cleanup workers and preloader when app unmounts
   React.useEffect(() => {
@@ -691,12 +711,192 @@ function App() {
           }}
         >
           {/* Scrollable Content */}
-          <Box sx={{ flex: 1, padding: 3, paddingTop: 2, overflowY: "auto" }}>
-             <Suspense fallback={
-               <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
-                 <CircularProgress size={60} />
-               </Box>
-             }>
+          <Box sx={{ flex: 1, overflowY: "auto" }}>
+            {/* Sticky Controls Bar with Search */}
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid rgba(0,0,0,0.12)', backgroundColor: 'var(--mui-palette-background-paper)', position: 'sticky', top: 0, zIndex: 100 }}>
+              <div style={{ flex: 1 }}></div>
+              <TextField
+                placeholder="Search photos..."
+                variant="outlined"
+                size="small"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSearch(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <AiIcon sx={{ color: 'rgba(0, 0, 0, 0.6)' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  maxWidth: 300,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 50,
+                    backdropFilter: 'blur(16px) saturate(180%)',
+                    background: `
+                      linear-gradient(135deg,
+                        rgba(255,255,255,0.2) 0%,
+                        rgba(255,255,255,0.1) 25%,
+                        rgba(255,255,255,0.08) 50%,
+                        rgba(255,255,255,0.1) 75%,
+                        rgba(255,255,255,0.2) 100%
+                      )
+                    `,
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    boxShadow: `
+                      0 4px 16px rgba(0, 0, 0, 0.08),
+                      0 1px 4px rgba(255, 255, 255, 0.2) inset,
+                      0 -1px 2px rgba(0, 0, 0, 0.05) inset
+                    `,
+                    '& fieldset': {
+                      border: 'none',
+                    },
+                    '&:hover': {
+                      backdropFilter: 'blur(20px) saturate(200%)',
+                      background: `
+                        linear-gradient(135deg,
+                          rgba(255,255,255,0.3) 0%,
+                          rgba(255,255,255,0.2) 25%,
+                          rgba(255,255,255,0.15) 50%,
+                          rgba(255,255,255,0.2) 75%,
+                          rgba(255,255,255,0.3) 100%
+                        )
+                      `,
+                      boxShadow: `
+                        0 6px 20px rgba(0, 0, 0, 0.12),
+                        0 2px 8px rgba(255, 255, 255, 0.25) inset,
+                        0 -2px 4px rgba(0, 0, 0, 0.08) inset
+                      `,
+                    },
+                  },
+                  '& .MuiInputAdornment-root .MuiSvgIcon-root': {
+                    color: 'text.secondary',
+                  },
+                  '&.Mui-focused .MuiInputAdornment-root .MuiSvgIcon-root': {
+                    color: '#9370db',
+                  },
+                  '& .MuiInputBase-input::placeholder': {
+                    color: 'text.secondary',
+                    opacity: 1,
+                  },
+                }}
+              />
+              <Button
+                startIcon={sortOrder === "newest" ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />}
+                variant="outlined"
+                onClick={async () => {
+                  const newSortOrder = sortOrder === "newest" ? "oldest" : "newest";
+                  setSortOrder(newSortOrder);
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const imageStats = await Promise.all(
+                    images.map(async (path) => {
+                      try {
+                        const stat = await invoke("get_file_info", { path });
+                        return { path, mtime: (stat as any).modified };
+                      } catch {
+                        return { path, mtime: 0 };
+                      }
+                    })
+                  );
+                  if (newSortOrder === "newest") {
+                    imageStats.sort((a, b) => b.mtime - a.mtime);
+                  } else {
+                    imageStats.sort((a, b) => a.mtime - b.mtime);
+                  }
+                  setImages(imageStats.map(item => item.path));
+                }}
+                sx={{
+                  backdropFilter: 'blur(16px) saturate(180%)',
+                  background: `
+                    linear-gradient(135deg,
+                      rgba(255,255,255,0.2) 0%,
+                      rgba(255,255,255,0.1) 25%,
+                      rgba(255,255,255,0.08) 50%,
+                      rgba(255,255,255,0.1) 75%,
+                      rgba(255,255,255,0.2) 100%
+                    )
+                  `,
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: `
+                    0 4px 16px rgba(0, 0, 0, 0.08),
+                    0 1px 4px rgba(255, 255, 255, 0.2) inset,
+                    0 -1px 2px rgba(0, 0, 0, 0.05) inset
+                  `,
+                   color: 'text.primary',
+                  '&:hover': {
+                    backdropFilter: 'blur(20px) saturate(200%)',
+                    background: `
+                      linear-gradient(135deg,
+                        rgba(255,255,255,0.3) 0%,
+                        rgba(255,255,255,0.2) 25%,
+                        rgba(255,255,255,0.15) 50%,
+                        rgba(255,255,255,0.2) 75%,
+                        rgba(255,255,255,0.3) 100%
+                      )
+                    `,
+                    boxShadow: `
+                      0 6px 20px rgba(0, 0, 0, 0.12),
+                      0 2px 8px rgba(255, 255, 255, 0.25) inset,
+                      0 -2px 4px rgba(0, 0, 0, 0.08) inset
+                    `,
+                  },
+                   '& .MuiButton-startIcon': {
+                     color: 'text.secondary',
+                   },
+                }}
+              >
+                {sortOrder === "newest" ? "Newest" : "Oldest"}
+              </Button>
+              <Fab
+                size="small"
+                onClick={() => setIsFolderManagementOpen(true)}
+                sx={{
+                  backdropFilter: 'blur(16px) saturate(180%)',
+                  background: `
+                    linear-gradient(135deg,
+                      rgba(255,255,255,0.2) 0%,
+                      rgba(255,255,255,0.1) 25%,
+                      rgba(255,255,255,0.08) 50%,
+                      rgba(255,255,255,0.1) 75%,
+                      rgba(255,255,255,0.2) 100%
+                    )
+                  `,
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: `
+                    0 4px 16px rgba(0, 0, 0, 0.08),
+                    0 1px 4px rgba(255, 255, 255, 0.2) inset,
+                    0 -1px 2px rgba(0, 0, 0, 0.05) inset
+                  `,
+                  color: 'rgba(0, 0, 0, 0.7)',
+                  '&:hover': {
+                    backdropFilter: 'blur(20px) saturate(200%)',
+                    background: `
+                      linear-gradient(135deg,
+                        rgba(255,255,255,0.3) 0%,
+                        rgba(255,255,255,0.2) 25%,
+                        rgba(255,255,255,0.15) 50%,
+                        rgba(255,255,255,0.2) 75%,
+                        rgba(255,255,255,0.3) 100%
+                      )
+                    `,
+                    boxShadow: `
+                      0 6px 20px rgba(0, 0, 0, 0.12),
+                      0 2px 8px rgba(255, 255, 255, 0.25) inset,
+                      0 -2px 4px rgba(0, 0, 0, 0.08) inset
+                    `,
+                  },
+                }}
+              >
+                 <AddIcon sx={{ color: 'text.secondary' }} />
+              </Fab>
+            </div>
+
+            {/* Main Content */}
+            <div style={{ padding: '24px', paddingTop: '0px' }}>
+              <Suspense fallback={
+                <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
+                  <CircularProgress size={60} />
+                </Box>
+              }>
                 {selectedSection === "photos" ? (
                    <ResponsivePhotoGrid
                      images={images}
@@ -759,129 +959,12 @@ function App() {
               </Box>
             )}
           </Suspense>
-        </Box>
+        </div>
+      </Box>
         </Box>
       </Box>
 
-       {/* Search Bar - Hide in devices and import sections */}
-       {selectedSection !== "devices" && selectedSection !== "import" && (
-         <Suspense fallback={null}>
-           <SearchBar
-             onSearch={handleSearch}
-             sidebarWidth={isSidebarCollapsed ? 80 : 280}
-             isVisible={!isScrolled}
-           />
-         </Suspense>
-       )}
 
-       {/* Floating More Options Button - Hide in devices and import sections */}
-       {selectedSection !== "devices" && selectedSection !== "import" && (
-         <Fab
-           color="primary"
-           size="medium"
-           sx={{
-             position: "fixed",
-             top: 24,
-             right: 24,
-             borderRadius: 3,
-             boxShadow: 3,
-             zIndex: 1000,
-           }}
-           onClick={handleMenuOpen}
-         >
-           <MoreVertIcon />
-         </Fab>
-       )}
-
-      {/* More Options Menu */}
-      <Menu
-        anchorEl={menuAnchorEl}
-        open={isMoreOptionsOpen}
-        onClose={handleMenuClose}
-        anchorOrigin={{
-          vertical: "bottom",
-          horizontal: "right",
-        }}
-        transformOrigin={{
-          vertical: "top",
-          horizontal: "right",
-        }}
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            minWidth: 200,
-            mt: 1,
-          },
-        }}
-      >
-        <MenuItem
-          onClick={() => {
-            handleMenuClose();
-            setIsFolderManagementOpen(true);
-          }}
-        >
-          <ListItemIcon>
-            <FolderOpenIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Add folders</ListItemText>
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            handleMenuClose();
-            handleImport();
-          }}
-        >
-          <ListItemIcon>
-            <CloudUploadIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Import</ListItemText>
-        </MenuItem>
-        <MenuItem sx={{ justifyContent: "center", py: 1.5 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography
-              variant="body2"
-              sx={{ minWidth: 60, textAlign: "center" }}
-            >
-              Image size
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDecreaseImageSize();
-                }}
-                disabled={imageSize <= 2}
-                sx={{ p: 0.5 }}
-              >
-                <RemoveIcon fontSize="small" />
-              </IconButton>
-              <Typography
-                variant="body2"
-                sx={{
-                  minWidth: 24,
-                  textAlign: "center",
-                  fontWeight: 600,
-                  color: "primary.main",
-                }}
-              >
-                {imageSize}
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleIncreaseImageSize();
-                }}
-                disabled={imageSize >= 8}
-                sx={{ p: 0.5 }}
-              >
-                <AddIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
-        </MenuItem>
-      </Menu>
 
       {/* Folder Management Dialog */}
       <Suspense fallback={null}>
