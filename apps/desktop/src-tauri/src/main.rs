@@ -970,6 +970,218 @@ fn clear_database() -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ImportResult {
+    pub importedFiles: usize,
+    pub totalFiles: usize,
+    pub skippedFiles: usize,
+    pub errors: Vec<String>,
+    pub totalSizeBytes: u64,
+}
+
+#[tauri::command]
+async fn import_files(
+    source_path: String,
+    destination_path: String,
+    file_extensions: Vec<String>,
+    skip_duplicates: bool,
+    preserve_structure: bool,
+    import_mode: String,
+) -> Result<ImportResult, String> {
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use walkdir::WalkDir;
+
+    println!(
+        "Starting file import from {} to {} with mode: {}",
+        source_path, destination_path, import_mode
+    );
+
+    let source_path = Path::new(&source_path);
+    let destination_path = Path::new(&destination_path);
+
+    // Validate source and destination
+    if !source_path.exists() || !source_path.is_dir() {
+        return Err(format!(
+            "Source path does not exist or is not a directory: {}",
+            source_path.display()
+        ));
+    }
+
+    if !destination_path.exists() {
+        fs::create_dir_all(destination_path)
+            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+    }
+
+    let mut totalFiles = 0;
+    let mut importedFiles = 0;
+    let mut skippedFiles = 0;
+    let mut errors = Vec::new();
+    let mut totalSizeBytes = 0u64;
+
+    // For smart import, we need to track existing files in destination
+    let mut existing_files = HashSet::new();
+    if skip_duplicates {
+        println!("Building index of existing files for duplicate detection...");
+        let walkdir = WalkDir::new(destination_path)
+            .follow_links(false)
+            .into_iter();
+
+        for entry in walkdir {
+            match entry {
+                Ok(entry) => {
+                    if entry.file_type().is_file() {
+                        if let Some(extension) = entry.path().extension() {
+                            if let Some(ext_str) = extension.to_str() {
+                                if file_extensions.contains(&ext_str.to_lowercase()) {
+                                    // Store filename for duplicate checking
+                                    if let Some(filename) = entry.path().file_name() {
+                                        existing_files
+                                            .insert(filename.to_string_lossy().to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error indexing existing files: {}", e);
+                }
+            }
+        }
+        println!("Indexed {} existing files", existing_files.len());
+    }
+
+    // Collect all files to import
+    println!("Scanning source directory for files...");
+    let walkdir = WalkDir::new(source_path).follow_links(false).into_iter();
+
+    let mut files_to_import = Vec::new();
+
+    for entry in walkdir {
+        match entry {
+            Ok(entry) => {
+                if entry.file_type().is_file() {
+                    if let Some(extension) = entry.path().extension() {
+                        if let Some(ext_str) = extension.to_str() {
+                            if file_extensions.contains(&ext_str.to_lowercase()) {
+                                files_to_import.push(entry.path().to_path_buf());
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error scanning source directory: {}", e);
+                errors.push(format!("Error scanning: {}", e));
+            }
+        }
+
+        // Yield control periodically to prevent blocking
+        if files_to_import.len() % 100 == 0 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    totalFiles = files_to_import.len();
+    println!("Found {} files to process", totalFiles);
+
+    // Process files in batches to avoid overwhelming the system
+    const BATCH_SIZE: usize = 10;
+
+    for batch in files_to_import.chunks(BATCH_SIZE) {
+        for source_file_path in batch {
+            let filename = match source_file_path.file_name() {
+                Some(name) => name.to_string_lossy().to_string(),
+                None => {
+                    errors.push(format!(
+                        "Invalid filename for: {}",
+                        source_file_path.display()
+                    ));
+                    continue;
+                }
+            };
+
+            // Check for duplicates in smart mode
+            if skip_duplicates && existing_files.contains(&filename) {
+                println!("Skipping duplicate file: {}", filename);
+                skippedFiles += 1;
+                continue;
+            }
+
+            // Determine destination path
+            let dest_file_path = if preserve_structure {
+                // Preserve directory structure relative to source
+                match source_file_path.strip_prefix(source_path) {
+                    Ok(relative_path) => destination_path.join(relative_path),
+                    Err(_) => {
+                        // Fallback to just filename if we can't determine relative path
+                        destination_path.join(&filename)
+                    }
+                }
+            } else {
+                destination_path.join(&filename)
+            };
+
+            // Create destination directory if needed
+            if let Some(parent) = dest_file_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    let error_msg = format!(
+                        "Failed to create destination directory {}: {}",
+                        parent.display(),
+                        e
+                    );
+                    eprintln!("{}", error_msg);
+                    errors.push(error_msg);
+                    continue;
+                }
+            }
+
+            // Copy the file
+            match fs::copy(source_file_path, &dest_file_path) {
+                Ok(bytes_copied) => {
+                    importedFiles += 1;
+                    totalSizeBytes += bytes_copied;
+                    println!(
+                        "Imported: {} ({} bytes)",
+                        dest_file_path.display(),
+                        bytes_copied
+                    );
+                }
+                Err(e) => {
+                    let error_msg = format!(
+                        "Failed to copy {} to {}: {}",
+                        source_file_path.display(),
+                        dest_file_path.display(),
+                        e
+                    );
+                    eprintln!("{}", error_msg);
+                    errors.push(error_msg);
+                }
+            }
+        }
+
+        // Yield control between batches
+        tokio::task::yield_now().await;
+    }
+
+    println!(
+        "Import completed. Imported: {}, Skipped: {}, Errors: {}",
+        importedFiles,
+        skippedFiles,
+        errors.len()
+    );
+
+    Ok(ImportResult {
+        importedFiles,
+        totalFiles,
+        skippedFiles,
+        errors,
+        totalSizeBytes,
+    })
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -986,6 +1198,7 @@ fn main() {
             extract_exif_thumbnail,
             extract_or_generate_thumbnail,
             test_exif_extraction,
+            import_files,
             initialize_face_recognition,
             detect_faces,
             extract_embeddings,
