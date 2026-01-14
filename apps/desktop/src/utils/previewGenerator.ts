@@ -10,9 +10,9 @@ export interface PreviewOptions {
 
 export class PreviewGenerator {
   private static readonly DEFAULT_OPTIONS: Required<PreviewOptions> = {
-    maxWidth: 300,
-    maxHeight: 300,
-    quality: 0.7,
+    maxWidth: 64,
+    maxHeight: 64,
+    quality: 0.8,
     format: 'jpeg'
   };
 

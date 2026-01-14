@@ -84,8 +84,7 @@ function App() {
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
-  const [totalFilesInDirectory, setTotalFilesInDirectory] = useState<number | undefined>(undefined);
+   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [optimizationState, setOptimizationState] = useState<OptimizationState>({
       isScanning: false,
       isGenerating: false,
@@ -144,7 +143,6 @@ function App() {
       });
     } else {
       setImages([]);
-      setTotalFilesInDirectory(0);
       setIsLoadingImages(false);
     }
   }, [directoryPaths]);
@@ -370,7 +368,6 @@ function App() {
 
 
       setImages(allImagePaths);
-      setTotalFilesInDirectory(allImagePaths.length);
       setLoadingProgress(100);
 
       performanceMonitor.end('total-image-loading');
@@ -447,7 +444,6 @@ function App() {
 
 
         setImages(allImagePaths);
-        setTotalFilesInDirectory(allImagePaths.length);
         setLoadingProgress(100);
 
         setTimeout(() => {
@@ -483,17 +479,9 @@ function App() {
     // TODO: Implement import functionality
   };
 
-  const handleImageClick = useCallback((imagePath: string) => {
-    const index = images.findIndex(img => img === imagePath);
-    if (index !== -1) {
-      setCurrentImageIndex(index);
-      setIsImageViewerOpen(true);
-    }
-  }, [images]);
-
-  const handleImageChange = useCallback((newIndex: number) => {
-    setCurrentImageIndex(newIndex);
-  }, []);
+   const handleImageChange = useCallback((newIndex: number) => {
+     setCurrentImageIndex(newIndex);
+   }, []);
 
   const loadInitialViewportImages = async () => {
     // Schedule initial loading asynchronously to prevent blocking
@@ -517,7 +505,6 @@ function App() {
         // For larger collections, use progressive loading
         if (allPaths.length <= 1000) {
           setImages(allPaths);
-          setTotalFilesInDirectory(allPaths.length);
           setLoadingProgress(100);
           setTimeout(() => {
             setIsLoadingImages(false);
@@ -526,7 +513,6 @@ function App() {
           // Take only the first N images for initial load
           const initialPaths = allPaths.slice(0, initialImageCount);
           setImages(initialPaths);
-          setTotalFilesInDirectory(allPaths.length);
           setLoadingProgress(100);
 
           // Start background loading of remaining images asynchronously
@@ -687,21 +673,18 @@ function App() {
         >
           {/* Photo Grid */}
           <Box sx={{ flex: 1, padding: 3, paddingTop: 2, overflowY: "auto" }}>
-            <Suspense fallback={
-              <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
-                <CircularProgress size={60} />
-              </Box>
-            }>
-              {selectedSection === "photos" ? (
-                <PhotoGrid
-                  images={images}
-                  directoryPaths={directoryPaths}
-                  imageSize={imageSize}
-                  isLoadingImages={isLoadingImages}
-                  showStatusIndicator={false}
-                  totalFilesInDirectory={totalFilesInDirectory}
-                  onImageClick={handleImageClick}
-                />
+             <Suspense fallback={
+               <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
+                 <CircularProgress size={60} />
+               </Box>
+             }>
+               {selectedSection === "photos" ? (
+                 <PhotoGrid
+                   images={images}
+                   directoryPaths={directoryPaths}
+                   imageSize={imageSize}
+                   isLoadingImages={isLoadingImages}
+                 />
               ) : selectedSection === "folders" ? (
               <FolderView
                 directoryPaths={directoryPaths}
@@ -712,19 +695,11 @@ function App() {
                <DeviceBrowser
                   onFileSelect={async (files: string[]) => {
                     // When images are selected from a device, add them to the current images
-                    setImages((prev) => {
-                      const newImages = [...prev, ...files];
-                      setTotalFilesInDirectory(newImages.length);
-                      return newImages;
-                    });
+                    setImages((prev) => [...prev, ...files]);
                   }}
                   onImportImages={(importedImages: string[]) => {
                     // When images are imported from a device, add them to the current images
-                    setImages((prev) => {
-                      const newImages = [...prev, ...importedImages];
-                      setTotalFilesInDirectory(newImages.length);
-                      return newImages;
-                    });
+                    setImages((prev) => [...prev, ...importedImages]);
                   }}
                />
              ) : selectedSection === "faces" ? (

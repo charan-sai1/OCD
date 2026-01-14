@@ -72,9 +72,9 @@ const FastImage: React.FC<FastImageProps> = memo(({
 
         // Generate new preview
         const newUrl = await generateImagePreview(imagePath, {
-          maxWidth: width || 300,
-          maxHeight: height || 300,
-          quality: 0.7,
+          maxWidth: width || 64,
+          maxHeight: height || 64,
+          quality: 0.8,
           format: 'jpeg'
         });
 
@@ -117,8 +117,8 @@ const FastImage: React.FC<FastImageProps> = memo(({
       <Box
         className={`fast-image-loading ${className}`}
         style={{
-          width: width || 300,
-          height: height || 300,
+          width: width || 64,
+          height: height || 64,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -139,8 +139,8 @@ const FastImage: React.FC<FastImageProps> = memo(({
       <Box
         className={`fast-image-error ${className}`}
         style={{
-          width: width || 300,
-          height: height || 300,
+          width: width || 64,
+          height: height || 64,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -169,8 +169,8 @@ const FastImage: React.FC<FastImageProps> = memo(({
         className={`fast-image-progressive ${className}`}
         style={{
           position: 'relative',
-          width: width || 300,
-          height: height || 300,
+          width: width || 64,
+          height: height || 64,
           borderRadius: 8,
           overflow: 'hidden',
           cursor: onClick ? 'pointer' : 'default',
@@ -220,8 +220,8 @@ const FastImage: React.FC<FastImageProps> = memo(({
       alt={alt}
       className={`fast-image ${className}`}
       style={{
-        width: width || 300,
-        height: height || 300,
+        width: width || 64,
+        height: height || 64,
         objectFit: 'cover',
         borderRadius: 8,
         display: 'block',
