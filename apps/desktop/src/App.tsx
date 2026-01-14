@@ -22,7 +22,7 @@ import "./styles/animations.css";
 
 // Lazy load components for better initial bundle size
 const Sidebar = lazy(() => import("./components/Sidebar"));
-const PhotoGrid = lazy(() => import("./components/PhotoGrid"));
+const ResponsivePhotoGrid = lazy(() => import("./components/ResponsivePhotoGrid"));
 const FolderView = lazy(() => import("./components/FolderView"));
 const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
 const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
@@ -642,15 +642,13 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: "flex", minHeight: "100vh" }}>
-        {/* Fixed Sidebar */}
+      <Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+        {/* Sidebar */}
         <Box
           sx={{
-            position: "fixed",
-            left: 0,
-            top: 0,
-            height: "100vh",
-            zIndex: 1000,
+            width: isSidebarCollapsed ? "80px" : "280px",
+            flexShrink: 0,
+            transition: "width 0.3s ease",
           }}
         >
           <Sidebar
@@ -661,30 +659,26 @@ function App() {
           />
         </Box>
 
-        {/* Main Content with left margin to account for fixed sidebar */}
+        {/* Main Content */}
         <Box
           sx={{
             flex: 1,
-            marginLeft: isSidebarCollapsed ? "80px" : "280px",
             display: "flex",
             flexDirection: "column",
-            transition: "margin-left 0.3s ease",
+            overflow: "hidden",
           }}
         >
-          {/* Photo Grid */}
+          {/* Scrollable Content */}
           <Box sx={{ flex: 1, padding: 3, paddingTop: 2, overflowY: "auto" }}>
              <Suspense fallback={
                <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh" }}>
                  <CircularProgress size={60} />
                </Box>
              }>
-               {selectedSection === "photos" ? (
-                 <PhotoGrid
-                   images={images}
-                   directoryPaths={directoryPaths}
-                   imageSize={imageSize}
-                   isLoadingImages={isLoadingImages}
-                 />
+                {selectedSection === "photos" ? (
+                  <ResponsivePhotoGrid
+                    images={images}
+                  />
               ) : selectedSection === "folders" ? (
               <FolderView
                 directoryPaths={directoryPaths}

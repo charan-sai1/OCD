@@ -20,21 +20,6 @@ const ResponsivePhotoGrid: React.FC<ResponsivePhotoGridProps> = memo(({
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
   const [containerWidth, setContainerWidth] = useState(0);
 
-  // Safety check
-  if (!images || images.length === 0) {
-    return (
-      <Box sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '200px',
-        color: 'text.secondary'
-      }}>
-        No images to display
-      </Box>
-    );
-  }
-
   // Calculate how many items fit per row based on container width
   const itemsPerRow = useMemo(() => {
     if (containerWidth === 0) return 4; // Default fallback
@@ -103,13 +88,28 @@ const ResponsivePhotoGrid: React.FC<ResponsivePhotoGridProps> = memo(({
     return totalRows * (thumbnailSize + gap) - gap; // Subtract last gap
   }, [images.length, itemsPerRow, thumbnailSize, gap]);
 
+  // Safety check - must be after all hooks
+  if (!images || images.length === 0) {
+    return (
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '200px',
+        color: 'text.secondary'
+      }}>
+        No images to display
+      </Box>
+    );
+  }
+
   return (
     <Box
       ref={gridRef}
       sx={{
         width: '100%',
         height: '100%',
-        overflow: 'auto',
+        overflow: 'visible',
         position: 'relative'
       }}
     >
