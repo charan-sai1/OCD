@@ -212,6 +212,23 @@ const FileImport: React.FC<FileImportProps> = ({
 
   const handleImport = async () => {
     if (!sourceDir || !destinationDir) {
+      setSnackbar({
+        open: true,
+        message: "Please select both source and destination directories",
+        severity: 'warning'
+      });
+      return;
+    }
+
+    // Validate that source directory exists and is readable
+    try {
+      await invoke("read_directory", { path: sourceDir });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: "Source directory is not accessible",
+        severity: 'error'
+      });
       return;
     }
 
