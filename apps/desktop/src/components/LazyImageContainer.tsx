@@ -118,6 +118,7 @@ const LazyImageContainer: React.FC<LazyImageContainerProps> = memo(({
   const handleImageLoad = useCallback(() => {
     clearLoadingTimeout();
 
+    console.log(`[Image Loading] Image loaded successfully: ${imagePath.split('/').pop()}`);
 
     setLoadingState('loaded');
     onLoad?.();

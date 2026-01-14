@@ -1,7 +1,6 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, { memo, useRef } from "react";
 import Box from "@mui/material/Box";
 import LazyImageContainer from "./LazyImageContainer";
-import { userBehaviorPredictor } from "../utils/userBehaviorPredictor";
 
 interface ResponsivePhotoGridProps {
   images: string[];
@@ -15,51 +14,20 @@ const ResponsivePhotoGrid: React.FC<ResponsivePhotoGridProps> = memo(({
   gap = 8
 }) => {
   const gridRef = useRef<HTMLDivElement>(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
 
-  // Simplified visible range calculation for CSS Grid
-  const updateVisibleRange = useCallback(() => {
-    const scrollTop = window.scrollY;
-    const viewportHeight = window.innerHeight;
+  // For 571 images, virtual scrolling is unnecessary - just render all images
+  // Modern browsers can handle this easily and CSS Grid will handle the layout
 
-    // Rough estimation for grid layout (120px min size + 8px gap ≈ 128px per item)
-    const estimatedItemSize = 128; // approximate item height including gap
-    const estimatedCols = Math.max(1, Math.floor(window.innerWidth / 128));
-    const estimatedRows = Math.ceil(viewportHeight / estimatedItemSize);
 
-    // Add buffer for smooth scrolling
-    const bufferRows = 4;
-    const startRow = Math.max(0, Math.floor(scrollTop / estimatedItemSize) - bufferRows);
-    const endRow = startRow + estimatedRows + (bufferRows * 2);
-
-    const startIndex = startRow * estimatedCols;
-    const endIndex = Math.min(endRow * estimatedCols, images.length);
-
-    setVisibleRange({ start: startIndex, end: endIndex });
-  }, [images.length]);
-
-  // Update visible range on scroll (removed resize listener for performance)
-  useEffect(() => {
-    updateVisibleRange();
-    window.addEventListener('scroll', updateVisibleRange, { passive: true });
-
-    return () => {
-      window.removeEventListener('scroll', updateVisibleRange);
-    };
-  }, [updateVisibleRange]);
-
-  // Initialize user behavior tracking
-  useEffect(() => {
-    userBehaviorPredictor.startSession();
-  }, []);
 
   // Handle image clicks
-  const handleImageClick = useCallback((imagePath: string) => {
+  const handleImageClick = (imagePath: string) => {
     onImageClick?.(imagePath);
-  }, [onImageClick]);
+  };
 
   // Safety check
   if (!images || images.length === 0) {
+    console.log(`[Image Grid] No images available to display`);
     return (
       <Box sx={{
         display: 'flex',
@@ -73,6 +41,8 @@ const ResponsivePhotoGrid: React.FC<ResponsivePhotoGridProps> = memo(({
     );
   }
 
+  console.log(`[Image Grid] Rendering all ${images.length} images (no virtual scrolling)`);
+
   return (
     <Box
       ref={gridRef}
@@ -85,16 +55,16 @@ const ResponsivePhotoGrid: React.FC<ResponsivePhotoGridProps> = memo(({
         // Let content flow naturally - no fixed height container needed
       }}
     >
-      {/* Render only visible images in natural grid flow */}
-      {images.slice(visibleRange.start, visibleRange.end).map((imagePath, index) => {
+      {/* Render all images - lazy loading will still handle actual image loading */}
+      {images.map((imagePath, index) => {
         const priority =
-          index < 12 ? 'high' :  // First 12 items
-          index < 24 ? 'normal' : // Next 12 items
-          'low'; // Rest
+          index < 12 ? 'high' :  // First 12 items get high priority
+          index < 48 ? 'normal' : // Next items get normal priority
+          'low'; // Rest get low priority
 
         return (
           <Box
-            key={`${imagePath}-${visibleRange.start + index}`}
+            key={`${imagePath}-${index}`}
             sx={{
               aspectRatio: '1',
               cursor: onImageClick ? 'pointer' : 'default',
