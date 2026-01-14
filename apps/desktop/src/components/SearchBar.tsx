@@ -114,11 +114,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
         <Paper
           elevation={8}
           sx={{
-            borderRadius: 3,
-            backgroundColor: "background.paper",
-            backdropFilter: "blur(10px)",
-            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
-            background: "linear-gradient(135deg, rgba(30,30,30,0.95) 0%, rgba(18,18,18,0.95) 100%)",
+            borderRadius: 50,
+            backgroundColor: "rgba(255, 255, 255, 0.15)",
+            backdropFilter: "blur(20px)",
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            background: "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%)",
           }}
         >
         <TextField
@@ -130,32 +131,35 @@ const SearchBar: React.FC<SearchBarProps> = ({
           aria-label="Search photos"
           role="searchbox"
           inputRef={inputRef}
-             sx={{
-               "& .MuiOutlinedInput-root": {
-                 borderRadius: 3,
-                 transition: "all 0.2s ease-in-out",
-                 "& fieldset": {
-                   borderColor: "divider",
-                   borderWidth: 1,
-                 },
-                 "&:hover fieldset": {
-                   borderColor: "text.secondary",
-                   borderWidth: 1.5,
-                 },
-                 "&.Mui-focused fieldset": {
-                   borderColor: "primary.main",
-                   borderWidth: 2,
-                   boxShadow: "0 0 0 2px rgba(245, 245, 245, 0.2)",
-                 },
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 50,
+                  transition: "all 0.2s ease-in-out",
+                  backgroundColor: "transparent",
+                  "& fieldset": {
+                    border: "none",
+                  },
+                  "&:hover": {
+                    backgroundColor: "rgba(255, 255, 255, 0.1)",
+                  },
+                  "&.Mui-focused": {
+                    backgroundColor: "rgba(255, 255, 255, 0.15)",
+                    boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.3)",
+                  },
+                },
+             "& .MuiOutlinedInput-input": {
+               padding: "12px 14px",
+               color: "#000000",
+               "&::placeholder": {
+                 color: "rgba(0, 0, 0, 0.6)",
+                 opacity: 1,
                },
-            "& .MuiOutlinedInput-input": {
-              padding: "12px 14px",
-            },
-          }}
-            InputProps={{
+             },
+           }}
+             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon sx={{ color: "text.secondary" }} />
+                  <SearchIcon sx={{ color: "rgba(0, 0, 0, 0.7)" }} />
                 </InputAdornment>
               ),
             endAdornment: (
@@ -163,7 +167,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 {isSearching && (
                   <CircularProgress
                     size={20}
-                    sx={{ color: "text.secondary", mr: 1 }}
+                    sx={{ color: "rgba(0, 0, 0, 0.7)", mr: 1 }}
                   />
                 )}
                 {searchQuery && (
@@ -171,9 +175,9 @@ const SearchBar: React.FC<SearchBarProps> = ({
                     size="small"
                     onClick={handleClearSearch}
                     sx={{
-                      color: "text.secondary",
+                      color: "rgba(0, 0, 0, 0.7)",
                       "&:hover": {
-                        color: "text.primary",
+                        color: "#000000",
                       },
                     }}
                   >
