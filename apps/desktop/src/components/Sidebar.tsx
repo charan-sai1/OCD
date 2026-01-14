@@ -7,7 +7,6 @@
   import ListItemButton from "@mui/material/ListItemButton";
   import ListItemIcon from "@mui/material/ListItemIcon";
   import ListItemText from "@mui/material/ListItemText";
-  import Divider from "@mui/material/Divider";
   import IconButton from "@mui/material/IconButton";
   import LinearProgress from "@mui/material/LinearProgress";
   import { invoke } from "@tauri-apps/api/core";
@@ -264,68 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </Box>
         )}
 
-        <Divider sx={{ marginY: 2, borderColor: "rgba(255, 255, 255, 0.12)" }} />
 
-        {/* Storage Info */}
-        {!collapsed && (
-          <Box sx={{ padding: 3 }}>
-            <Typography
-              variant="body2"
-              sx={{
-                color: "onSurfaceVariant",
-                fontWeight: 500,
-                fontSize: '0.75rem',
-                lineHeight: 1.333,
-                textTransform: 'uppercase',
-                letterSpacing: '0.083em',
-                marginBottom: 2,
-              }}
-            >
-              Storage
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box
-                sx={{
-                  flex: 1,
-                  height: 4,
-                  backgroundColor: "rgba(255, 255, 255, 0.12)",
-                  borderRadius: 2,
-                  overflow: "hidden",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: "35%",
-                    height: "100%",
-                    backgroundColor: "surfaceTint",
-                    borderRadius: 2,
-                  }}
-                />
-              </Box>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "onSurfaceVariant",
-                  fontSize: '0.75rem',
-                  lineHeight: 1.333,
-                }}
-              >
-                35%
-              </Typography>
-            </Box>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "onSurfaceVariant",
-                fontSize: '0.75rem',
-                lineHeight: 1.333,
-                marginTop: 1,
-              }}
-            >
-              3.5 GB of 10 GB used
-            </Typography>
-          </Box>
-        )}
 
         {/* Collapse/Expand Button */}
         <Box
