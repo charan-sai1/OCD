@@ -16,6 +16,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import AiIcon from "@mui/icons-material/AutoAwesome";
 import { theme } from "./theme";
 import "./styles/animations.css";
+import GradualBlur from "./components/GradualBlur";
 
 // Lazy load components for better initial bundle size
 const Sidebar = lazy(() => import("./components/Sidebar"));
@@ -35,6 +36,7 @@ import { asyncScheduler } from "./utils/requestIdleCallbackPolyfill";
 import { thumbnailGenerationService } from "./utils/thumbnailGenerationService";
 import { advancedImageCache } from "./utils/advancedCache";
 import OptimizationProgress, { OptimizationState } from "./components/OptimizationProgress";
+// import { lenisScrollManager } from "./utils/lenisScrollManager"; // Temporarily disabled
 
 function App() {
   // Load persisted data from localStorage
@@ -134,6 +136,29 @@ function App() {
     };
     initCaches();
   }, []);
+
+  // Temporarily disable Lenis for testing
+  /*
+  useEffect(() => {
+    const initSmoothScroll = async () => {
+      try {
+        await lenisScrollManager.initialize({
+          smoothness: 0.8,
+          duration: 1000,
+        });
+        console.log('Lenis scrolling initialized');
+      } catch (error) {
+        console.error('Failed to initialize Lenis:', error);
+      }
+    };
+
+    initSmoothScroll();
+
+    return () => {
+      lenisScrollManager.destroy();
+    };
+  }, []);
+  */
 
   // Load initial viewport images in background (not all images)
   useEffect(() => {
@@ -715,7 +740,20 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {selectedSection === "photos" && <GradualBlur 
+      exponential = {true}
+      strength={1}
+      divCount={10}
+      target="parent"
+      curve="linear"
+      animated={true}
+      responsive={true}
+      hoverIntensity={1}
+      position="top"
+      duration="1s"
+      easing="ease-out"
+      />}
+      <Box sx={{ display: "flex", height: "100vh" }}>
         {/* Sidebar */}
         <Box
           sx={{
@@ -742,9 +780,9 @@ function App() {
           }}
         >
           {/* Scrollable Content */}
-          <Box sx={{ flex: 1, overflowY: "auto" }}>
+          <Box sx={{ flex: 1, overflowY: "auto", scrollBehavior: "smooth" }}>
             {/* Sticky Controls Bar with Search */}
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid rgba(0,0,0,0.12)', backgroundColor: 'var(--mui-palette-background-paper)', position: 'sticky', top: 0, zIndex: 100 }}>
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid rgba(0,0,0,0.12)', backgroundColor: 'var(--mui-palette-background-paper)', position: 'sticky', top: 0, zIndex: 1100 }}>
               <div style={{ flex: 1 }}></div>
               <TextField
                 placeholder="Search photos..."
@@ -999,11 +1037,9 @@ function App() {
           </Suspense>
         </div>
       </Box>
-        </Box>
       </Box>
-
-
-
+      </Box>
+      <>
       {/* Folder Management Dialog */}
       <Suspense fallback={null}>
         <FolderManagementDialog
@@ -1046,7 +1082,7 @@ function App() {
           onImageChange={handleImageChange}
         />
       </Suspense>
-
+      </>
     </ThemeProvider>
   );
 }

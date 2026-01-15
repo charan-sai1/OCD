@@ -160,6 +160,7 @@ const OrganizedPhotoGrid: React.FC<OrganizedPhotoGridProps> = memo(({
 
   return (
     <Box sx={{ width: '100%', position: 'relative' }}>
+      
       {organizedImages.map((monthGroup) => (
         <Box key={monthGroup.month} sx={{ mb: 4 }}>
           {/* Month Header */}
@@ -175,7 +176,7 @@ const OrganizedPhotoGrid: React.FC<OrganizedPhotoGridProps> = memo(({
               pb: 1,
               pl: 1
             }}
-          >
+            >
             {formatMonthHeader(monthGroup.month)}
           </Typography>
 
@@ -191,7 +192,7 @@ const OrganizedPhotoGrid: React.FC<OrganizedPhotoGridProps> = memo(({
                   color: 'text.secondary',
                   pl: 1
                 }}
-              >
+                >
                 {formatDayLabel(dayGroup.date)}
               </Typography>
 
@@ -203,33 +204,33 @@ const OrganizedPhotoGrid: React.FC<OrganizedPhotoGridProps> = memo(({
                   gap: 1,
                   pl: 1
                 }}
-              >
+                >
                 {dayGroup.images.map((image, index) => {
                   const globalIndex = images.indexOf(image.path);
                   const priority =
-                    globalIndex < 12 ? 'high' :
-                    globalIndex < 48 ? 'normal' :
-                    'low';
-
+                  globalIndex < 12 ? 'high' :
+                  globalIndex < 48 ? 'normal' :
+                  'low';
+                  
                   return (
                     <Box
-                      key={`${image.path}-${index}`}
-                      sx={{
-                        width: 120,
-                        height: 120,
-                        flexShrink: 0,
-                        cursor: onImageClick ? 'pointer' : 'default',
-                        borderRadius: 1,
-                        overflow: 'hidden'
-                      }}
-                      onClick={() => handleImageClick(image.path)}
+                    key={`${image.path}-${index}`}
+                    sx={{
+                      width: 120,
+                      height: 120,
+                      flexShrink: 0,
+                      cursor: onImageClick ? 'pointer' : 'default',
+                      borderRadius: 1,
+                      overflow: 'hidden'
+                    }}
+                    onClick={() => handleImageClick(image.path)}
                     >
                       <LazyImageContainer
                         imagePath={image.path}
                         onClick={() => handleImageClick(image.path)}
                         placeholderVariant="shimmer"
                         priority={priority}
-                      />
+                        />
                     </Box>
                   );
                 })}
@@ -239,21 +240,7 @@ const OrganizedPhotoGrid: React.FC<OrganizedPhotoGridProps> = memo(({
         </Box>
       ))}
 
-      {/* Gradual blur effect at the bottom */}
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '120px',
-          pointerEvents: 'none',
-          zIndex: 1,
-          background: 'linear-gradient(to top, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.4) 30%, rgba(255,255,255,0.1) 60%, transparent 100%)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)', // Safari support
-        }}
-      />
+
     </Box>
   );
 });
