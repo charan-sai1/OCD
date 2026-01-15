@@ -169,6 +169,29 @@ async fn list_connected_devices() -> Result<Vec<Device>, String> {
 }
 
 #[tauri::command]
+fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    use std::fs;
+
+    let metadata = fs::metadata(path).map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+    let modified = metadata
+        .modified()
+        .map_err(|e| format!("Failed to get modification time: {}", e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to convert time: {}", e))?
+        .as_secs()
+        * 1000; // Convert to milliseconds
+
+    Ok(json!({
+        "modified": modified,
+        "size": metadata.len(),
+        "is_dir": metadata.is_dir(),
+        "is_file": metadata.is_file()
+    }))
+}
+
+#[tauri::command]
 fn get_device_info(mount_point: &str) -> Result<Device, String> {
     use sysinfo::Disks;
 
@@ -1334,6 +1357,7 @@ fn main() {
             list_images,
             list_files,
             list_connected_devices,
+            get_file_info,
             get_device_info,
             read_binary_file,
             generate_thumbnail,

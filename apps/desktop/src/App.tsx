@@ -44,15 +44,23 @@ function App() {
       const savedSidebarState = localStorage.getItem('ocd-sidebar-collapsed');
       const savedDirectoryCache = localStorage.getItem('ocd-directory-cache');
 
+      let directoryPaths = savedDirectories ? JSON.parse(savedDirectories) : [];
+
+      // TEMPORARY: Add a test directory if no directories are configured
+      if (directoryPaths.length === 0) {
+        directoryPaths = ['/Users/saicharan/Pictures'];
+        console.log('[DEBUG] Added test directory:', directoryPaths);
+      }
+
       return {
-        directoryPaths: savedDirectories ? JSON.parse(savedDirectories) : [],
+        directoryPaths,
         sidebarCollapsed: savedSidebarState ? JSON.parse(savedSidebarState) : false,
         directoryCache: savedDirectoryCache ? JSON.parse(savedDirectoryCache) : {},
       };
     } catch (error) {
       console.error('Error loading persisted data:', error);
       return {
-        directoryPaths: [],
+        directoryPaths: ['/Users/saicharan/Pictures'], // Fallback test directory
         sidebarCollapsed: false,
         directoryCache: {},
       };
@@ -587,7 +595,27 @@ function App() {
       const allPaths: string[] = [];
       const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+      // First, validate that directories exist before scanning them
+      const validDirectoryPaths: string[] = [];
+      console.log(`[Image Loading] Checking ${directoryPaths.length} directory paths:`, directoryPaths);
       for (const path of directoryPaths) {
+        try {
+          const fileInfo = await invoke("get_file_info", { path });
+          if ((fileInfo as any).is_dir) {
+            console.log(`[Image Loading] Valid directory found: ${path}`);
+            validDirectoryPaths.push(path);
+          } else {
+            console.warn(`Path ${path} is not a directory, skipping`);
+          }
+        } catch (error) {
+          console.warn(`Directory ${path} does not exist, removing from list:`, error);
+          // Remove invalid path from directoryPaths
+          setDirectoryPaths(prev => prev.filter(p => p !== path));
+        }
+      }
+      console.log(`[Image Loading] Found ${validDirectoryPaths.length} valid directories to scan`);
+
+      for (const path of validDirectoryPaths) {
         const cached = directoryCache[path];
         const now = Date.now();
 
@@ -597,10 +625,12 @@ function App() {
         } else {
           // Quick scan of directory
           try {
+            console.log(`[Image Loading] Scanning directory for images: ${path}`);
             const imagePaths: string[] = await invoke("list_files", {
               path: path,
               fileType: "images",
             });
+            console.log(`[Image Loading] Found ${imagePaths.length} images in ${path}:`, imagePaths.slice(0, 5)); // Show first 5
             allPaths.push(...imagePaths);
 
             // Update cache
@@ -621,6 +651,7 @@ function App() {
       }
 
       const deduplicated = Array.from(new Set(allPaths));
+      console.log(`[Image Loading] Total unique images found: ${deduplicated.length}`);
       return deduplicated;
     } catch (error) {
       console.error('Error in getAllImagePaths:', error);
