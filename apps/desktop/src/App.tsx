@@ -19,7 +19,7 @@ import "./styles/animations.css";
 
 // Lazy load components for better initial bundle size
 const Sidebar = lazy(() => import("./components/Sidebar"));
-const ResponsivePhotoGrid = lazy(() => import("./components/ResponsivePhotoGrid"));
+const OrganizedPhotoGrid = lazy(() => import("./components/OrganizedPhotoGrid"));
 const FolderView = lazy(() => import("./components/FolderView"));
 const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
 const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
@@ -928,11 +928,18 @@ function App() {
                   <CircularProgress size={60} />
                 </Box>
               }>
-                {selectedSection === "photos" ? (
-                   <ResponsivePhotoGrid
-                     images={images}
-                   />
-                ) : selectedSection === "import" ? (
+                 {selectedSection === "photos" ? (
+                    <OrganizedPhotoGrid
+                      images={images}
+                      onImageClick={(imagePath) => {
+                        const imageIndex = images.indexOf(imagePath);
+                        if (imageIndex !== -1) {
+                          setCurrentImageIndex(imageIndex);
+                          setIsImageViewerOpen(true);
+                        }
+                      }}
+                    />
+                 ) : selectedSection === "import" ? (
                   <FileImport
                     initialSourceDir={selectedDeviceForImport}
                     onImportComplete={() => {
