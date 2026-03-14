@@ -8,7 +8,12 @@ use std::sync::Mutex;
 use walkdir::WalkDir;
 
 mod database;
+mod database_enhanced;
 mod face_recognition;
+mod face_detection_ml;
+mod face_embedding_ml;
+mod intelligent_organization;
+mod metadata_extractor;
 mod sqlite_db;
 #[cfg(test)]
 mod tests;
