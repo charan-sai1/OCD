@@ -470,7 +470,7 @@ impl IntelligentOrganizer {
         let face_count = media.person_ids.len();
 
         // Calculate overall score
-        let mut score = 1.0;
+        let mut score: f32 = 1.0;
         if is_blurry { score -= 0.3; }
         if is_dark { score -= 0.2; }
         if is_overexposed { score -= 0.2; }
@@ -478,7 +478,7 @@ impl IntelligentOrganizer {
         if has_faces { score += 0.1; }
 
         Ok(QualityAssessment {
-            overall_score: score.max(0.0).min(1.0),
+            overall_score: score.max(0.0f32).min(1.0f32),
             is_blurry,
             is_dark,
             is_overexposed,

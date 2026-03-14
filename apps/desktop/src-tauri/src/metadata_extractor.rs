@@ -1,7 +1,7 @@
 // apps/desktop/src-tauri/src/metadata_extractor.rs
 // EXIF and XMP metadata extraction for media files
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use image::{DynamicImage, GenericImageView};
 use serde::{Deserialize, Serialize};
@@ -142,7 +142,7 @@ impl MetadataExtractor {
     fn extract_exif(&self, file_path: &Path) -> Result<ExifData> {
         let file = std::fs::File::open(file_path)?;
         let mut bufreader = std::io::BufReader::new(file);
-        let exifreader = kamadak_exif::Reader::new();
+        let exifreader = exif::Reader::new();
         
         let exif = exifreader.read_from_container(&mut bufreader)?;
         
@@ -157,13 +157,13 @@ impl MetadataExtractor {
         Ok(ExifData { tags })
     }
 
-    fn convert_exif_value(&self, value: &kamadak_exif::Value) -> ExifValue {
-        use kamadak_exif::Value;
+    fn convert_exif_value(&self, value: &exif::Value) -> ExifValue {
+        use exif::Value;
         
         match value {
             Value::Ascii(strings) => {
                 if let Some(first) = strings.first() {
-                    ExifValue::String(first.to_string())
+                    ExifValue::String(String::from_utf8_lossy(first).to_string())
                 } else {
                     ExifValue::String(String::new())
                 }
@@ -232,7 +232,7 @@ impl MetadataExtractor {
                     }
                 }
             }
-            Value::Undefined(bytes) => {
+            Value::Undefined(bytes, _) => {
                 ExifValue::String(String::from_utf8_lossy(bytes).to_string())
             }
             _ => ExifValue::String(String::new()),

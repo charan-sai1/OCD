@@ -7,7 +7,50 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::face_recognition::{Face, PersonGroup};
+// Note: Face and PersonGroup types defined locally to avoid dependency on face_recognition module
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Face {
+    pub id: String,
+    pub image_path: String,
+    pub bounds: FaceBounds,
+    pub confidence: f32,
+    pub landmarks: Option<FaceLandmarks>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaceBounds {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaceLandmarks {
+    pub left_eye: Point,
+    pub right_eye: Point,
+    pub nose: Point,
+    pub left_mouth: Point,
+    pub right_mouth: Point,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonGroup {
+    pub id: String,
+    pub name: Option<String>,
+    pub face_ids: Vec<String>,
+    pub representative_face_id: String,
+    pub confidence: f32,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub generation: Option<String>,
+    pub is_admin: Option<bool>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseFace {

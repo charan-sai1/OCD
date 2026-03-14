@@ -1,10 +1,10 @@
 // apps/desktop/src/face_clustering.rs
 // Face clustering implementation using DBSCAN
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use linfa::prelude::*;
 use linfa_clustering::Dbscan;
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ impl FaceClustering {
 
     pub fn cluster_faces(
         &self,
-        embeddings: &[super::face_embedding::EmbeddedFace],
+        embeddings: &[super::face_embedding_ml::EmbeddedFace],
     ) -> Result<ClusteringResult> {
         let start_time = std::time::Instant::now();
 
@@ -96,7 +96,7 @@ impl FaceClustering {
         similarity_matrix
     }
 
-    fn cosine_similarity(&self, a: ArrayView2<f32>, b: ArrayView2<f32>) -> f32 {
+    fn cosine_similarity(&self, a: ArrayView1<f32>, b: ArrayView1<f32>) -> f32 {
         let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
         let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -119,22 +119,25 @@ impl FaceClustering {
             .tolerance(1.0 - self.similarity_threshold) // Distance threshold
             .transform(dataset)?;
 
-        let cluster_memberships = model.cluster_labels();
-
+        // Get cluster labels from the dataset
+        let targets = model.targets();
+        
         // Group points by cluster
-        let mut clusters: HashMap<i32, Vec<usize>> = HashMap::new();
+        let mut clusters: HashMap<usize, Vec<usize>> = HashMap::new();
 
-        for (point_idx, &cluster_id) in cluster_memberships.iter().enumerate() {
-            clusters
-                .entry(cluster_id)
-                .or_insert_with(Vec::new)
-                .push(point_idx);
+        for (point_idx, cluster_id) in targets.iter().enumerate() {
+            if let Some(cluster_id) = cluster_id {
+                clusters
+                    .entry(*cluster_id)
+                    .or_insert_with(Vec::new)
+                    .push(point_idx);
+            }
         }
 
-        // Filter out noise points (cluster_id = -1) and clusters with too few members
+        // Filter out clusters with too few members
         let valid_clusters: Vec<Vec<usize>> = clusters
             .into_iter()
-            .filter(|(cluster_id, members)| *cluster_id >= 0 && members.len() >= self.min_samples)
+            .filter(|(_, members)| members.len() >= self.min_samples)
             .map(|(_, members)| members)
             .collect();
 
@@ -144,7 +147,7 @@ impl FaceClustering {
     fn create_person_groups(
         &self,
         clusters: &[Vec<usize>],
-        embeddings: &[super::face_embedding::EmbeddedFace],
+        embeddings: &[super::face_embedding_ml::EmbeddedFace],
     ) -> Vec<PersonGroup> {
         let mut person_groups = Vec::new();
 
@@ -182,7 +185,7 @@ impl FaceClustering {
     fn calculate_cluster_confidence(
         &self,
         cluster: &[usize],
-        embeddings: &[super::face_embedding::EmbeddedFace],
+        embeddings: &[super::face_embedding_ml::EmbeddedFace],
     ) -> f32 {
         if cluster.len() <= 1 {
             return 1.0;

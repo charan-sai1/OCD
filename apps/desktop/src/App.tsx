@@ -24,7 +24,6 @@ const OrganizedPhotoGrid = lazy(() => import("./components/OrganizedPhotoGrid"))
 const FolderView = lazy(() => import("./components/FolderView"));
 const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
 const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
-const SearchBar = lazy(() => import("./components/SearchBar"));
 const FaceRecognitionPanel = lazy(() => import("./components/FaceRecognitionPanel"));
 const ImageViewerModal = lazy(() => import("./components/ImageViewerModal"));
 const FileImport = lazy(() => import("./components/FileImport"));
@@ -85,7 +84,7 @@ function App() {
   const [isFolderManagementOpen, setIsFolderManagementOpen] =
     useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [topBarHidden, setTopBarHidden] = useState<boolean>(false);
+  const [_topBarHidden, setTopBarHidden] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
    const [loadingProgress, setLoadingProgress] = useState<number>(0);

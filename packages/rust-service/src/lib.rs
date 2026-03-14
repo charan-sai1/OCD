@@ -11,7 +11,6 @@ pub struct FileNode {
     pub children: Option<Vec<FileNode>>,
 }
 
-#[tauri::command]
 pub fn scan_directory(path: &str) -> Result<FileNode, String> {
     let path = Path::new(path);
     if !path.exists() {
@@ -35,7 +34,7 @@ pub fn scan_directory(path: &str) -> Result<FileNode, String> {
                 name,
                 r#type: "directory".to_string(),
                 size: None,
-                Some(children),
+                children: Some(children),
             })
         } else {
             Ok(FileNode {
@@ -51,22 +50,18 @@ pub fn scan_directory(path: &str) -> Result<FileNode, String> {
     build_tree(path)
 }
 
-#[tauri::command]
 pub fn read_file_content(path: &str) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn write_file_content(path: &str, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn create_directory(path: &str) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn delete_path(path: &str) -> Result<(), String> {
     let p = Path::new(path);
     if p.is_dir() {
@@ -76,13 +71,11 @@ pub fn delete_path(path: &str) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
 pub fn copy_path(source: &str, destination: &str) -> Result<(), String> {
     fs::copy(source, destination).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
 pub fn get_file_metadata(path: &str) -> Result<FileNode, String> {
     let p = Path::new(path);
     let metadata = p.metadata().map_err(|e| e.to_string())?;

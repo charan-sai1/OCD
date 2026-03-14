@@ -16,3 +16,7 @@ Thumbs.db
 
 # Tauri
 apps/desktop/src-tauri/gen/
+
+
+._*
+.DS_Store

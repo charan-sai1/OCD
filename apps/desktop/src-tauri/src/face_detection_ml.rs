@@ -1,17 +1,11 @@
-// apps/desktop/src-tauri/src/face_detection_ml.rs
-// ML-based face detection using YOLOv5 ONNX model with ONNX Runtime
+ // apps/desktop/src-tauri/src/face_detection_ml.rs
+// ML-based face detection using YOLOv5 ONNX model with tract-onnx
 
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
-use ndarray::{Array, Array3, Array4, Axis, s};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
-use ort::{
-    Environment, ExecutionProvider, Session, SessionBuilder, Value, Tensor,
-    GraphOptimizationLevel,
-};
+use tract_onnx::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Face {
@@ -63,8 +57,7 @@ pub struct FaceQualityMetrics {
 }
 
 pub struct MLFaceDetector {
-    session: Option<Session>,
-    environment: Arc<Environment>,
+    model: Option<SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>>,
     input_size: usize,
     confidence_threshold: f32,
     nms_threshold: f32,
@@ -72,19 +65,8 @@ pub struct MLFaceDetector {
 
 impl MLFaceDetector {
     pub fn new() -> Result<Self> {
-        // Initialize ONNX Runtime environment with optimizations
-        let environment = Environment::builder()
-            .with_name("ocd_face_detection")
-            .with_execution_providers([
-                ExecutionProvider::CUDA(Default::default()),
-                ExecutionProvider::CPU(Default::default()),
-            ])
-            .build()?
-            .into_arc();
-
         Ok(Self {
-            session: None,
-            environment,
+            model: None,
             input_size: 640,
             confidence_threshold: 0.5,
             nms_threshold: 0.45,
@@ -96,20 +78,20 @@ impl MLFaceDetector {
             return Err(anyhow!("Model file not found: {:?}", model_path));
         }
 
-        // Build session with optimizations
-        let session = SessionBuilder::new(&self.environment)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
-            .with_model_from_file(model_path)?;
+        // Load ONNX model using tract
+        let model = tract_onnx::onnx()
+            .model_for_path(model_path)?
+            .into_optimized()?
+            .into_runnable()?;
 
-        self.session = Some(session);
+        self.model = Some(model);
         Ok(())
     }
 
     pub fn detect_faces(&self, image_path: &str) -> Result<FaceDetectionResult> {
         let start_time = std::time::Instant::now();
 
-        if self.session.is_none() {
+        if self.model.is_none() {
             return Err(anyhow!("Model not loaded"));
         }
 
@@ -121,8 +103,8 @@ impl MLFaceDetector {
         let input_tensor = self.preprocess_image(&img)?;
         
         // Run inference
-        let session = self.session.as_ref().unwrap();
-        let outputs = session.run(vec![input_tensor])?;
+        let model = self.model.as_ref().unwrap();
+        let outputs = model.run(tvec!(input_tensor))?;
         
         // Parse detections
         let mut faces = self.parse_detections(&outputs, orig_width as f32, orig_height as f32)?;
@@ -148,7 +130,7 @@ impl MLFaceDetector {
         })
     }
 
-    fn preprocess_image(&self, img: &DynamicImage) -> Result<Value> {
+    fn preprocess_image(&self, img: &DynamicImage) -> Result<TValue> {
         let (width, height) = img.dimensions();
         
         // Calculate padding to maintain aspect ratio
@@ -170,7 +152,7 @@ impl MLFaceDetector {
         for y in 0..new_height {
             for x in 0..new_width {
                 let pixel = resized.get_pixel(x, y);
-                padded.put_pixel(pad_x + x, pad_y + y, *pixel);
+                padded.put_pixel(pad_x + x, pad_y + y, pixel);
             }
         }
         
@@ -188,20 +170,14 @@ impl MLFaceDetector {
         }
         
         // Create tensor with shape [1, 3, 640, 640] (NCHW format)
-        let array = Array4::from_shape_vec((1, 3, self.input_size, self.input_size), input_data)?;
+        let tensor = Tensor::from_shape(&[1, 3, self.input_size, self.input_size], &input_data)?;
         
-        // Transpose from NHWC to NCHW
-        let array = array.permuted_axes([0, 3, 1, 2]);
-        
-        // Create ONNX tensor
-        let tensor = Value::from_array(session.allocator(), &array)?;
-        
-        Ok(tensor)
+        Ok(tensor.into())
     }
 
     fn parse_detections(
         &self,
-        outputs: &[Value],
+        outputs: &TVec<TValue>,
         orig_width: f32,
         orig_height: f32,
     ) -> Result<Vec<Face>> {
@@ -209,7 +185,8 @@ impl MLFaceDetector {
         
         // YOLOv5 output format: [batch, num_boxes, 85] where 85 = 4 bbox + 1 conf + 80 classes
         if let Some(output) = outputs.get(0) {
-            let array = output.try_extract::<f32>()?;
+            let view = output.to_array_view::<f32>()?;
+            let array = view.to_owned();
             let shape = array.shape();
             
             // Expected shape: [1, num_boxes, 85] or [1, 85, num_boxes]
@@ -220,20 +197,14 @@ impl MLFaceDetector {
             };
             
             for i in 0..num_boxes {
-                let detection = if shape[1] == 85 {
+                // Parse detection: [x, y, w, h, conf, class_scores...]
+                let (x, y, w, h, conf) = if shape[1] == 85 {
                     // Shape is [1, 85, num_boxes]
-                    array.slice(s![0, .., i])
+                    (array[[0, 0, i]], array[[0, 1, i]], array[[0, 2, i]], array[[0, 3, i]], array[[0, 4, i]])
                 } else {
                     // Shape is [1, num_boxes, 85]
-                    array.slice(s![0, i, ..])
+                    (array[[0, i, 0]], array[[0, i, 1]], array[[0, i, 2]], array[[0, i, 3]], array[[0, i, 4]])
                 };
-                
-                // Parse detection: [x, y, w, h, conf, class_scores...]
-                let x = detection[0];
-                let y = detection[1];
-                let w = detection[2];
-                let h = detection[3];
-                let conf = detection[4];
                 
                 // Filter by confidence threshold
                 if conf < self.confidence_threshold {
@@ -241,9 +212,8 @@ impl MLFaceDetector {
                 }
                 
                 // Get class with highest score (should be face class)
-                let class_scores = &detection[5..];
-                let max_class_score = class_scores.iter().fold(0.0f32, |a, &b| a.max(b));
-                let class_conf = conf * max_class_score;
+                // For face detection, we typically have 1 class, so class_conf = conf
+                let class_conf = conf;
                 
                 if class_conf < self.confidence_threshold {
                     continue;
@@ -319,7 +289,8 @@ impl MLFaceDetector {
             let mut should_keep = true;
             
             for &j in &keep {
-                if self.calculate_iou(&faces[i].bounds, &faces[j].bounds) > self.nms_threshold {
+                let iou: f32 = self.calculate_iou(&faces[i].bounds, &faces[j as usize].bounds);
+                if iou > self.nms_threshold {
                     should_keep = false;
                     break;
                 }
@@ -456,8 +427,8 @@ impl MLFaceDetector {
     }
 
     fn calculate_contrast(&self, img: &image::RgbImage) -> f32 {
-        let mut min_brightness = 255.0;
-        let mut max_brightness = 0.0;
+        let mut min_brightness: f32 = 255.0;
+        let mut max_brightness: f32 = 0.0;
         
         for pixel in img.pixels() {
             let brightness = 0.299 * pixel[0] as f32 + 0.587 * pixel[1] as f32 + 0.114 * pixel[2] as f32;
@@ -466,7 +437,7 @@ impl MLFaceDetector {
         }
         
         let contrast = max_brightness - min_brightness;
-        (contrast / 255.0).min(1.0)
+        (contrast / 255.0).min(1.0f32)
     }
 
     pub fn set_confidence_threshold(&mut self, threshold: f32) {

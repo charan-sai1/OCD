@@ -1,16 +1,11 @@
 // apps/desktop/src-tauri/src/face_embedding_ml.rs
-// MobileFaceNet-based face embedding extraction using ONNX Runtime
+// MobileFaceNet-based face embedding extraction using tract-onnx
 
 use anyhow::{anyhow, Result};
-use image::{DynamicImage, GenericImageView, RgbImage};
-use ndarray::{Array, Array4, s};
+use image::{DynamicImage, GenericImageView};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::sync::Arc;
-use ort::{
-    Environment, ExecutionProvider, Session, SessionBuilder, Value,
-    GraphOptimizationLevel,
-};
+use tract_onnx::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingResult {
@@ -42,27 +37,15 @@ pub struct FaceBounds {
 }
 
 pub struct MobileFaceNetEmbedder {
-    session: Option<Session>,
-    environment: Arc<Environment>,
+    model: Option<SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>>,
     input_size: usize,
     embedding_dim: usize,
 }
 
 impl MobileFaceNetEmbedder {
     pub fn new() -> Result<Self> {
-        // Initialize ONNX Runtime environment
-        let environment = Environment::builder()
-            .with_name("ocd_face_embedding")
-            .with_execution_providers([
-                ExecutionProvider::CUDA(Default::default()),
-                ExecutionProvider::CPU(Default::default()),
-            ])
-            .build()?
-            .into_arc();
-
         Ok(Self {
-            session: None,
-            environment,
+            model: None,
             input_size: 112, // MobileFaceNet input size
             embedding_dim: 128, // MobileFaceNet embedding dimension
         })
@@ -73,20 +56,20 @@ impl MobileFaceNetEmbedder {
             return Err(anyhow!("Embedding model file not found: {:?}", model_path));
         }
 
-        // Build session with optimizations
-        let session = SessionBuilder::new(&self.environment)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
-            .with_model_from_file(model_path)?;
+        // Load ONNX model using tract
+        let model = tract_onnx::onnx()
+            .model_for_path(model_path)?
+            .into_optimized()?
+            .into_runnable()?;
 
-        self.session = Some(session);
+        self.model = Some(model);
         Ok(())
     }
 
     pub fn extract_embeddings(&self, face_crops: Vec<FaceCrop>) -> Result<EmbeddingResult> {
         let start_time = std::time::Instant::now();
 
-        if self.session.is_none() {
+        if self.model.is_none() {
             return Err(anyhow!("Embedding model not loaded"));
         }
 
@@ -97,8 +80,8 @@ impl MobileFaceNetEmbedder {
             let input_tensor = self.preprocess_face_crop(&crop.image_data)?;
             
             // Run inference
-            let session = self.session.as_ref().unwrap();
-            let outputs = session.run(vec![input_tensor])?;
+            let model = self.model.as_ref().unwrap();
+            let outputs = model.run(tvec!(input_tensor))?;
             
             // Extract embedding
             let mut embedding = self.extract_embedding_from_output(&outputs)?;
@@ -125,7 +108,7 @@ impl MobileFaceNetEmbedder {
         })
     }
 
-    fn preprocess_face_crop(&self, image_data: &DynamicImage) -> Result<Value> {
+    fn preprocess_face_crop(&self, image_data: &DynamicImage) -> Result<TValue> {
         // Resize to 112x112 (MobileFaceNet input size)
         let resized = image_data.resize_exact(
             self.input_size as u32, 
@@ -149,17 +132,15 @@ impl MobileFaceNetEmbedder {
         }
 
         // Create tensor with shape [1, 3, 112, 112] (NCHW format)
-        let array = Array4::from_shape_vec((1, 3, self.input_size, self.input_size), input_data)?;
+        let tensor = Tensor::from_shape(&[1, 3, self.input_size, self.input_size], &input_data)?;
         
-        // Create ONNX tensor
-        let tensor = Value::from_array(session.allocator(), &array)?;
-        
-        Ok(tensor)
+        Ok(tensor.into())
     }
 
-    fn extract_embedding_from_output(&self, outputs: &[Value]) -> Result<Vec<f32>> {
+    fn extract_embedding_from_output(&self, outputs: &TVec<TValue>) -> Result<Vec<f32>> {
         if let Some(output) = outputs.get(0) {
-            let array = output.try_extract::<f32>()?;
+            let view = output.to_array_view::<f32>()?;
+            let array = view.to_owned();
             
             // Extract embedding vector
             let embedding: Vec<f32> = array.iter().cloned().collect();
