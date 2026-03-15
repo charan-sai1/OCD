@@ -39,15 +39,15 @@ pub struct FaceBounds {
 pub struct MobileFaceNetEmbedder {
     model: Option<SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>>,
     input_size: usize,
-    embedding_dim: usize,
+    embedding_dim: Option<usize>,
 }
 
 impl MobileFaceNetEmbedder {
     pub fn new() -> Result<Self> {
         Ok(Self {
             model: None,
-            input_size: 112, // MobileFaceNet input size
-            embedding_dim: 128, // MobileFaceNet embedding dimension
+            input_size: 112,
+            embedding_dim: None,
         })
     }
 
@@ -66,7 +66,7 @@ impl MobileFaceNetEmbedder {
         Ok(())
     }
 
-    pub fn extract_embeddings(&self, face_crops: Vec<FaceCrop>) -> Result<EmbeddingResult> {
+    pub fn extract_embeddings(&mut self, face_crops: Vec<FaceCrop>) -> Result<EmbeddingResult> {
         let start_time = std::time::Instant::now();
 
         if self.model.is_none() {
@@ -78,20 +78,19 @@ impl MobileFaceNetEmbedder {
         for crop in face_crops {
             // Preprocess face crop
             let input_tensor = self.preprocess_face_crop(&crop.image_data)?;
-            
+
             // Run inference
             let model = self.model.as_ref().unwrap();
             let outputs = model.run(tvec!(input_tensor))?;
-            
-            // Extract embedding
+
             let mut embedding = self.extract_embedding_from_output(&outputs)?;
-            
+
             // Normalize embedding to unit length
             Self::normalize_embedding(&mut embedding);
-            
+
             // Calculate quality score based on embedding variance
             let quality_score = self.calculate_embedding_quality(&embedding);
-            
+
             embedded_faces.push(EmbeddedFace {
                 id: crop.face_id,
                 embedding,
@@ -111,19 +110,19 @@ impl MobileFaceNetEmbedder {
     fn preprocess_face_crop(&self, image_data: &DynamicImage) -> Result<TValue> {
         // Resize to 112x112 (MobileFaceNet input size)
         let resized = image_data.resize_exact(
-            self.input_size as u32, 
-            self.input_size as u32, 
-            image::imageops::FilterType::Lanczos3
+            self.input_size as u32,
+            self.input_size as u32,
+            image::imageops::FilterType::Lanczos3,
         );
 
         // Convert to RGB
         let rgb_img = resized.to_rgb8();
-        
+
         // Normalize using MobileFaceNet preprocessing
         // MobileFaceNet expects input in range [-1, 1] or [0, 1] depending on training
         // Using [-1, 1] normalization as it's more common for face recognition models
         let mut input_data = Vec::with_capacity(self.input_size * self.input_size * 3);
-        
+
         for pixel in rgb_img.pixels() {
             // Normalize to [-1, 1]
             input_data.push((pixel[0] as f32 / 127.5) - 1.0); // R
@@ -133,27 +132,34 @@ impl MobileFaceNetEmbedder {
 
         // Create tensor with shape [1, 3, 112, 112] (NCHW format)
         let tensor = Tensor::from_shape(&[1, 3, self.input_size, self.input_size], &input_data)?;
-        
+
         Ok(tensor.into())
     }
 
-    fn extract_embedding_from_output(&self, outputs: &TVec<TValue>) -> Result<Vec<f32>> {
+    fn extract_embedding_from_output(&mut self, outputs: &TVec<TValue>) -> Result<Vec<f32>> {
         if let Some(output) = outputs.get(0) {
             let view = output.to_array_view::<f32>()?;
             let array = view.to_owned();
-            
-            // Extract embedding vector
+
             let embedding: Vec<f32> = array.iter().cloned().collect();
-            
-            // Ensure correct dimension
-            if embedding.len() != self.embedding_dim {
-                return Err(anyhow!(
-                    "Unexpected embedding dimension: expected {}, got {}",
-                    self.embedding_dim,
-                    embedding.len()
-                ));
+            let embedding_len = embedding.len();
+
+            if embedding_len == 0 {
+                return Err(anyhow!("Empty embedding output from model"));
             }
-            
+
+            if let Some(expected) = self.embedding_dim {
+                if embedding_len != expected {
+                    return Err(anyhow!(
+                        "Embedding dimension mismatch: expected {}, got {}",
+                        expected,
+                        embedding_len
+                    ));
+                }
+            } else {
+                self.embedding_dim = Some(embedding_len);
+            }
+
             Ok(embedding)
         } else {
             Err(anyhow!("No output tensor from embedding model"))
@@ -172,22 +178,21 @@ impl MobileFaceNetEmbedder {
     fn calculate_embedding_quality(&self, embedding: &[f32]) -> f32 {
         // Calculate quality based on embedding statistics
         // Higher variance generally indicates better quality embeddings
-        
+
         if embedding.is_empty() {
             return 0.0;
         }
-        
+
         // Calculate mean
         let mean = embedding.iter().sum::<f32>() / embedding.len() as f32;
-        
+
         // Calculate variance
-        let variance = embedding.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f32>() / embedding.len() as f32;
-        
+        let variance =
+            embedding.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / embedding.len() as f32;
+
         // Normalize to 0-1 range (typical variance for good embeddings is around 0.01-0.1)
         let normalized_quality = (variance * 10.0).min(1.0);
-        
+
         normalized_quality
     }
 
@@ -195,28 +200,30 @@ impl MobileFaceNetEmbedder {
         if embedding1.len() != embedding2.len() {
             return 0.0;
         }
-        
+
         // Calculate cosine similarity
-        let dot_product: f32 = embedding1.iter()
+        let dot_product: f32 = embedding1
+            .iter()
             .zip(embedding2.iter())
             .map(|(a, b)| a * b)
             .sum();
-        
+
         // Since embeddings are normalized, cosine similarity = dot product
         dot_product.max(-1.0).min(1.0) // Clamp to [-1, 1]
     }
 
     pub fn calculate_distance(embedding1: &[f32], embedding2: &[f32]) -> f32 {
         // Calculate Euclidean distance
-        let squared_diff: f32 = embedding1.iter()
+        let squared_diff: f32 = embedding1
+            .iter()
             .zip(embedding2.iter())
             .map(|(a, b)| (a - b).powi(2))
             .sum();
-        
+
         squared_diff.sqrt()
     }
 
-    pub fn get_embedding_dim(&self) -> usize {
+    pub fn get_embedding_dim(&self) -> Option<usize> {
         self.embedding_dim
     }
 }
@@ -234,34 +241,36 @@ pub fn crop_and_align_face(
     landmarks: Option<&super::face_detection_ml::FaceLandmarks>,
 ) -> Result<DynamicImage> {
     let img = image::open(image_path)?;
-    
+
     // If landmarks are available, use them for alignment
     if let Some(landmarks) = landmarks {
         // Calculate alignment transform based on eye positions
         let left_eye = (landmarks.left_eye.x, landmarks.left_eye.y);
         let right_eye = (landmarks.right_eye.x, landmarks.right_eye.y);
-        
+
         // Calculate rotation angle
         let dy = right_eye.1 - left_eye.1;
         let dx = right_eye.0 - left_eye.0;
         let angle = dy.atan2(dx);
-        
+
         // Calculate center point between eyes
         let eye_center = (
             (left_eye.0 + right_eye.0) / 2.0,
             (left_eye.1 + right_eye.1) / 2.0,
         );
-        
+
         // Crop with some margin around the face
         let margin = 0.3; // 30% margin
         let crop_x = (face_bounds.x - face_bounds.width * margin).max(0.0) as u32;
         let crop_y = (face_bounds.y - face_bounds.height * margin).max(0.0) as u32;
-        let crop_width = (face_bounds.width * (1.0 + 2.0 * margin)).min(img.width() as f32 - crop_x as f32) as u32;
-        let crop_height = (face_bounds.height * (1.0 + 2.0 * margin)).min(img.height() as f32 - crop_y as f32) as u32;
-        
+        let crop_width = (face_bounds.width * (1.0 + 2.0 * margin))
+            .min(img.width() as f32 - crop_x as f32) as u32;
+        let crop_height = (face_bounds.height * (1.0 + 2.0 * margin))
+            .min(img.height() as f32 - crop_y as f32) as u32;
+
         // Crop the face region
         let cropped = img.crop_imm(crop_x, crop_y, crop_width, crop_height);
-        
+
         // TODO: Apply rotation alignment if needed
         // For now, return the cropped image
         Ok(DynamicImage::ImageRgba8(cropped.to_rgba8()))
@@ -271,7 +280,7 @@ pub fn crop_and_align_face(
         let y = face_bounds.y.max(0.0) as u32;
         let width = face_bounds.width.min(img.width() as f32 - x as f32) as u32;
         let height = face_bounds.height.min(img.height() as f32 - y as f32) as u32;
-        
+
         let cropped = img.crop_imm(x, y, width, height);
         Ok(DynamicImage::ImageRgba8(cropped.to_rgba8()))
     }
@@ -279,21 +288,21 @@ pub fn crop_and_align_face(
 
 // Batch processing for efficiency
 pub fn batch_extract_embeddings(
-    embedder: &MobileFaceNetEmbedder,
+    embedder: &mut MobileFaceNetEmbedder,
     face_crops: Vec<FaceCrop>,
     batch_size: usize,
 ) -> Result<EmbeddingResult> {
     let start_time = std::time::Instant::now();
     let mut all_embeddings = Vec::new();
-    
+
     // Process in batches
     for chunk in face_crops.chunks(batch_size) {
         let batch_result = embedder.extract_embeddings(chunk.to_vec())?;
         all_embeddings.extend(batch_result.faces);
     }
-    
+
     let processing_time = start_time.elapsed().as_millis();
-    
+
     Ok(EmbeddingResult {
         faces: all_embeddings,
         processing_time,

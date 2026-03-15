@@ -502,6 +502,18 @@ fn generate_full_quality(img: &image::DynamicImage) -> Result<String, String> {
 #[tauri::command]
 fn detect_faces(image_path: String) -> Result<serde_json::Value, String> {
     use serde_json::json;
+    use std::path::Path;
+    
+    let path = Path::new(&image_path);
+    if image_path.is_empty() {
+        return Err("Image path cannot be empty".to_string());
+    }
+    if !path.exists() {
+        return Err(format!("Image file does not exist: {}", image_path));
+    }
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", image_path));
+    }
     
     // Get the face detector
     let mut detector_guard = FACE_DETECTOR.lock().map_err(|e| e.to_string())?;
@@ -542,6 +554,7 @@ fn detect_faces(image_path: String) -> Result<serde_json::Value, String> {
                     nose: database_enhanced::Point { x: l.nose.x, y: l.nose.y },
                     left_mouth: database_enhanced::Point { x: l.left_mouth.x, y: l.left_mouth.y },
                     right_mouth: database_enhanced::Point { x: l.right_mouth.x, y: l.right_mouth.y },
+                    is_estimated: l.is_estimated,
                 }),
                 person_id: None,
                 created_at: chrono::Utc::now(),
@@ -550,7 +563,9 @@ fn detect_faces(image_path: String) -> Result<serde_json::Value, String> {
                 sync_status: SyncStatus::Local,
             };
             
-            let _ = db.add_face(&db_face);
+            if let Err(e) = db.add_face(&db_face) {
+                eprintln!("Warning: Failed to add face to database: {}", e);
+            }
         }
     }
     
@@ -576,7 +591,7 @@ fn extract_embeddings(face_ids: Vec<String>) -> Result<serde_json::Value, String
         embedder_guard = FACE_EMBEDDER.lock().map_err(|e| e.to_string())?;
     }
     
-    let embedder = embedder_guard.as_ref().ok_or("Face embedder not initialized")?;
+    let embedder = embedder_guard.as_mut().ok_or("Face embedder not initialized")?;
     
     // Get faces from database
     let db_guard = DATABASE.lock().map_err(|e| e.to_string())?;
@@ -626,12 +641,16 @@ fn extract_embeddings(face_ids: Vec<String>) -> Result<serde_json::Value, String
     if let Some(ref db) = *db_guard {
         for embedded_face in &result.faces {
             if let Some(mut face) = face_id_map.get(&embedded_face.id).cloned() {
-                // Convert embedding to bytes
+                if embedded_face.embedding.is_empty() {
+                    return Err("Embedding is empty for face".to_string());
+                }
                 let embedding_bytes: Vec<u8> = embedded_face.embedding.iter()
                     .flat_map(|&f| f.to_le_bytes().to_vec())
                     .collect();
                 face.embedding = embedding_bytes;
-                let _ = db.update_face(&face);
+                if let Err(e) = db.update_face(&face) {
+                    eprintln!("Warning: Failed to update face in database: {}", e);
+                }
             }
         }
     }
@@ -658,17 +677,26 @@ async fn find_similar_faces(
     let db_guard = DATABASE.lock().map_err(|e| e.to_string())?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     
-    // Get query face
     let query_face = db.get_face(&query_face_id)
         .map_err(|e| e.to_string())?
         .ok_or("Query face not found")?;
     
-    // Get embedding from query face
-    let query_embedding: Vec<f32> = query_face.embedding.chunks_exact(4)
+    if query_face.embedding.is_empty() {
+        return Err("Query face has no embedding".to_string());
+    }
+    if query_face.embedding.len() % 4 != 0 {
+        return Err(format!("Query face embedding has invalid size: {}", query_face.embedding.len()));
+    }
+    
+    let query_embedding: Vec<f32> = query_face.embedding.chunks(4)
+        .filter(|chunk| chunk.len() == 4)
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
     
-    // Get all faces from database
+    if query_embedding.is_empty() {
+        return Err("Failed to parse query face embedding".to_string());
+    }
+    
     let all_faces = db.get_all_faces().map_err(|e| e.to_string())?;
     
     let mut similar_faces = Vec::new();
@@ -678,12 +706,16 @@ async fn find_similar_faces(
             continue;
         }
         
-        // Convert face embedding
-        let face_embedding: Vec<f32> = face.embedding.chunks_exact(4)
+        if face.embedding.is_empty() || face.embedding.len() % 4 != 0 {
+            continue;
+        }
+        
+        let face_embedding: Vec<f32> = face.embedding.chunks(4)
+            .filter(|chunk| chunk.len() == 4)
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
         
-        if query_embedding.len() == face_embedding.len() && !query_embedding.is_empty() {
+        if query_embedding.len() == face_embedding.len() && !face_embedding.is_empty() {
             // Calculate cosine similarity
             let dot_product: f32 = query_embedding.iter()
                 .zip(face_embedding.iter())
@@ -741,7 +773,11 @@ fn cluster_faces(algorithm: Option<String>) -> Result<serde_json::Value, String>
     // Convert to embedded faces format
     let mut embedded_faces = Vec::new();
     for face in &all_faces {
-        let embedding: Vec<f32> = face.embedding.chunks_exact(4)
+        if face.embedding.is_empty() || face.embedding.len() % 4 != 0 {
+            continue;
+        }
+        let embedding: Vec<f32> = face.embedding.chunks(4)
+            .filter(|chunk| chunk.len() == 4)
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
         
@@ -777,11 +813,14 @@ fn cluster_faces(algorithm: Option<String>) -> Result<serde_json::Value, String>
                 sync_status: SyncStatus::Local,
             };
             
-            let _ = db.add_person(&person);
+            if let Err(e) = db.add_person(&person) {
+                eprintln!("Warning: Failed to add person to database: {}", e);
+            }
             
-            // Update faces with person_id
             for face_id in &group.face_ids {
-                let _ = db.update_face_person(face_id, Some(&group.id));
+                if let Err(e) = db.update_face_person(face_id, Some(&group.id)) {
+                    eprintln!("Warning: Failed to update face person_id: {}", e);
+                }
             }
         }
     }
@@ -929,7 +968,9 @@ fn process_folder(folder_path: String) -> Result<serde_json::Value, String> {
         drop(db_guard);
         
         if !face_ids.is_empty() {
-            let _ = extract_embeddings(face_ids);
+            if let Err(e) = extract_embeddings(face_ids) {
+                eprintln!("Warning: Failed to extract embeddings: {}", e);
+            }
         }
     }
     
@@ -990,16 +1031,18 @@ fn clear_database() -> Result<(), String> {
     let db_guard = DATABASE.lock().map_err(|e| e.to_string())?;
     
     if let Some(ref db) = *db_guard {
-        // Get all faces and delete them
         let all_faces = db.get_all_faces().map_err(|e| e.to_string())?;
         for face in all_faces {
-            let _ = db.delete_face(&face.id, false);
+            if let Err(e) = db.delete_face(&face.id, false) {
+                eprintln!("Warning: Failed to delete face: {}", e);
+            }
         }
         
-        // Get all people and delete them
         let all_people = db.get_all_people().map_err(|e| e.to_string())?;
         for person in all_people {
-            let _ = db.delete_person(&person.id, false);
+            if let Err(e) = db.delete_person(&person.id, false) {
+                eprintln!("Warning: Failed to delete person: {}", e);
+            }
         }
     }
     

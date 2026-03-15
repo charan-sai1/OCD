@@ -3,10 +3,10 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, params};
+use image::DynamicImage;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use image::DynamicImage;
 
 // ============================================================================
 // Data Models
@@ -22,16 +22,16 @@ pub struct MediaItem {
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub size_bytes: i64,
-    pub created_at: Option<DateTime<Utc>>,  // EXIF creation date
-    pub modified_at: DateTime<Utc>,         // File modification date
-    pub taken_at: Option<DateTime<Utc>>,    // When photo was taken
+    pub created_at: Option<DateTime<Utc>>, // EXIF creation date
+    pub modified_at: DateTime<Utc>,        // File modification date
+    pub taken_at: Option<DateTime<Utc>>,   // When photo was taken
     pub timezone: Option<String>,
     pub gps_lat: Option<f64>,
     pub gps_lon: Option<f64>,
     pub device_make: Option<String>,
     pub device_model: Option<String>,
     pub orientation: Option<i32>,
-    pub duration: Option<f64>,           // For videos
+    pub duration: Option<f64>, // For videos
     pub thumbnail_path: Option<String>,
     pub is_favorite: bool,
     pub is_hidden: bool,
@@ -71,7 +71,7 @@ pub struct Face {
     pub image_path: String,
     pub image_hash: String,
     pub bounds: FaceBounds,
-    pub embedding: Vec<u8>,              // Compressed 128D embedding
+    pub embedding: Vec<u8>, // Compressed 128D embedding
     pub confidence: f32,
     pub quality_score: f32,
     pub landmarks: Option<FaceLandmarks>,
@@ -97,6 +97,7 @@ pub struct FaceLandmarks {
     pub nose: Point,
     pub left_mouth: Point,
     pub right_mouth: Point,
+    pub is_estimated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +127,7 @@ pub struct Album {
     pub cover_media_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub rules: Option<String>,           // JSON for smart albums
+    pub rules: Option<String>, // JSON for smart albums
     pub sync_status: SyncStatus,
 }
 
@@ -181,10 +182,10 @@ pub struct EnhancedDatabase {
 impl EnhancedDatabase {
     pub fn new(db_path: PathBuf) -> Result<Self> {
         let conn = Connection::open(&db_path)?;
-        
+
         let db = Self { conn, db_path };
         db.initialize_schema()?;
-        
+
         Ok(db)
     }
 
@@ -404,39 +405,43 @@ impl EnhancedDatabase {
     }
 
     pub fn get_media_item(&self, id: &str) -> Result<Option<MediaItem>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM media_items WHERE id = ?1 AND is_deleted = 0"
-        )?;
-        
-        let item = stmt.query_row([id], |row| {
-            self.row_to_media_item(row)
-        }).optional()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM media_items WHERE id = ?1 AND is_deleted = 0")?;
+
+        let item = stmt
+            .query_row([id], |row| self.row_to_media_item(row))
+            .optional()?;
+
         Ok(item)
     }
 
     pub fn get_media_item_by_hash(&self, hash: &str) -> Result<Option<MediaItem>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM media_items WHERE hash = ?1 AND is_deleted = 0"
-        )?;
-        
-        let item = stmt.query_row([hash], |row| {
-            self.row_to_media_item(row)
-        }).optional()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM media_items WHERE hash = ?1 AND is_deleted = 0")?;
+
+        let item = stmt
+            .query_row([hash], |row| self.row_to_media_item(row))
+            .optional()?;
+
         Ok(item)
     }
 
-    pub fn get_media_items_by_perceptual_hash(&self, perceptual_hash: &str, threshold: f64) -> Result<Vec<MediaItem>> {
+    pub fn get_media_items_by_perceptual_hash(
+        &self,
+        perceptual_hash: &str,
+        threshold: f64,
+    ) -> Result<Vec<MediaItem>> {
         // This is a simplified version - in production, you'd use Hamming distance
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM media_items WHERE perceptual_hash = ?1 AND is_deleted = 0"
-        )?;
-        
-        let items: Vec<MediaItem> = stmt.query_map([perceptual_hash], |row| {
-            self.row_to_media_item(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM media_items WHERE perceptual_hash = ?1 AND is_deleted = 0")?;
+
+        let items: Vec<MediaItem> = stmt
+            .query_map([perceptual_hash], |row| self.row_to_media_item(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(items)
     }
 
@@ -520,10 +525,8 @@ impl EnhancedDatabase {
                 params![id, Utc::now().to_rfc3339()],
             )?;
         } else {
-            self.conn.execute(
-                "DELETE FROM media_items WHERE id = ?1",
-                [id],
-            )?;
+            self.conn
+                .execute("DELETE FROM media_items WHERE id = ?1", [id])?;
         }
         Ok(())
     }
@@ -548,7 +551,9 @@ impl EnhancedDatabase {
                 face.embedding.as_slice(),
                 face.confidence,
                 face.quality_score,
-                face.landmarks.as_ref().map(|l| serde_json::to_string(l).unwrap()),
+                face.landmarks
+                    .as_ref()
+                    .map(|l| serde_json::to_string(l).unwrap()),
                 face.person_id,
                 face.created_at.to_rfc3339(),
                 face.updated_at.to_rfc3339(),
@@ -560,50 +565,48 @@ impl EnhancedDatabase {
     }
 
     pub fn get_faces_by_media(&self, media_id: &str) -> Result<Vec<Face>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM faces WHERE media_id = ?1"
-        )?;
-        
-        let faces: Vec<Face> = stmt.query_map([media_id], |row| {
-            self.row_to_face(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM faces WHERE media_id = ?1")?;
+
+        let faces: Vec<Face> = stmt
+            .query_map([media_id], |row| self.row_to_face(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(faces)
     }
 
     pub fn get_faces_by_person(&self, person_id: &str) -> Result<Vec<Face>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM faces WHERE person_id = ?1"
-        )?;
-        
-        let faces: Vec<Face> = stmt.query_map([person_id], |row| {
-            self.row_to_face(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM faces WHERE person_id = ?1")?;
+
+        let faces: Vec<Face> = stmt
+            .query_map([person_id], |row| self.row_to_face(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(faces)
     }
 
     pub fn get_all_faces(&self) -> Result<Vec<Face>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM faces ORDER BY created_at DESC"
-        )?;
-        
-        let faces: Vec<Face> = stmt.query_map([], |row| {
-            self.row_to_face(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM faces ORDER BY created_at DESC")?;
+
+        let faces: Vec<Face> = stmt
+            .query_map([], |row| self.row_to_face(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(faces)
     }
 
     pub fn get_face(&self, id: &str) -> Result<Option<Face>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM faces WHERE id = ?1"
-        )?;
-        
-        let face = stmt.query_row([id], |row| {
-            self.row_to_face(row)
-        }).optional()?;
-        
+        let mut stmt = self.conn.prepare("SELECT * FROM faces WHERE id = ?1")?;
+
+        let face = stmt
+            .query_row([id], |row| self.row_to_face(row))
+            .optional()?;
+
         Ok(face)
     }
 
@@ -631,7 +634,9 @@ impl EnhancedDatabase {
                 face.embedding.as_slice(),
                 face.confidence,
                 face.quality_score,
-                face.landmarks.as_ref().map(|l| serde_json::to_string(l).unwrap()),
+                face.landmarks
+                    .as_ref()
+                    .map(|l| serde_json::to_string(l).unwrap()),
                 face.person_id,
                 face.updated_at.to_rfc3339(),
                 serde_json::to_string(&face.sync_status)?,
@@ -655,10 +660,7 @@ impl EnhancedDatabase {
                 params![id, Utc::now().to_rfc3339()],
             )?;
         } else {
-            self.conn.execute(
-                "DELETE FROM faces WHERE id = ?1",
-                [id],
-            )?;
+            self.conn.execute("DELETE FROM faces WHERE id = ?1", [id])?;
         }
         Ok(())
     }
@@ -689,26 +691,24 @@ impl EnhancedDatabase {
     }
 
     pub fn get_person(&self, id: &str) -> Result<Option<Person>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM people WHERE id = ?1"
-        )?;
-        
-        let person = stmt.query_row([id], |row| {
-            self.row_to_person(row)
-        }).optional()?;
-        
+        let mut stmt = self.conn.prepare("SELECT * FROM people WHERE id = ?1")?;
+
+        let person = stmt
+            .query_row([id], |row| self.row_to_person(row))
+            .optional()?;
+
         Ok(person)
     }
 
     pub fn get_all_people(&self) -> Result<Vec<Person>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM people ORDER BY face_count DESC"
-        )?;
-        
-        let people: Vec<Person> = stmt.query_map([], |row| {
-            self.row_to_person(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM people ORDER BY face_count DESC")?;
+
+        let people: Vec<Person> = stmt
+            .query_map([], |row| self.row_to_person(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(people)
     }
 
@@ -742,10 +742,8 @@ impl EnhancedDatabase {
                 params![id, Utc::now().to_rfc3339()],
             )?;
         } else {
-            self.conn.execute(
-                "DELETE FROM people WHERE id = ?1",
-                [id],
-            )?;
+            self.conn
+                .execute("DELETE FROM people WHERE id = ?1", [id])?;
         }
         Ok(())
     }
@@ -775,26 +773,24 @@ impl EnhancedDatabase {
     }
 
     pub fn get_album(&self, id: &str) -> Result<Option<Album>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM albums WHERE id = ?1"
-        )?;
-        
-        let album = stmt.query_row([id], |row| {
-            self.row_to_album(row)
-        }).optional()?;
-        
+        let mut stmt = self.conn.prepare("SELECT * FROM albums WHERE id = ?1")?;
+
+        let album = stmt
+            .query_row([id], |row| self.row_to_album(row))
+            .optional()?;
+
         Ok(album)
     }
 
     pub fn get_all_albums(&self) -> Result<Vec<Album>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM albums ORDER BY created_at DESC"
-        )?;
-        
-        let albums: Vec<Album> = stmt.query_map([], |row| {
-            self.row_to_album(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM albums ORDER BY created_at DESC")?;
+
+        let albums: Vec<Album> = stmt
+            .query_map([], |row| self.row_to_album(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(albums)
     }
 
@@ -811,13 +807,13 @@ impl EnhancedDatabase {
             "SELECT m.* FROM media_items m
              INNER JOIN album_media am ON m.id = am.media_id
              WHERE am.album_id = ?1 AND m.is_deleted = 0
-             ORDER BY am.added_at DESC"
+             ORDER BY am.added_at DESC",
         )?;
-        
-        let items: Vec<MediaItem> = stmt.query_map([album_id], |row| {
-            self.row_to_media_item(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+
+        let items: Vec<MediaItem> = stmt
+            .query_map([album_id], |row| self.row_to_media_item(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(items)
     }
 
@@ -830,33 +826,38 @@ impl EnhancedDatabase {
         if tags.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let sql = "SELECT DISTINCT m.* FROM media_items m
              WHERE (m.scene_tags LIKE '%' || ?1 || '%' OR m.object_tags LIKE '%' || ?1 || '%')
              AND m.is_deleted = 0
              ORDER BY m.taken_at DESC";
-        
+
         let mut stmt = self.conn.prepare(sql)?;
-        
-        let items: Vec<MediaItem> = stmt.query_map([tags[0].clone()], |row| {
-            self.row_to_media_item(row)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
+
+        let items: Vec<MediaItem> = stmt
+            .query_map([tags[0].clone()], |row| self.row_to_media_item(row))?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(items)
     }
 
-    pub fn search_by_date_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<MediaItem>> {
+    pub fn search_by_date_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<MediaItem>> {
         let mut stmt = self.conn.prepare(
             "SELECT * FROM media_items
              WHERE taken_at >= ?1 AND taken_at <= ?2 AND is_deleted = 0
-             ORDER BY taken_at DESC"
+             ORDER BY taken_at DESC",
         )?;
-        
-        let items: Vec<MediaItem> = stmt.query_map(
-            params![start.to_rfc3339(), end.to_rfc3339()],
-            |row| self.row_to_media_item(row)
-        )?.collect::<Result<Vec<_>, _>>()?;
-        
+
+        let items: Vec<MediaItem> = stmt
+            .query_map(params![start.to_rfc3339(), end.to_rfc3339()], |row| {
+                self.row_to_media_item(row)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(items)
     }
 
@@ -874,9 +875,20 @@ impl EnhancedDatabase {
             width: row.get(5)?,
             height: row.get(6)?,
             size_bytes: row.get(7)?,
-            created_at: row.get::<_, Option<String>>(8)?.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
-            modified_at: row.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
-            taken_at: row.get::<_, Option<String>>(10)?.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+            created_at: row.get::<_, Option<String>>(8)?.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            modified_at: row
+                .get::<_, String>(9)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            taken_at: row.get::<_, Option<String>>(10)?.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
             timezone: row.get(11)?,
             gps_lat: row.get(12)?,
             gps_lon: row.get(13)?,
@@ -888,16 +900,24 @@ impl EnhancedDatabase {
             is_favorite: row.get::<_, i32>(19)? != 0,
             is_hidden: row.get::<_, i32>(20)? != 0,
             is_deleted: row.get::<_, i32>(21)? != 0,
-            deleted_at: row.get::<_, Option<String>>(22)?.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+            deleted_at: row.get::<_, Option<String>>(22)?.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
             album_ids: serde_json::from_str(&row.get::<_, String>(23)?).unwrap_or_default(),
             person_ids: serde_json::from_str(&row.get::<_, String>(24)?).unwrap_or_default(),
             scene_tags: serde_json::from_str(&row.get::<_, String>(25)?).unwrap_or_default(),
             object_tags: serde_json::from_str(&row.get::<_, String>(26)?).unwrap_or_default(),
             color_dominant: row.get(27)?,
             embedding_clip: row.get(28)?,
-            sync_status: serde_json::from_str(&row.get::<_, String>(29)?).unwrap_or(SyncStatus::Local),
+            sync_status: serde_json::from_str(&row.get::<_, String>(29)?)
+                .unwrap_or(SyncStatus::Local),
             device_id: row.get(30)?,
-            updated_at: row.get::<_, String>(31)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
+            updated_at: row
+                .get::<_, String>(31)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
         })
     }
 
@@ -911,12 +931,21 @@ impl EnhancedDatabase {
             embedding: row.get(5)?,
             confidence: row.get(6)?,
             quality_score: row.get(7)?,
-            landmarks: row.get::<_, Option<String>>(8)?.and_then(|s| serde_json::from_str(&s).ok()),
+            landmarks: row
+                .get::<_, Option<String>>(8)?
+                .and_then(|s| serde_json::from_str(&s).ok()),
             person_id: row.get(9)?,
-            created_at: row.get::<_, String>(10)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
-            updated_at: row.get::<_, String>(11)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
+            created_at: row
+                .get::<_, String>(10)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row
+                .get::<_, String>(11)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
             device_id: row.get(12)?,
-            sync_status: serde_json::from_str(&row.get::<_, String>(13)?).unwrap_or(SyncStatus::Local),
+            sync_status: serde_json::from_str(&row.get::<_, String>(13)?)
+                .unwrap_or(SyncStatus::Local),
         })
     }
 
@@ -927,10 +956,17 @@ impl EnhancedDatabase {
             face_count: row.get(2)?,
             representative_face_id: row.get(3)?,
             confidence: row.get(4)?,
-            created_at: row.get::<_, String>(5)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
-            updated_at: row.get::<_, String>(6)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
+            created_at: row
+                .get::<_, String>(5)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row
+                .get::<_, String>(6)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
             device_id: row.get(7)?,
-            sync_status: serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or(SyncStatus::Local),
+            sync_status: serde_json::from_str(&row.get::<_, String>(8)?)
+                .unwrap_or(SyncStatus::Local),
         })
     }
 
@@ -940,10 +976,17 @@ impl EnhancedDatabase {
             name: row.get(1)?,
             album_type: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(AlbumType::User),
             cover_media_id: row.get(3)?,
-            created_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
-            updated_at: row.get::<_, String>(5)?.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
+            created_at: row
+                .get::<_, String>(4)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: row
+                .get::<_, String>(5)?
+                .parse::<DateTime<Utc>>()
+                .unwrap_or_else(|_| Utc::now()),
             rules: row.get(6)?,
-            sync_status: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or(SyncStatus::Local),
+            sync_status: serde_json::from_str(&row.get::<_, String>(7)?)
+                .unwrap_or(SyncStatus::Local),
         })
     }
 }
@@ -958,11 +1001,11 @@ pub fn generate_id() -> String {
 
 pub fn calculate_sha256(path: &Path) -> Result<String> {
     use std::io::Read;
-    
+
     let mut file = std::fs::File::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 8192];
-    
+
     loop {
         let bytes_read = file.read(&mut buffer)?;
         if bytes_read == 0 {
@@ -970,7 +1013,7 @@ pub fn calculate_sha256(path: &Path) -> Result<String> {
         }
         hasher.update(&buffer[..bytes_read]);
     }
-    
+
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -979,14 +1022,14 @@ pub fn calculate_perceptual_hash(img: &DynamicImage) -> Result<String> {
     // In production, use a more robust algorithm like pHash
     let resized = img.resize_exact(8, 8, image::imageops::FilterType::Lanczos3);
     let gray = resized.to_luma8();
-    
+
     let pixels: Vec<u8> = gray.pixels().map(|p| p[0]).collect();
     let avg = pixels.iter().sum::<u8>() as f32 / pixels.len() as f32;
-    
+
     let mut hash = String::new();
     for pixel in pixels {
         hash.push(if pixel as f32 > avg { '1' } else { '0' });
     }
-    
+
     Ok(hash)
 }
