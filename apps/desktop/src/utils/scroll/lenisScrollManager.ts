@@ -1,14 +1,15 @@
 import Lenis from 'lenis';
 
 interface LenisConfig {
-  smoothness?: number;        // 0-1 (0 = smoothest, 1 = instant)
-  duration?: number;         // Animation duration in ms
-  easing?: (t: number) => number; // Easing function
+  smoothness?: number;
+  duration?: number;
+  easing?: (t: number) => number;
   direction?: 'vertical' | 'horizontal';
   gestureDirection?: 'vertical' | 'horizontal' | 'both';
   mouseMultiplier?: number;
   touchMultiplier?: number;
   infinite?: boolean;
+  lerp?: number;
 }
 
 interface ScrollInfo {
@@ -48,14 +49,14 @@ class LenisScrollManager {
 
       // Default smooth configuration for magical feel
       const defaultConfig: LenisConfig = {
-        smoothness: 0.8, // Very smooth
-        duration: 1200, // 1.2s scroll duration
-        easing: (t) => t, // Linear easing
+        duration: 800,  // 0.8s - snappy but smooth
+        easing: (t) => 1 - Math.pow(1 - t, 3), // Cubic ease-out for natural feel
         direction: 'vertical',
         gestureDirection: 'vertical',
         mouseMultiplier: 1,
-        touchMultiplier: 1,
+        touchMultiplier: 2,  // Higher for touch responsiveness
         infinite: false,
+        lerp: 0.1,  // Lower = smoother but slower
         ...config
       };
 
@@ -63,6 +64,7 @@ class LenisScrollManager {
         this.lenis = new Lenis({
           duration: defaultConfig.duration,
           easing: defaultConfig.easing,
+          lerp: defaultConfig.lerp,
         });
 
         console.log('Lenis initialized successfully');

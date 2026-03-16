@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
-import FastImage from "./FastImage";
+import FastImage from "../ui/FastImage";
 
 interface VirtualImageGridProps {
   images: string[];
@@ -99,7 +99,7 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
   const renderedImages = useMemo(() => {
     if (images.length <= 100) {
       // Small collections: render all
-      return images;
+      return { items: images, startIndex: 0 };
     }
 
     // Large collections: render only visible range + buffer
@@ -107,7 +107,10 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
     const start = Math.max(0, visibleRange.start - buffer);
     const end = Math.min(images.length, visibleRange.end + buffer);
 
-    return images.slice(start, end);
+    return {
+      items: images.slice(start, end),
+      startIndex: start
+    };
   }, [images, visibleRange]);
 
   // Update visible range based on scroll position
@@ -198,9 +201,8 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
           width: "100%",
         }}
       >
-        {renderedImages.map((imagePath) => {
-          // Calculate actual index in full array
-          const actualIndex = images.indexOf(imagePath);
+        {renderedImages.items.map((imagePath, renderIndex) => {
+          const actualIndex = renderedImages.startIndex + renderIndex;
           const distance = calculateDistanceFromViewport(actualIndex);
 
           return (
@@ -213,6 +215,7 @@ const VirtualImageGrid: React.FC<VirtualImageGridProps> = memo(({
                 contain: "layout style paint",
                 transform: "translateZ(0)",
                 willChange: "transform",
+                contentVisibility: "auto",
               }}
             >
               <FastImageWithIntersection

@@ -1,13 +1,13 @@
 import React, { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import LazyImageContainer from "./LazyImageContainer";
-import { userBehaviorPredictor } from "../utils/userBehaviorPredictor";
-import { systemResourceManager } from "../utils/systemResourceManager";
-import { predictiveLoadingQueue } from "../utils/predictiveLoadingQueue";
-import { visualContinuityManager } from "../utils/visualContinuityManager";
-import { lenisScrollManager, type LenisConfig } from "../utils/lenisScrollManager";
-import { delayedImageLoader, type DelayedLoadConfig } from "../utils/delayedImageLoader";
+import LazyImageContainer from "../ui/LazyImageContainer";
+import { userBehaviorPredictor } from "../../utils/image-loading/userBehaviorPredictor";
+import { systemResourceManager } from "../../utils/performance/systemResourceManager";
+import { predictiveLoadingQueue } from "../../utils/image-loading/predictiveLoadingQueue";
+import { visualContinuityManager } from "../../utils/image-loading/visualContinuityManager";
+import { lenisScrollManager, type LenisConfig } from "../../utils/scroll/lenisScrollManager";
+import { delayedImageLoader, type DelayedLoadConfig } from "../../utils/image-loading/delayedImageLoader";
 
 interface VirtualGridProps {
   images: string[];
@@ -420,8 +420,9 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
         padding: 1,
         boxSizing: "border-box",
         position: "relative",
-        minHeight: totalContentHeight, // Ensure container is tall enough for all content
-        overflow: "visible", // Let parent handle scrolling
+        minHeight: totalContentHeight,
+        overflowY: "auto",
+        overflowX: "hidden",
       }}
     >
       {showStatusIndicator && (
@@ -557,6 +558,7 @@ const EnhancedVirtualizedImageGrid: React.FC<VirtualGridProps> = memo(({
                 contain: 'layout style paint',
                 transform: 'translateZ(0)',
                 willChange: 'transform',
+                contentVisibility: 'auto',
               }}
             >
               <LazyImageWithIntersection
