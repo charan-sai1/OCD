@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -56,8 +56,20 @@ const FolderSelectionDialog: React.FC<FolderSelectionDialogProps> = ({
   const [pathHistory, setPathHistory] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
-  // Reset state when dialog opens/closes or device changes
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (open && device) {
       setCurrentPath(device.mount_point);
@@ -65,6 +77,9 @@ const FolderSelectionDialog: React.FC<FolderSelectionDialogProps> = ({
       setSelectedFolder(null);
       loadFolders(device.mount_point);
     } else {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       setCurrentPath("");
       setFolders([]);
       setPathHistory([]);
@@ -73,11 +88,20 @@ const FolderSelectionDialog: React.FC<FolderSelectionDialogProps> = ({
   }, [open, device]);
 
   const loadFolders = async (path: string) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    
     try {
       setLoading(true);
       const directoryContents: string[] = await invoke("read_directory", {
         path,
       });
+
+      if (!isMountedRef.current || abortControllerRef.current.signal.aborted) {
+        return;
+      }
 
       // Convert to FolderItem format - assume all items are directories for now
       // We'll handle the error if user tries to navigate into a file
@@ -96,46 +120,56 @@ const FolderSelectionDialog: React.FC<FolderSelectionDialogProps> = ({
 
       setFolders(folderItems);
     } catch (error) {
+      if (!isMountedRef.current || abortControllerRef.current?.signal.aborted) {
+        return;
+      }
       console.error("Error loading folders:", error);
       setFolders([]);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && !abortControllerRef.current?.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
   const handleFolderClick = async (folder: FolderItem) => {
+    if (loading) return;
+    
+    const newPath = folder.path;
     try {
-      setCurrentPath(folder.path);
-      setPathHistory([...pathHistory, folder.path]);
-      await loadFolders(folder.path);
+      setPathHistory(prev => [...prev, newPath]);
+      setCurrentPath(newPath);
+      await loadFolders(newPath);
     } catch (error) {
       console.error("Cannot navigate to:", folder.path, error);
-      // If navigation fails, revert the path changes
-      setCurrentPath(pathHistory[pathHistory.length - 1]);
-      setPathHistory(pathHistory.slice(0, -1));
+      setPathHistory(prev => prev.slice(0, -1));
+      setCurrentPath(prev => prev);
     }
   };
 
   const handleBreadcrumbClick = async (clickedPath: string, index: number) => {
+    if (loading) return;
+    
     try {
+      setPathHistory(prev => prev.slice(0, index + 1));
       setCurrentPath(clickedPath);
-      setPathHistory(pathHistory.slice(0, index + 1));
       await loadFolders(clickedPath);
     } catch (error) {
       console.error("Cannot navigate to:", clickedPath, error);
-      // Reset to previous valid state
-      setCurrentPath(pathHistory[pathHistory.length - 1] || "");
-      setPathHistory(pathHistory);
+      setCurrentPath(prev => prev);
     }
   };
 
   const goBack = async () => {
-    if (pathHistory.length > 1) {
-      const newHistory = pathHistory.slice(0, -1);
-      const previousPath = newHistory[newHistory.length - 1];
+    if (loading || pathHistory.length <= 1) return;
+    
+    const previousPath = pathHistory[pathHistory.length - 2];
+    try {
+      setPathHistory(prev => prev.slice(0, -1));
       setCurrentPath(previousPath);
-      setPathHistory(newHistory);
       await loadFolders(previousPath);
+    } catch (error) {
+      console.error("Cannot go back:", error);
     }
   };
 
@@ -234,7 +268,7 @@ const FolderSelectionDialog: React.FC<FolderSelectionDialogProps> = ({
             <IconButton
               size="small"
               onClick={goBack}
-              disabled={pathHistory.length <= 1}
+              disabled={loading || pathHistory.length <= 1}
               sx={{
                 color: "primary.main",
                 "&:hover": {

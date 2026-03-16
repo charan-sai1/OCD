@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import React, { Suspense, lazy } from "react";
@@ -9,32 +9,34 @@ import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
 import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
-import { previewCache } from "./utils/previewCache";
+import Tooltip from "@mui/material/Tooltip";
+import Badge from "@mui/material/Badge";
+import Snackbar from "@mui/material/Snackbar";
+import Alert from "@mui/material/Alert";
+import { previewCache } from "./utils/image-loading/previewCache";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import AiIcon from "@mui/icons-material/AutoAwesome";
 import { theme } from "./theme";
 import "./styles/animations.css";
-import GradualBlur from "./components/GradualBlur";
+import GradualBlur from "./components/ui/GradualBlur";
 
 // Lazy load components for better initial bundle size
-const Sidebar = lazy(() => import("./components/Sidebar"));
-const OrganizedPhotoGrid = lazy(() => import("./components/OrganizedPhotoGrid"));
-const FolderView = lazy(() => import("./components/FolderView"));
-const DeviceBrowser = lazy(() => import("./components/DeviceBrowser"));
-const FolderManagementDialog = lazy(() => import("./components/FolderManagementDialog"));
-const FaceRecognitionPanel = lazy(() => import("./components/FaceRecognitionPanel"));
-const ImageViewerModal = lazy(() => import("./components/ImageViewerModal"));
-const FileImport = lazy(() => import("./components/FileImport"));
+const Sidebar = lazy(() => import("./components/layout/Sidebar"));
+const OrganizedPhotoGrid = lazy(() => import("./components/image-grid/OrganizedPhotoGrid"));
+const FolderManagementDialog = lazy(() => import("./components/dialogs/FolderManagementDialog"));
+const FaceRecognitionPanel = lazy(() => import("./components/face-recognition/FaceRecognitionPanel"));
+const ImageViewerModal = lazy(() => import("./components/image-viewer/ImageViewerModal"));
+const FileImport = lazy(() => import("./components/dialogs/FileImport"));
 import { open } from "@tauri-apps/plugin-dialog";
-import { performanceMonitor } from "./utils/performanceMonitor";
-import { workerManager } from "./utils/workerManager";
-import { imagePreloader } from "./utils/imagePreloader";
-import { asyncScheduler } from "./utils/requestIdleCallbackPolyfill";
-import { thumbnailGenerationService } from "./utils/thumbnailGenerationService";
-import { advancedImageCache } from "./utils/advancedCache";
-import OptimizationProgress, { OptimizationState } from "./components/OptimizationProgress";
+import { performanceMonitor } from "./utils/performance/performanceMonitor";
+import { workerManager } from "./utils/workers/workerManager";
+import { imagePreloader } from "./utils/image-loading/imagePreloader";
+import { asyncScheduler } from "./utils/scroll/requestIdleCallbackPolyfill";
+import { thumbnailGenerationService } from "./utils/image-loading/thumbnailGenerationService";
+import { advancedImageCache } from "./utils/image-loading/advancedCache";
+import OptimizationProgress, { OptimizationState } from "./components/ui/OptimizationProgress";
 // import { lenisScrollManager } from "./utils/lenisScrollManager"; // Temporarily disabled
 
 function App() {
@@ -86,6 +88,13 @@ function App() {
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [_topBarHidden, setTopBarHidden] = useState<boolean>(false);
   const [directoryCache, setDirectoryCache] = useState<Record<string, { images: string[], timestamp: number, mtime?: number }>>(persistedData.directoryCache);
+  const directoryCacheRef = useRef(directoryCache);
+  
+  // Keep the ref in sync with state
+  useEffect(() => {
+    directoryCacheRef.current = directoryCache;
+  }, [directoryCache]);
+  
   const [isLoadingImages, setIsLoadingImages] = useState<boolean>(false);
    const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [optimizationState, setOptimizationState] = useState<OptimizationState>({
@@ -96,12 +105,19 @@ function App() {
       totalImages: 0,
       processedImages: 0,
       currentFile: undefined,
-      canMinimize: true
+      canMinimize: true,
+      completedAt: undefined as number | undefined,
     });
 
   // Image viewer modal state
   const [isImageViewerOpen, setIsImageViewerOpen] = useState<boolean>(false);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info" | "warning";
+  }>({ open: false, message: "", severity: "success" });
 
   // Register service worker for caching (only in production)
   useEffect(() => {
@@ -244,7 +260,6 @@ function App() {
   }, [directoryPaths, isSidebarCollapsed, directoryCache]);
 
    const handleAddFolders = async () => {
-     // Schedule directory selection asynchronously
      asyncScheduler.schedule(async () => {
        try {
          const selected = await open({
@@ -255,25 +270,94 @@ function App() {
 
          if (selected) {
            const paths = Array.isArray(selected) ? selected : [selected];
-           // Add new paths to existing ones, avoiding duplicates
-           setDirectoryPaths((prev) => {
-             const combined = [...prev, ...paths];
-             return Array.from(new Set(combined)); // Remove duplicates
+           
+           const newPaths = paths.filter(newPath => {
+             return !directoryPaths.some(existingPath => {
+               const normalizedNew = newPath.toLowerCase().replace(/\\/g, '/');
+               const normalizedExisting = existingPath.toLowerCase().replace(/\\/g, '/');
+               return normalizedNew === normalizedExisting;
+             });
            });
 
-           // Start optimization process for new folders
-           await optimizeNewFolders(paths);
+           if (newPaths.length === 0) {
+             setSnackbar({ 
+               open: true, 
+               message: "All selected folders are already being watched", 
+               severity: "info" 
+             });
+             return;
+           }
+
+           const duplicateCount = paths.length - newPaths.length;
+           
+           const { invoke } = await import('@tauri-apps/api/core');
+           const validPaths: string[] = [];
+           const invalidPaths: string[] = [];
+
+           for (const path of newPaths) {
+             try {
+               const fileInfo = await invoke("get_file_info", { path });
+               if ((fileInfo as any).is_dir) {
+                 validPaths.push(path);
+               } else {
+                 invalidPaths.push(path);
+               }
+             } catch {
+               invalidPaths.push(path);
+             }
+           }
+
+           let message = "";
+           let severity: "success" | "error" | "info" | "warning" = "success";
+
+           if (duplicateCount > 0) {
+             message += `${duplicateCount} duplicate(s) ignored. `;
+           }
+
+           if (invalidPaths.length > 0) {
+             message += `Could not access ${invalidPaths.length} folder(s). `;
+             severity = invalidPaths.length === paths.length ? "error" : "warning";
+           }
+
+           if (validPaths.length > 0) {
+             setDirectoryPaths((prev) => [...prev, ...validPaths]);
+             
+             if (validPaths.length === 1) {
+               message += `Added "${validPaths[0].split('/').pop()}"`;
+             } else {
+               message += `Added ${validPaths.length} folders`;
+             }
+             
+             if (severity === "warning") {
+               severity = "success";
+             }
+
+             await optimizeNewFolders(validPaths);
+           }
+
+           if (message) {
+             setSnackbar({ 
+               open: true, 
+               message: message.trim(), 
+               severity 
+             });
+           }
          }
        } catch (err) {
          console.error("Error opening directory picker:", err);
+         setSnackbar({ 
+           open: true, 
+           message: "Failed to open folder picker", 
+           severity: "error" 
+         });
        }
      });
    };
 
-   const optimizeNewFolders = async (newPaths: string[]) => {
-     try {
-       // Phase 1: Scan directories
-       setOptimizationState(prev => ({ ...prev, isScanning: true, scanProgress: 0 }));
+    const optimizeNewFolders = async (newPaths: string[]) => {
+      try {
+        // Phase 1: Scan directories
+        setOptimizationState(prev => ({ ...prev, isScanning: true, scanProgress: 0, completedAt: undefined }));
 
        const allImages = await scanDirectoriesForImages(newPaths);
 
@@ -286,7 +370,7 @@ function App() {
        }));
 
        // Phase 2: Generate thumbnails
-       const deviceProfile = await import('./utils/deviceCapabilities').then(m => m.DeviceCapabilities.detect());
+       const deviceProfile = await import('./utils/platform/deviceCapabilities').then(m => m.DeviceCapabilities.detect());
 
        await thumbnailGenerationService.generateThumbnailsForImages(
          allImages,
@@ -306,24 +390,26 @@ function App() {
          }
        );
 
-       // Phase 3: Complete and load images
-       setOptimizationState(prev => ({
-         ...prev,
-         isGenerating: false
-       }));
+        // Phase 3: Complete and load images
+        setOptimizationState(prev => ({
+          ...prev,
+          isGenerating: false,
+          completedAt: Date.now(),
+        }));
 
 
 
        // Now load the images (they should load instantly from cache)
        asyncScheduler.schedule(() => loadImagesFromPaths(newPaths), { timeout: 100 });
 
-     } catch (error) {
-       console.error('Optimization failed:', error);
-       setOptimizationState(prev => ({
-         ...prev,
-         isScanning: false,
-         isGenerating: false
-       }));
+      } catch (error) {
+        console.error('Optimization failed:', error);
+        setOptimizationState(prev => ({
+          ...prev,
+          isScanning: false,
+          isGenerating: false,
+          completedAt: Date.now(),
+        }));
 
        // Fallback: load images without optimization
        asyncScheduler.schedule(() => loadImagesFromPaths(newPaths), { timeout: 100 });
@@ -552,7 +638,13 @@ function App() {
   };
 
   const handleRemoveDirectory = (pathToRemove: string) => {
+    const folderName = pathToRemove.split('/').pop() || pathToRemove;
     setDirectoryPaths((prev) => prev.filter((path) => path !== pathToRemove));
+    setSnackbar({ 
+      open: true, 
+      message: `Removed "${folderName}"`, 
+      severity: "success" 
+    });
   };
 
   const handleSearch = (_query: string) => {
@@ -640,7 +732,7 @@ function App() {
       console.log(`[Image Loading] Found ${validDirectoryPaths.length} valid directories to scan`);
 
       for (const path of validDirectoryPaths) {
-        const cached = directoryCache[path];
+        const cached = directoryCacheRef.current[path];
         const now = Date.now();
 
         if (cached && (now - cached.timestamp) < CACHE_DURATION) {
@@ -914,48 +1006,63 @@ function App() {
               >
                 {sortOrder === "newest" ? "Newest" : "Oldest"}
               </Button>
-              <Fab
-                size="small"
-                onClick={() => setIsFolderManagementOpen(true)}
-                sx={{
-                  backdropFilter: 'blur(16px) saturate(180%)',
-                  background: `
-                    linear-gradient(135deg,
-                      rgba(255,255,255,0.2) 0%,
-                      rgba(255,255,255,0.1) 25%,
-                      rgba(255,255,255,0.08) 50%,
-                      rgba(255,255,255,0.1) 75%,
-                      rgba(255,255,255,0.2) 100%
-                    )
-                  `,
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  boxShadow: `
-                    0 4px 16px rgba(0, 0, 0, 0.08),
-                    0 1px 4px rgba(255, 255, 255, 0.2) inset,
-                    0 -1px 2px rgba(0, 0, 0, 0.05) inset
-                  `,
-                  color: 'rgba(0, 0, 0, 0.7)',
-                  '&:hover': {
-                    backdropFilter: 'blur(20px) saturate(200%)',
-                    background: `
-                      linear-gradient(135deg,
-                        rgba(255,255,255,0.3) 0%,
-                        rgba(255,255,255,0.2) 25%,
-                        rgba(255,255,255,0.15) 50%,
-                        rgba(255,255,255,0.2) 75%,
-                        rgba(255,255,255,0.3) 100%
-                      )
-                    `,
-                    boxShadow: `
-                      0 6px 20px rgba(0, 0, 0, 0.12),
-                      0 2px 8px rgba(255, 255, 255, 0.25) inset,
-                      0 -2px 4px rgba(0, 0, 0, 0.08) inset
-                    `,
-                  },
-                }}
-              >
-                 <AddIcon sx={{ color: 'text.secondary' }} />
-              </Fab>
+              <Tooltip title={directoryPaths.length > 0 ? `${directoryPaths.length} folder${directoryPaths.length !== 1 ? 's' : ''} configured` : "Add folders"}>
+                <Badge 
+                  badgeContent={directoryPaths.length > 0 ? directoryPaths.length : undefined} 
+                  color="primary"
+                  max={99}
+                  sx={{
+                    '& .MuiBadge-badge': {
+                      fontSize: '0.65rem',
+                      height: '16px',
+                      minWidth: '16px',
+                    }
+                  }}
+                >
+                  <Fab
+                    size="small"
+                    onClick={() => setIsFolderManagementOpen(true)}
+                    sx={{
+                      backdropFilter: 'blur(16px) saturate(180%)',
+                      background: `
+                        linear-gradient(135deg,
+                          rgba(255,255,255,0.2) 0%,
+                          rgba(255,255,255,0.1) 25%,
+                          rgba(255,255,255,0.08) 50%,
+                          rgba(255,255,255,0.1) 75%,
+                          rgba(255,255,255,0.2) 100%
+                        )
+                      `,
+                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      boxShadow: `
+                        0 4px 16px rgba(0, 0, 0, 0.08),
+                        0 1px 4px rgba(255, 255, 255, 0.2) inset,
+                        0 -1px 2px rgba(0, 0, 0, 0.05) inset
+                      `,
+                      color: 'rgba(0, 0, 0, 0.7)',
+                      '&:hover': {
+                        backdropFilter: 'blur(20px) saturate(200%)',
+                        background: `
+                          linear-gradient(135deg,
+                            rgba(255,255,255,0.3) 0%,
+                            rgba(255,255,255,0.2) 25%,
+                            rgba(255,255,255,0.15) 50%,
+                            rgba(255,255,255,0.2) 75%,
+                            rgba(255,255,255,0.3) 100%
+                          )
+                        `,
+                        boxShadow: `
+                          0 6px 20px rgba(0, 0, 0, 0.12),
+                          0 2px 8px rgba(255, 255, 255, 0.25) inset,
+                          0 -2px 4px rgba(0, 0, 0, 0.08) inset
+                        `,
+                      },
+                    }}
+                  >
+                    <AddIcon sx={{ color: 'text.secondary' }} />
+                  </Fab>
+                </Badge>
+              </Tooltip>
             </div>
 
             {/* Main Content */}
@@ -977,42 +1084,20 @@ function App() {
                       }}
                     />
                  ) : selectedSection === "import" ? (
-                  <FileImport
-                    initialSourceDir={selectedDeviceForImport}
-                    onImportComplete={() => {
-                      // Clear the selected device and go back to devices section
-                      setSelectedDeviceForImport(null);
-                      setSelectedSection("devices");
-                    }}
-                    onCancel={() => {
-                      // Go back to devices section when cancelled
-                      setSelectedDeviceForImport(null);
-                      setSelectedSection("devices");
-                    }}
-                  />
-               ) : selectedSection === "folders" ? (
-               <FolderView
-                 directoryPaths={directoryPaths}
-                 onAddFolders={handleAddFolders}
-                 onRemoveDirectory={handleRemoveDirectory}
-               />
-              ) : selectedSection === "devices" ? (
-                <DeviceBrowser
-                   onFileSelect={async (files: string[]) => {
-                     // When images are selected from a device, add them to the current images
-                     setImages((prev) => [...prev, ...files]);
-                   }}
-                   onImportImages={(importedImages: string[]) => {
-                     // When images are imported from a device, add them to the current images
-                     setImages((prev) => [...prev, ...importedImages]);
-                   }}
-                   onDeviceClick={(devicePath: string) => {
-                     // When a device is clicked, switch to import UI and set the device path
-                     setSelectedDeviceForImport(devicePath);
-                     setSelectedSection("import");
-                   }}
-                />
-              ) : selectedSection === "faces" ? (
+                   <FileImport
+                     initialSourceDir={selectedDeviceForImport}
+                     onImportComplete={() => {
+                       // Clear the selected device and go back to photos section
+                       setSelectedDeviceForImport(null);
+                       setSelectedSection("photos");
+                     }}
+                     onCancel={() => {
+                       // Go back to photos section when cancelled
+                       setSelectedDeviceForImport(null);
+                       setSelectedSection("photos");
+                     }}
+                   />
+                ) : selectedSection === "faces" ? (
                <FaceRecognitionPanel
                  isVisible={true}
                  onClose={() => setSelectedSection("photos")}
@@ -1047,8 +1132,7 @@ function App() {
           directoryPaths={directoryPaths}
           onAddFolders={handleAddFolders}
           onRemoveDirectory={handleRemoveDirectory}
-          isLoadingImages={isLoadingImages}
-          loadingProgress={loadingProgress}
+          optimizationState={optimizationState}
         />
       </Suspense>
 
@@ -1057,7 +1141,7 @@ function App() {
         state={optimizationState}
         onSkip={() => {
           thumbnailGenerationService.cancel();
-          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false }));
+          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false, completedAt: Date.now() }));
           // Load images without waiting for optimization
           asyncScheduler.schedule(() => loadImagesFromPaths(), { timeout: 100 });
         }}
@@ -1067,7 +1151,7 @@ function App() {
         }}
         onCancel={() => {
           thumbnailGenerationService.cancel();
-          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false }));
+          setOptimizationState(prev => ({ ...prev, isScanning: false, isGenerating: false, completedAt: Date.now() }));
         }}
       />
 
@@ -1081,6 +1165,22 @@ function App() {
           onImageChange={handleImageChange}
         />
       </Suspense>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
       </>
     </ThemeProvider>
   );

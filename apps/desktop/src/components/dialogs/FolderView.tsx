@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
@@ -10,12 +10,16 @@ import AccordionSummary from "@mui/material/AccordionSummary";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
+import CircularProgress from "@mui/material/CircularProgress";
+import Alert from "@mui/material/Alert";
 import {
   Folder as FolderIcon,
   ExpandMore as ExpandMoreIcon,
   Description as FileIcon,
   Image as ImageIcon,
   PictureAsPdf as PdfIcon,
+  Error as ErrorIcon,
+  Refresh as RefreshIcon,
 } from "@mui/icons-material";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 
@@ -47,51 +51,99 @@ const FolderView: React.FC<FolderViewProps> = ({
     "images" | "pdfs" | "all"
   >("all");
   const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Ref to track current request and prevent race conditions
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Load files when directories change
   useEffect(() => {
-    if (directoryPaths.length > 0) {
-      loadFiles();
-    } else {
-      setFolders([]);
-    }
-  }, [directoryPaths]);
-
-  const loadFiles = async () => {
-    try {
-      const folderData: FolderItem[] = [];
-
-      for (const dirPath of directoryPaths) {
-        const files: string[] = await invoke("list_files", {
-          path: dirPath,
-          fileType: "all",
-        });
-
-        const fileItems: FileItem[] = files.map((filePath) => {
-          const fileName = filePath.split("/").pop() || "";
-          const extension = fileName.split(".").pop() || "";
-          const fileType = getFileType(extension);
-
-          return {
-            path: filePath,
-            name: fileName,
-            extension,
-            type: fileType,
-          };
-        });
-
-        folderData.push({
-          path: dirPath,
-          name: dirPath.split("/").pop() || "Unknown Folder",
-          files: fileItems,
-        });
+    const loadFiles = async () => {
+      // Cancel any pending request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
+      
+      // Create new abort controller for this request
+      abortControllerRef.current = new AbortController();
+      
+      if (directoryPaths.length > 0) {
+        setIsLoading(true);
+        setError(null);
+        
+        try {
+          const folderData: FolderItem[] = [];
 
-      setFolders(folderData);
-    } catch (error) {
-      console.error("Error loading files:", error);
-    }
-  };
+          for (const dirPath of directoryPaths) {
+            // Check if request was cancelled
+            if (abortControllerRef.current?.signal.aborted) {
+              return;
+            }
+            
+            const files: string[] = await invoke("list_files", {
+              path: dirPath,
+              fileType: "all",
+            });
+
+            // Check again after await
+            if (!isMountedRef.current || abortControllerRef.current?.signal.aborted) {
+              return;
+            }
+
+            const fileItems: FileItem[] = files.map((filePath) => {
+              const fileName = filePath.split("/").pop() || "";
+              const extension = fileName.split(".").pop() || "";
+              const fileType = getFileType(extension);
+
+              return {
+                path: filePath,
+                name: fileName,
+                extension,
+                type: fileType,
+              };
+            });
+
+            folderData.push({
+              path: dirPath,
+              name: dirPath.split("/").pop() || "Unknown Folder",
+              files: fileItems,
+            });
+          }
+
+          // Final check before updating state
+          if (isMountedRef.current) {
+            setFolders(folderData);
+            setIsLoading(false);
+          }
+        } catch (err) {
+          // Don't set error if request was cancelled
+          if (isMountedRef.current && !abortControllerRef.current?.signal.aborted) {
+            console.error("Error loading files:", err);
+            setError(err instanceof Error ? err.message : "Failed to load files");
+            setIsLoading(false);
+          }
+        }
+      } else {
+        setFolders([]);
+        setError(null);
+      }
+    };
+
+    loadFiles();
+  }, [directoryPaths]);
 
   const handleFileTypeChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -199,9 +251,9 @@ const FolderView: React.FC<FolderViewProps> = ({
           Selected folders ({directoryPaths.length}):
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-          {directoryPaths.map((path, index) => (
+          {directoryPaths.map((path) => (
             <Box
-              key={index}
+              key={path}
               sx={{
                 display: "flex",
                 alignItems: "center",
@@ -285,9 +337,46 @@ const FolderView: React.FC<FolderViewProps> = ({
         </ToggleButtonGroup>
       </Paper>
 
+      {/* Error Alert */}
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => {
+              setError(null);
+              // Trigger reload by updating a dummy state or we can just call loadFiles
+            }}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "30vh",
+            textAlign: "center",
+          }}
+        >
+          <CircularProgress size={40} sx={{ mb: 2 }} />
+          <Typography variant="body1" color="text.secondary">
+            Loading files...
+          </Typography>
+        </Box>
+      )}
+
       {/* Folder Accordions */}
       <Box>
-        {filteredFolders.length === 0 ? (
+        {!isLoading && !error && filteredFolders.length === 0 ? (
           <Box
             sx={{
               display: "flex",
