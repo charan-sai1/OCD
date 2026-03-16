@@ -11,11 +11,9 @@
   import LinearProgress from "@mui/material/LinearProgress";
   import { invoke } from "@tauri-apps/api/core";
   import {
-    Folder as FolderIcon,
     Favorite as FavoriteIcon,
     Delete as DeleteIcon,
     Archive as ArchiveIcon,
-    Devices as DevicesIcon,
     Face as FaceIcon,
     Photo as PhotoIcon,
     ChevronLeft as ChevronLeftIcon,
@@ -58,8 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const menuItems = [
     { id: "photos", label: "Photos", icon: PhotoIcon },
-    { id: "folders", label: "Folders", icon: FolderIcon },
-    { id: "devices", label: "Devices", icon: DevicesIcon },
+    { id: "import", label: "Import", icon: ImportExportIcon },
     { id: "faces", label: "Faces", icon: FaceIcon },
     { id: "favorites", label: "Favorites", icon: FavoriteIcon },
     { id: "archive", label: "Archive", icon: ArchiveIcon },
