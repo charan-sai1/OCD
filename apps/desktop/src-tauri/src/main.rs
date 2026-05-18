@@ -8,21 +8,21 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 use anyhow::Result;
 
-mod database;
-mod database_enhanced;
-mod sqlite_db;
-mod face_detection_ml;
-mod face_embedding_ml;
-mod face_clustering;
-mod intelligent_organization;
-mod metadata_extractor;
+// mod database;
+// mod database_enhanced;
+// mod sqlite_db;
+// mod face_detection_ml;
+// mod face_embedding_ml;
+// mod face_clustering;
+// mod intelligent_organization;
+// mod metadata_extractor;
 
-use face_detection_ml::{MLFaceDetector, FaceDetectionResult};
-use face_embedding_ml::{MobileFaceNetEmbedder, FaceCrop, FaceBounds};
-use face_clustering::{FaceClustering, ClusteringResult};
-use database_enhanced::{EnhancedDatabase, Face, Person, SyncStatus};
-use intelligent_organization::IntelligentOrganizer;
-use metadata_extractor::MetadataExtractor;
+// use face_detection_ml::{MLFaceDetector, FaceDetectionResult};
+// use face_embedding_ml::{MobileFaceNetEmbedder, FaceCrop, FaceBounds};
+// use face_clustering::{FaceClustering, ClusteringResult};
+// use database_enhanced::{EnhancedDatabase, Face, Person, SyncStatus};
+// use intelligent_organization::IntelligentOrganizer;
+// use metadata_extractor::MetadataExtractor;
 
 #[derive(Serialize, Deserialize)]
 pub struct Device {
@@ -34,73 +34,32 @@ pub struct Device {
 }
 
 // Global state for ML models and database
-static FACE_DETECTOR: Lazy<Mutex<Option<MLFaceDetector>>> = Lazy::new(|| {
+/* static FACE_DETECTOR: Lazy<Mutex<Option<MLFaceDetector>>> = Lazy::new(|| {
     Mutex::new(None)
-});
+}); */
 
-static FACE_EMBEDDER: Lazy<Mutex<Option<MobileFaceNetEmbedder>>> = Lazy::new(|| {
+/* static FACE_EMBEDDER: Lazy<Mutex<Option<MobileFaceNetEmbedder>>> = Lazy::new(|| {
     Mutex::new(None)
-});
+}); */
 
-static DATABASE: Lazy<Mutex<Option<EnhancedDatabase>>> = Lazy::new(|| {
+/* static DATABASE: Lazy<Mutex<Option<EnhancedDatabase>>> = Lazy::new(|| {
     Mutex::new(None)
-});
+}); */
 
-static FACE_CLUSTERING: Lazy<Mutex<Option<FaceClustering>>> = Lazy::new(|| {
+/* static FACE_CLUSTERING: Lazy<Mutex<Option<FaceClustering>>> = Lazy::new(|| {
     Mutex::new(None)
-});
+}); */
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
 }
 
-#[tauri::command]
+/* #[tauri::command]
 fn initialize_face_recognition() -> Result<(), String> {
-    // Initialize face detector
-    let mut detector = FACE_DETECTOR.lock().map_err(|e| e.to_string())?;
-    if detector.is_none() {
-        let mut new_detector = MLFaceDetector::new().map_err(|e| e.to_string())?;
-        
-        // Load model from models directory
-        let model_path = PathBuf::from("models").join("face-detection").join("yolov5s-face.onnx");
-        if model_path.exists() {
-            new_detector.load_model(&model_path).map_err(|e| e.to_string())?;
-        }
-        
-        *detector = Some(new_detector);
-    }
-    
-    // Initialize face embedder
-    let mut embedder = FACE_EMBEDDER.lock().map_err(|e| e.to_string())?;
-    if embedder.is_none() {
-        let mut new_embedder = MobileFaceNetEmbedder::new().map_err(|e| e.to_string())?;
-        
-        // Load model from models directory
-        let model_path = PathBuf::from("models").join("face-embedding").join("mobilefacenet.onnx");
-        if model_path.exists() {
-            new_embedder.load_model(&model_path).map_err(|e| e.to_string())?;
-        }
-        
-        *embedder = Some(new_embedder);
-    }
-    
-    // Initialize database
-    let mut db = DATABASE.lock().map_err(|e| e.to_string())?;
-    if db.is_none() {
-        let db_path = PathBuf::from("ocd_gallery.db");
-        let new_db = EnhancedDatabase::new(db_path).map_err(|e| e.to_string())?;
-        *db = Some(new_db);
-    }
-    
-    // Initialize face clustering
-    let mut clustering = FACE_CLUSTERING.lock().map_err(|e| e.to_string())?;
-    if clustering.is_none() {
-        *clustering = Some(FaceClustering::new());
-    }
-    
+    // Placeholder - ML modules disabled
     Ok(())
-}
+} */
 
 #[tauri::command]
 fn read_directory(path: &str) -> Result<Vec<String>, String> {

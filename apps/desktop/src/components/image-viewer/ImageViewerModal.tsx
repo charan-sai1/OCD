@@ -5,7 +5,7 @@ import {
   Fade,
   Backdrop
 } from '@mui/material';
-import { errorHandler } from '../utils/errorHandler';
+import { errorHandler } from '../../utils/errorHandler';
 import useTouchGestures from '../hooks/useTouchGestures';
 import useZoom from '../hooks/useZoom';
 import ImageViewerControls from './ImageViewerControls';
