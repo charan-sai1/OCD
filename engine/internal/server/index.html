@@ -1192,21 +1192,54 @@ $('#dupScan').onclick = async () => {
   activity('Scan finished', false);
 };
 
+/* Two folders overlap when one is the other, or sits inside it. */
+function pathOverlap(child, parent){
+  const norm = p => (p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+  const c = norm(child), p = norm(parent);
+  if (!c || !p) return false;
+  return c === p || c.startsWith(p + '\\');
+}
+/* Explain the risk when the quarantine folder and a checked folder overlap. */
+function overlapWarning(q, dirs){
+  for (const d of dirs){
+    if (pathOverlap(q, d))
+      return `The quarantine folder is inside ${d}, one of the folders you are checking. A later scan of ${d} will find the moved copies again.`;
+    if (pathOverlap(d, q))
+      return `${d} sits inside the quarantine folder ${q}. Copies are placed in a separate sub-folder underneath it (one level per drive), so they never land on top of an original.`;
+  }
+  return '';
+}
+
 async function quarantine(dry){
   if (!sel.quarantine){
     $('#dupResult').className = 'msg err';
     $('#dupResult').textContent = 'Pick a quarantine folder first (a place to keep the extra copies).';
     return;
   }
-  if (!dry && !confirm('Move all extra copies into the quarantine folder?\n\nYour originals and the first copy of each file are left untouched.')) return;
+  const warn = overlapWarning(sel.quarantine, dupDirs);
+  if (!dry){
+    const ask = 'Move all extra copies into the quarantine folder?\n\n' +
+      'Your originals and the first copy of each file are left untouched.' +
+      (warn ? '\n\nNote: ' + warn : '');
+    if (!confirm(ask)) return;
+  }
   $('#dupPreview').disabled = $('#dupMove').disabled = true;
   activity(dry ? 'Checking what would move…' : 'Moving duplicates…');
   const r = await post('/api/dedupe/quarantine', { dryRun: dry, quarantineDir: sel.quarantine });
   $('#dupPreview').disabled = $('#dupMove').disabled = false;
-  $('#dupResult').className = 'msg ' + (r.errors && r.errors.length ? 'err' : 'good');
-  $('#dupResult').textContent = r.error ? r.error
-    : `${dry ? 'Would move' : 'Moved'} ${num(r.moved)} file(s), freeing ${r.freedHuman || size(r.freedBytes)}.\nQuarantine: ${r.quarantine}` +
-      ((r.errors && r.errors.length) ? '\n' + r.errors.join('\n') : '');
+  const lines = [];
+  if (r.error){
+    lines.push(r.error);
+  } else {
+    lines.push(`${dry ? 'Would move' : 'Moved'} ${num(r.moved)} file(s), freeing ${r.freedHuman || size(r.freedBytes)}.`);
+    if (r.sample) lines.push(`${dry ? 'Would go to' : 'Now in'}: ${r.sample}` + (r.moved > 1 ? '\n(other files land beside it, each under its own drive letter)' : ''));
+    else lines.push(`Quarantine: ${r.quarantine}`);
+    if (!dry && r.moved) lines.push('These are copies, so nothing was lost. Run Find duplicates again to refresh the list.');
+    if (warn) lines.push(warn);
+    if (r.errors && r.errors.length) lines.push(...r.errors);
+  }
+  $('#dupResult').className = 'msg ' + (r.error || (r.errors && r.errors.length) ? 'err' : 'good');
+  $('#dupResult').textContent = lines.join('\n');
   activity(dry ? 'Preview finished' : 'Done', false);
 }
 $('#dupPreview').onclick = () => quarantine(true);

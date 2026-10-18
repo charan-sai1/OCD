@@ -186,12 +186,25 @@ func (s *Server) dedupeQuarantine(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
+	if !req.DryRun {
+		// The recorded paths go stale the moment files move, so force a fresh
+		// scan before anything else can be quarantined. Reusing them made a
+		// second click fail with "cannot find the file specified".
+		s.mu.Lock()
+		s.lastDedupe = nil
+		s.mu.Unlock()
+	}
+	var sample string
+	if len(res.Moved) > 0 {
+		sample = res.Moved[0].To
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dryRun":     req.DryRun,
 		"moved":      len(res.Moved),
 		"freedBytes": res.Freed,
 		"freedHuman": human(res.Freed),
 		"quarantine": req.QuarantineDir,
+		"sample":     sample,
 		"errors":     res.Errors,
 	})
 }

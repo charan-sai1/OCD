@@ -95,7 +95,10 @@ The UI is a single photo-library app with five views (deep-linkable, e.g.
 
 **Duplicates** — add folders with the browser (drives like `E:` and `F:` are
 offered as one-click chips), hit **Find duplicates**, then **Preview what moves**
-/ **Move to quarantine**.
+/ **Move to quarantine**. The picked quarantine folder is the root: copies land
+in a `<drive>\<original path>` sub-tree beneath it, and the result tells you the
+exact path they went to. Moving clears the scan, so run **Find duplicates**
+again before a second move.
 
 **Setup** — shows which optional helper tools are installed, and how to get them.
 
@@ -112,9 +115,17 @@ folders in a new tab.
    means media already on the drive is skipped — never copied twice.
 3. **Deleting from the phone is opt-in.** The CLI default is copy-only; the wipe
    step happens only with `--delete` or the "wipe" mode in the UI.
-4. **Dedupe quarantines, it does not delete.** Redundant copies are moved to a
-   quarantine folder with their original path preserved, so you can restore them
-   by hand if you ever disagree.
+4. **Dedupe quarantines, it does not delete.** Redundant copies are moved into
+   the quarantine folder with their original path preserved *and the drive letter
+   kept as the top level*, so the rebuilt path can never land back on the
+   original file:
+
+   ```
+   F:\test\sub\a.jpg   moved into F:\   ->   F:\F\test\sub\a.jpg
+   ```
+
+   Every move is re-checked afterwards (source gone, destination present) before
+   it is counted, so the numbers reported are the bytes that really moved.
 
 ## Command line
 

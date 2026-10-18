@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -228,8 +229,56 @@ type MovedFile struct {
 	Group string `json:"group"`
 }
 
+// quarantineDest rebuilds the source path underneath the quarantine folder,
+// keeping the volume name as the first component:
+//
+//	F:\test\a.jpg  ->  <quarantine>\F\test\a.jpg
+//
+// That extra component guarantees the rebuilt path can never land back on the
+// original file. Without it, a quarantine folder that sat above a scanned root
+// (quarantine F:\, root F:\test) rebuilt the source path exactly, so the "move"
+// renamed a file next to itself and nothing ever landed in quarantine.
+func quarantineDest(quarantineDir string, f File) string {
+	vol := filepath.VolumeName(f.Path)
+	rest := strings.TrimLeft(strings.TrimPrefix(f.Path, vol), `\/`)
+	label := sanitizeComponent(vol)
+	if label == "" {
+		label = sanitizeComponent(filepath.Base(f.Root))
+	}
+	if label == "" {
+		label = "shared"
+	}
+	return filepath.Join(quarantineDir, label, rest)
+}
+
+// sanitizeComponent turns a volume name ("F:", "\\server\share") into a single
+// safe path element ("F", "server_share").
+func sanitizeComponent(s string) string {
+	s = strings.TrimSuffix(s, ":")
+	s = strings.NewReplacer(":", "_", "\\", "_", "/", "_").Replace(s)
+	return strings.Trim(s, "_ ")
+}
+
+// caseInsensitiveFS reports whether this system compares paths
+// case-insensitively, which decides how samePath is checked.
+const caseInsensitiveFS = runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+
+// samePath reports whether two paths point at the same location.
+func samePath(a, b string) bool {
+	ca, err1 := filepath.Abs(a)
+	cb, err2 := filepath.Abs(b)
+	if err1 != nil || err2 != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	ca, cb = filepath.Clean(ca), filepath.Clean(cb)
+	if caseInsensitiveFS {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
 // Quarantine moves the non-keeper copies of each group into opts.QuarantineDir,
-// preserving each file's path relative to its scan root. Non-destructive.
+// preserving each file's original path beneath it. Non-destructive.
 func Quarantine(groups []Group, opts QuarantineOptions) (QuarantineResult, error) {
 	var out QuarantineResult
 	if opts.Keep == "" {
@@ -247,21 +296,18 @@ func Quarantine(groups []Group, opts QuarantineOptions) (QuarantineResult, error
 			if f.Path == keeper.Path {
 				continue
 			}
-			rel, err := filepath.Rel(f.Root, f.Path)
-			if err != nil {
-				rel = filepath.Base(f.Path)
-			}
-			dest := filepath.Join(opts.QuarantineDir, filepath.Base(f.Root), rel)
+			dest := quarantineDest(opts.QuarantineDir, f)
 			if opts.DryRun {
 				out.Moved = append(out.Moved, MovedFile{From: f.Path, To: dest, Size: f.Size, Group: g.Hash})
 				out.Freed += f.Size
 				continue
 			}
-			if err := moveFile(f.Path, dest); err != nil {
+			moved, err := moveFile(f.Path, dest)
+			if err != nil {
 				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Path, err))
 				continue
 			}
-			out.Moved = append(out.Moved, MovedFile{From: f.Path, To: dest, Size: f.Size, Group: g.Hash})
+			out.Moved = append(out.Moved, MovedFile{From: f.Path, To: moved, Size: f.Size, Group: g.Hash})
 			out.Freed += f.Size
 		}
 	}
@@ -292,32 +338,66 @@ func pickKeeper(files []File, strategy string) File {
 	return best
 }
 
-// moveFile renames, falling back to verified copy+remove across volumes.
-func moveFile(src, dst string) error {
+// moveFile relocates src to dst and returns the path actually used. It refuses
+// to move a file onto itself, and confirms every move afterwards: if the source
+// is still there, or the destination is missing, it reports an error instead of
+// letting the caller count the file as freed.
+func moveFile(src, dst string) (string, error) {
+	if samePath(src, dst) {
+		return "", fmt.Errorf("refusing to move a file onto itself")
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	// Avoid clobbering an existing quarantined file with the same name.
 	dst = uniquePath(dst)
 	if err := os.Rename(src, dst); err == nil {
-		return nil
+		if err := confirmMoved(src, dst); err != nil {
+			return "", err
+		}
+		return dst, nil
 	}
 	// Cross-device: copy, verify, then remove the source.
 	sh, err := hashx.File(src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := copyFile(src, dst); err != nil {
-		return err
+		return "", err
 	}
 	dh, err := hashx.File(dst)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if sh != dh {
-		return fmt.Errorf("verification failed for %s", src)
+		return "", fmt.Errorf("verification failed for %s", src)
 	}
-	return os.Remove(src)
+	if err := os.Remove(src); err != nil {
+		return "", err
+	}
+	if err := confirmMoved(src, dst); err != nil {
+		return "", err
+	}
+	return dst, nil
+}
+
+// confirmMoved checks that a move really happened: the source is gone and the
+// destination exists as a file. Without this, a destination that resolved back
+// to the source looked like a successful move.
+func confirmMoved(src, dst string) error {
+	if _, err := os.Stat(src); err == nil {
+		return fmt.Errorf("source is still present after the move")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		return fmt.Errorf("destination missing after the move: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("destination is a directory")
+	}
+	return nil
 }
 
 func copyFile(src, dst string) error {
