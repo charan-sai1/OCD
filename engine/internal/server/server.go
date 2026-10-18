@@ -129,7 +129,10 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {
-	// Single embedded page for everything.
+	// Single embedded page for everything. It is baked into the binary, so
+	// never let a browser hold on to an older copy across a rebuild.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(indexHTML)
 }
