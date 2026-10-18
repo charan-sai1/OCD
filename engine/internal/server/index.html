@@ -170,6 +170,15 @@
   .pick:hover{border-color:var(--mut2);background:var(--hover)}
   .pick .val{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
   .pick .val.empty{color:var(--mut2)}
+  .pickline{display:flex;gap:8px;align-items:stretch}
+  .pickline .pick{flex:1;min-width:0}
+  .pickclr{
+    flex:none;width:50px;display:grid;place-items:center;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;color:var(--mut);cursor:pointer;
+    transition:border-color .14s,background .14s,color .14s;
+  }
+  .pickclr:hover{border-color:var(--bad);background:var(--hover);color:var(--bad)}
+  .pickclr.off{visibility:hidden;pointer-events:none}
   .seg{display:flex;gap:8px;flex-wrap:wrap}
   .seg button{
     display:inline-flex;align-items:center;gap:8px;background:var(--chip);color:var(--fg);
@@ -179,6 +188,24 @@
   .seg button:hover{filter:brightness(.97)}
   .seg button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
   .hint{font-size:12.5px;color:var(--mut);margin-top:8px}
+
+  /* ---------- tooltips ---------- */
+  .tip{
+    display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    margin-left:7px;border-radius:50%;background:var(--line);color:var(--mut);
+    font-size:10px;font-weight:700;line-height:1;cursor:help;
+    vertical-align:1px;letter-spacing:0;text-transform:none;flex:none;
+  }
+  .tip:hover,.tip:focus-visible{background:var(--blue);color:#fff;outline:none}
+  #tipbox{
+    position:fixed;left:0;top:0;z-index:200;max-width:min(320px,calc(100vw - 20px));
+    background:#202124;color:#fff;font-size:12px;font-weight:400;line-height:1.5;
+    letter-spacing:.1px;text-transform:none;text-align:left;white-space:normal;
+    padding:9px 12px;border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.34);
+    border:1px solid rgba(255,255,255,.14);opacity:0;transform:translateY(-3px);
+    pointer-events:none;transition:opacity .13s,transform .13s;
+  }
+  #tipbox.on{opacity:1;transform:translateY(0)}
   .check{
     display:flex;align-items:flex-start;gap:12px;margin-top:24px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;padding:15px 16px;cursor:pointer;
@@ -265,10 +292,17 @@
     width:100%;display:flex;align-items:center;gap:12px;background:none;border:0;color:var(--fg);
     padding:11px 12px;border-radius:8px;cursor:pointer;font-size:14px;text-align:left;
   }
-  .item:hover:not(:disabled){background:var(--hover)}
-  .item:disabled{opacity:.45;cursor:default}
+  .item:not(.file):hover{background:var(--hover)}
+  .item:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+  .item.file{opacity:.45;cursor:default}
   .item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .item .sz{font-size:12px;color:var(--mut);flex:none}
+  .item .use{
+    flex:none;background:transparent;color:var(--blue-text);border:1px solid var(--line);
+    border-radius:999px;padding:4px 13px;font-size:12.5px;font-weight:600;cursor:pointer;
+    transition:background .12s,border-color .12s;
+  }
+  .item .use:hover{background:var(--blue-soft);border-color:transparent}
   .sheet .foot{display:flex;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line2);flex:none}
   .foot .h{flex:1;font-size:13px;color:var(--mut)}
   .list .empty{padding:28px 14px;text-align:center;color:var(--mut);font-size:13.5px}
@@ -309,6 +343,16 @@
     .lbnav{width:42px;height:42px}
     #activity{bottom:84px}
   }
+  @media (max-width:560px){
+    #picker{padding:0;align-items:flex-end}
+    .sheet{width:100%;height:92vh;border-radius:16px 16px 0 0}
+    .sheet .body{flex-direction:column}
+    .roots{width:100%;flex:none;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
+           border-right:0;border-bottom:1px solid var(--line2);padding:8px}
+    .roots button{width:auto;flex:none;white-space:nowrap;margin:0}
+    .pickclr{width:44px}
+    .row .btn{min-width:0;flex:1}
+  }
 </style>
 </head>
 <body>
@@ -325,23 +369,23 @@
   </div>
 
   <nav id="mainNav">
-    <button data-tab="photos" class="on">
+    <button data-tab="photos" class="on" title="Your whole photo library, newest first">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2z"/></svg>
       Photos
     </button>
-    <button data-tab="library">
+    <button data-tab="library" title="The drives and folders OCD knows about">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
       Folders
     </button>
-    <button data-tab="import">
+    <button data-tab="import" title="Copy new photos off a phone, with verification">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
       Import
     </button>
-    <button data-tab="dupes">
+    <button data-tab="dupes" title="Find identical files and get the space back">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
       Duplicates
     </button>
-    <button data-tab="setup">
+    <button data-tab="setup" title="Optional helpers that unlock phone import and video thumbnails">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
       Setup
     </button>
@@ -373,7 +417,7 @@
     <section id="library">
       <p class="pagehead">Folders saved in OCD. Connected ones can be browsed right now.</p>
       <div class="row" style="margin-top:8px">
-        <button class="btn ghost" id="libRefresh">Refresh counts</button>
+        <button class="btn ghost" id="libRefresh" title="Recounts the files and total size in every saved folder.">Refresh counts<span class="tip" tabindex="0" data-tip="Walks each saved folder and updates the file count and size. This can take a while on large drives.">?</span></button>
       </div>
       <div class="libs" id="libList"></div>
     </section>
@@ -382,46 +426,56 @@
     <section id="import">
       <p class="pagehead">Copies new photos onto a drive, verifies every byte, then optionally clears the phone.</p>
 
-      <label class="fl">FROM</label>
-      <button class="pick" data-field="source">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
-        <span class="val empty">Choose a phone or folder…</span>
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-      </button>
+      <label class="fl">FROM<span class="tip" tabindex="0" data-tip="Where the photos come from — a phone connected by USB, or any folder on this PC.">?</span></label>
+      <div class="pickline">
+        <button class="pick" data-field="source" title="Choose a phone or a folder to copy from">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
+          <span class="val empty">Choose a phone or folder…</span>
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+        <button class="pickclr off" data-clear="source" type="button" title="Clear the source">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
       <div class="filters" id="deviceChips" style="margin-top:10px"></div>
 
-      <label class="fl">TO</label>
-      <button class="pick" data-field="dest">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h2v2H6z"/></svg>
-        <span class="val empty">Choose where to save…</span>
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-      </button>
+      <label class="fl">TO<span class="tip" tabindex="0" data-tip="Where the copies are saved. Photos are sorted into year/month subfolders inside this one.">?</span></label>
+      <div class="pickline">
+        <button class="pick" data-field="dest" title="Choose where the copies are saved">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h2v2H6z"/></svg>
+          <span class="val empty">Choose where to save…</span>
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+        <button class="pickclr off" data-clear="dest" type="button" title="Clear the destination">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
 
-      <label class="fl">DUPLICATES</label>
+      <label class="fl">DUPLICATES<span class="tip" tabindex="0" data-tip="What to do when the same file is already on the drive. Skipping saves space; keeping every copy uses more.">?</span></label>
       <div class="seg" id="segAction">
-        <button data-v="skip" class="on">Skip what I already have</button>
-        <button data-v="copy">Keep every copy</button>
+        <button data-v="skip" class="on" title="Only copies files that are not already on the drive. Nothing is stored twice.">Skip what I already have</button>
+        <button data-v="copy" title="Copies everything, even if an identical file is already there. Uses extra space.">Keep every copy</button>
       </div>
       <div class="hint" id="actionHint">Files already on the drive are not copied again — no wasted space.</div>
 
-      <label class="fl">HOW TO COMPARE</label>
+      <label class="fl">HOW TO COMPARE<span class="tip" tabindex="0" data-tip="How OCD decides two files are the same file. Content matching reads every byte; name matching only looks at the filename and size.">?</span></label>
       <div class="seg" id="segCheck">
-        <button data-v="content" class="on">Content · exact</button>
-        <button data-v="name">Name + size · fast</button>
+        <button data-v="content" class="on" title="Reads the whole file and matches it byte for byte. Slower, but catches copies that were renamed.">Content · exact</button>
+        <button data-v="name" title="Matches on filename and size only. Much faster, but misses copies that were renamed.">Name + size · fast</button>
       </div>
       <div class="hint" id="checkHint">Reads the whole file. Safest — catches renamed copies too.</div>
 
-      <label class="check">
+      <label class="check" title="Deletes each file from the phone only after the copy on the drive has been re-read and matched. Leave this off to keep everything on the phone.">
         <input type="checkbox" id="wipe" />
         <span>
-          <span class="t">Remove from the phone after verifying</span>
+          <span class="t">Remove from the phone after verifying<span class="tip" tabindex="0" data-tip="Each file is deleted from the phone only once the copy on the drive has been re-read and matched byte for byte. If anything fails to verify, it is left on the phone.">?</span></span>
           <span class="s">Each file is deleted only after the copy on the drive has been re-read and matched.</span>
         </span>
       </label>
 
       <div class="row">
-        <button class="btn primary" id="impGo">Import photos</button>
-        <button class="btn ghost" id="impPreview">Preview first (safe)</button>
+        <button class="btn primary" id="impGo" title="Copies new photos in, verifies every byte, and clears the phone if you asked for it.">Import photos</button>
+        <button class="btn ghost" id="impPreview" title="Shows what would be copied and cleared, without writing or deleting anything.">Preview first (safe)</button>
       </div>
 
       <div class="card hidden" id="impCard">
@@ -434,25 +488,30 @@
     <section id="dupes">
       <p class="pagehead">Finds files that are identical by content — not just by name — and moves the extra copies to a quarantine folder. Nothing is deleted.</p>
 
-      <label class="fl">FOLDERS TO CHECK</label>
+      <label class="fl">FOLDERS TO CHECK<span class="tip" tabindex="0" data-tip="The places OCD scans for identical files. Add your drives here — this step only reads, it never writes.">?</span></label>
       <div class="filters" id="dupChips"></div>
       <div class="filters" id="dupQuick"></div>
 
-      <label class="fl">QUARANTINE FOLDER</label>
-      <button class="pick" data-field="quarantine">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/></svg>
-        <span class="val empty">Where extra copies are moved…</span>
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-      </button>
+      <label class="fl">QUARANTINE FOLDER<span class="tip" tabindex="0" data-tip="Where the extra copies are moved. Their original folder layout is kept, so you can look through them and delete them yourself later. Nothing is ever erased for you.">?</span></label>
+      <div class="pickline">
+        <button class="pick" data-field="quarantine" title="Choose where extra copies are moved">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/></svg>
+          <span class="val empty">Where extra copies are moved…</span>
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+        <button class="pickclr off" data-clear="quarantine" type="button" title="Clear this folder">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
 
-      <div class="row"><button class="btn primary" id="dupScan">Find duplicates</button></div>
+      <div class="row"><button class="btn primary" id="dupScan" title="Reads every file 1 KB and larger and groups the identical ones. Read-only — nothing on disk is changed.">Find duplicates</button></div>
 
       <div class="card hidden" id="dupCard">
         <div class="stats" id="dupStats"></div>
         <div class="msg" id="dupMsg"></div>
         <div class="row" id="dupActions" style="display:none">
-          <button class="btn ghost" id="dupPreview">Preview what moves</button>
-          <button class="btn danger" id="dupMove">Move to quarantine</button>
+          <button class="btn ghost" id="dupPreview" title="Lists exactly what would be moved. Nothing on disk changes.">Preview what moves</button>
+          <button class="btn danger" id="dupMove" title="Actually moves the extra copies into the quarantine folder. One copy of every file always stays where it is.">Move to quarantine</button>
         </div>
         <div class="msg" id="dupResult"></div>
       </div>
@@ -504,6 +563,7 @@ Install on this PC with winget:<br><br>
         <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
       </button>
       <div class="path" id="pkPath">…</div>
+      <span class="tip" tabindex="0" data-tip="Click a folder to open it, or press Use on a row to select it straight away.">?</span>
       <button class="iconbtn" id="pkClose" title="Close">
         <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
@@ -514,7 +574,8 @@ Install on this PC with winget:<br><br>
     </div>
     <div class="foot">
       <div class="h" id="pkHint"></div>
-      <button class="btn primary" id="pkUse">Use this folder</button>
+      <button class="btn ghost" id="pkCancel" title="Close without changing anything">Cancel</button>
+      <button class="btn primary" id="pkUse" title="Select the folder shown above">Use this folder</button>
     </div>
   </div>
 </div>
@@ -583,6 +644,39 @@ es.onmessage = e => {
   } catch(_) {}
 };
 
+/* ---------- tooltips ---------- */
+const tipBox = document.createElement('div');
+tipBox.id = 'tipbox';
+document.body.appendChild(tipBox);
+let tipOpen = null;
+function showTip(el){
+  const text = el.dataset.tip;
+  if (!text) return;
+  tipOpen = el;
+  tipBox.textContent = text;
+  tipBox.style.left = '0px'; tipBox.style.top = '0px';
+  tipBox.classList.add('on');
+  const r = el.getBoundingClientRect();
+  const w = tipBox.offsetWidth, h = tipBox.offsetHeight;
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(10, Math.min(left, innerWidth - w - 10));
+  let top = r.bottom + 9;
+  if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 9);   // flip above when there is no room below
+  tipBox.style.left = left + 'px';
+  tipBox.style.top  = top + 'px';
+}
+function hideTip(){ tipOpen = null; tipBox.classList.remove('on'); }
+const closestTip = e => (e.target instanceof Element ? e.target.closest('.tip') : null);
+document.addEventListener('mouseover', e => {
+  const t = closestTip(e);
+  if (t){ if (t !== tipOpen) showTip(t); } else if (tipOpen) hideTip();
+});
+document.addEventListener('mouseout', e => { if (closestTip(e) === tipOpen) hideTip(); });
+document.addEventListener('focusin', e => { const t = closestTip(e); if (t) showTip(t); });
+document.addEventListener('focusout', () => hideTip());
+window.addEventListener('scroll', hideTip, true);
+window.addEventListener('resize', hideTip);
+
 /* ---------- folder picker ---------- */
 const pk = { path:'', parent:'', onPick:null, rootsReady:false };
 function openPicker(onPick, startPath){
@@ -618,27 +712,48 @@ async function pkLoad(path){
     list.innerHTML = `<div class="empty">${esc(r.error || 'This folder is empty.')}</div>`;
   } else {
     r.entries.forEach(e => {
-      const el = document.createElement('button');
-      el.className = 'item';
-      el.disabled = !e.isDir;
+      const el = document.createElement('div');
+      el.className = 'item' + (e.isDir ? '' : ' file');
+      el.tabIndex = 0;
       el.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="opacity:${e.isDir?1:.45}"><path d="${
         e.isDir ? 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'
                 : 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4z'
       }"/></svg>
                       <span class="nm">${esc(e.name)}</span>
                       ${e.isDir ? '' : `<span class="sz">${size(e.size)}</span>`}`;
-      if (e.isDir) el.onclick = () => pkLoad(e.path);
+      if (e.isDir){
+        el.title = 'Open ' + e.name;
+        el.onclick = () => pkLoad(e.path);
+        el.onkeydown = ev => {
+          if (ev.target !== el) return;
+          if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); pkLoad(e.path); }
+        };
+        const use = document.createElement('button');
+        use.type = 'button';
+        use.className = 'use';
+        use.textContent = 'Use';
+        use.title = 'Select “' + e.name + '”';
+        use.onclick = ev => { ev.stopPropagation(); pkChoose(e.path); };
+        el.appendChild(use);
+      }
       list.appendChild(el);
     });
   }
+  $('#pkUse').disabled = !pk.path;
   const n = r.dirs || 0;
   $('#pkHint').textContent = n ? `${n} folder${n > 1 ? 's' : ''}` : '';
   list.scrollTop = 0;
 }
-$('#pkUp').onclick    = () => pk.parent && pkLoad(pk.parent);
-$('#pkClose').onclick = () => $('#picker').hidden = true;
-$('#pkUse').onclick   = () => { if (pk.onPick) pk.onPick(pk.path); $('#picker').hidden = true; };
-$('#picker').onclick  = e => { if (e.target.id === 'picker') $('#picker').hidden = true; };
+function pkChoose(path){
+  if (!path) return;
+  if (pk.onPick) pk.onPick(path);
+  $('#picker').hidden = true;
+}
+$('#pkUp').onclick     = () => pk.parent && pkLoad(pk.parent);
+$('#pkClose').onclick  = () => $('#picker').hidden = true;
+$('#pkCancel').onclick = () => $('#picker').hidden = true;
+$('#pkUse').onclick    = () => pkChoose(pk.path);
+$('#picker').onclick   = e => { if (e.target.id === 'picker') $('#picker').hidden = true; };
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape'){
     if (!$('#lightbox').hidden) { closeLightbox(); return; }
@@ -649,16 +764,37 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') stepLightbox(1);
 });
 
+const pickLabel = {};   // friendly override for the text shown in a picker button
+function syncPick(){
+  $$('.pick').forEach(btn => {
+    const field = btn.dataset.field;
+    const v = btn.querySelector('.val');
+    if (v.dataset.ph == null) v.dataset.ph = v.textContent;   // remember the placeholder
+    const value = sel[field] || '';
+    v.textContent = value ? (pickLabel[field] || value) : v.dataset.ph;
+    v.classList.toggle('empty', !value);
+    const clr = document.querySelector('.pickclr[data-clear="' + field + '"]');
+    if (clr) clr.classList.toggle('off', !value);
+  });
+}
 $$('.pick').forEach(btn => {
   const field = btn.dataset.field;
   btn.onclick = () => openPicker(path => {
     sel[field] = path;
-    if (field === 'source') sel.sourceType = 'folder';
-    const v = btn.querySelector('.val');
-    v.textContent = path;
-    v.classList.remove('empty');
-    if (field === 'source') $('#deviceChips').innerHTML = '';
+    delete pickLabel[field];
+    if (field === 'source'){ sel.sourceType = 'folder'; $('#deviceChips').innerHTML = ''; }
+    syncPick();
   }, sel[field]);
+});
+$$('.pickclr').forEach(btn => {
+  btn.onclick = e => {
+    e.stopPropagation();
+    const field = btn.dataset.clear;
+    sel[field] = '';
+    delete pickLabel[field];
+    if (field === 'source'){ sel.sourceType = 'folder'; $('#deviceChips').innerHTML = ''; }
+    syncPick();
+  };
 });
 
 /* ---------- photos (main page) ---------- */
@@ -670,7 +806,9 @@ function renderPhotoChips(){
   const items = [{ id:'all', name:'All photos' }].concat(avail.map(l => ({ id:l.collectionId, name:l.name })));
   if (photoFilter !== 'all' && !items.some(x => x.id === photoFilter)) photoFilter = 'all';
   box.innerHTML = items.map(x =>
-    `<button class="chip ${x.id === photoFilter ? 'sel' : ''}" data-c="${esc(x.id)}"><span>${esc(x.name)}</span></button>`
+    `<button class="chip ${x.id === photoFilter ? 'sel' : ''}" data-c="${esc(x.id)}" title="${
+      x.id === 'all' ? 'Show photos from every folder' : 'Show only photos from ' + esc(x.name)
+    }"><span>${esc(x.name)}</span></button>`
   ).join('');
   box.querySelectorAll('.chip').forEach(c => c.onclick = () => {
     photoFilter = c.dataset.c;
@@ -831,7 +969,7 @@ function renderLibraries(){
     </div>`).join('');
 
   box.innerHTML = cards + `
-    <button class="lib add" id="libAdd">
+    <button class="lib add" id="libAdd" title="Pick any folder or drive to keep in your library">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
       Add folder
     </button>`;
@@ -984,10 +1122,8 @@ async function loadDevices(){
     c.onclick = () => {
       sel.source = serial + '|/sdcard/DCIM';
       sel.sourceType = 'adb';
-      const pick = document.querySelector('.pick[data-field="source"]');
-      const v = pick.querySelector('.val');
-      v.textContent = 'Android phone — /sdcard/DCIM';
-      v.classList.remove('empty');
+      pickLabel.source = 'Android phone · /sdcard/DCIM';
+      syncPick();
     };
     box.appendChild(c);
   });
@@ -1086,6 +1222,7 @@ async function loadTools(){
 }
 
 /* ---------- boot ---------- */
+syncPick();
 renderDupChips();
 loadRoots();
 loadDriveQuick();
