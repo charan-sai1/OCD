@@ -95,10 +95,10 @@ The UI is a single photo-library app with five views (deep-linkable, e.g.
 
 **Duplicates** — add folders with the browser (drives like `E:` and `F:` are
 offered as one-click chips), hit **Find duplicates**, then **Preview what moves**
-/ **Move to quarantine**. The picked quarantine folder is the root: copies land
-in a `<drive>\<original path>` sub-tree beneath it, and the result tells you the
-exact path they went to. Moving clears the scan, so run **Find duplicates**
-again before a second move.
+/ **Move to quarantine**. The copies are dropped flat into the quarantine folder
+you pick, so point it at a folder of its own; the result names the folder and an
+example file. Moving clears the scan, so run **Find duplicates** again before a
+second move.
 
 **Setup** — shows which optional helper tools are installed, and how to get them.
 
@@ -115,17 +115,17 @@ folders in a new tab.
    means media already on the drive is skipped — never copied twice.
 3. **Deleting from the phone is opt-in.** The CLI default is copy-only; the wipe
    step happens only with `--delete` or the "wipe" mode in the UI.
-4. **Dedupe quarantines, it does not delete.** Redundant copies are moved into
-   the quarantine folder with their original path preserved *and the drive letter
-   kept as the top level*, so the rebuilt path can never land back on the
-   original file:
+4. **Dedupe quarantines, it does not delete.** Redundant copies are moved
+   **straight into the quarantine folder you pick**, keeping only their own file
+   name — no copy of the original folder structure:
 
    ```
-   F:\test\sub\a.jpg   moved into F:\   ->   F:\F\test\sub\a.jpg
+   F:\test\sub\a.jpg   moved into D:\quarantine   ->   D:\quarantine\a.jpg
    ```
 
-   Every move is re-checked afterwards (source gone, destination present) before
-   it is counted, so the numbers reported are the bytes that really moved.
+   If that name is taken, the usual ` (1)`, ` (2)` suffix is added. Every move is
+   re-checked afterwards (source gone, destination present) before it is counted,
+   so the numbers reported are the bytes that really moved.
 
 ## Command line
 

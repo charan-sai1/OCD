@@ -1199,15 +1199,18 @@ function pathOverlap(child, parent){
   if (!c || !p) return false;
   return c === p || c.startsWith(p + '\\');
 }
-/* Explain the risk when the quarantine folder and a checked folder overlap. */
-function overlapWarning(q, dirs){
+/* Notes shown before copies are dropped into the quarantine folder. */
+function overlapNotes(q, dirs){
+  const notes = [];
   for (const d of dirs){
-    if (pathOverlap(q, d))
-      return `The quarantine folder is inside ${d}, one of the folders you are checking. A later scan of ${d} will find the moved copies again.`;
-    if (pathOverlap(d, q))
-      return `${d} sits inside the quarantine folder ${q}. Copies are placed in a separate sub-folder underneath it (one level per drive), so they never land on top of an original.`;
+    if (pathOverlap(q, d)){
+      notes.push(`${q} is inside ${d}, one of the folders you are checking. Copies land straight in ${q}, so the next scan of ${d} finds them again.`);
+      break;
+    }
   }
-  return '';
+  if (/^[a-z]:\\?$/i.test((q || '').trim()))
+    notes.push(`${q} is a drive root, so copies go straight into it beside your other folders. A folder of its own keeps them tidier.`);
+  return notes;
 }
 
 async function quarantine(dry){
@@ -1216,11 +1219,11 @@ async function quarantine(dry){
     $('#dupResult').textContent = 'Pick a quarantine folder first (a place to keep the extra copies).';
     return;
   }
-  const warn = overlapWarning(sel.quarantine, dupDirs);
+  const notes = overlapNotes(sel.quarantine, dupDirs);
   if (!dry){
     const ask = 'Move all extra copies into the quarantine folder?\n\n' +
-      'Your originals and the first copy of each file are left untouched.' +
-      (warn ? '\n\nNote: ' + warn : '');
+      'They are placed straight into it, keeping their file names. Your originals and the first copy of each file are left untouched.' +
+      (notes.length ? '\n\nNote: ' + notes.join('\nNote: ') : '');
     if (!confirm(ask)) return;
   }
   $('#dupPreview').disabled = $('#dupMove').disabled = true;
@@ -1232,10 +1235,10 @@ async function quarantine(dry){
     lines.push(r.error);
   } else {
     lines.push(`${dry ? 'Would move' : 'Moved'} ${num(r.moved)} file(s), freeing ${r.freedHuman || size(r.freedBytes)}.`);
-    if (r.sample) lines.push(`${dry ? 'Would go to' : 'Now in'}: ${r.sample}` + (r.moved > 1 ? '\n(other files land beside it, each under its own drive letter)' : ''));
+    if (r.sample) lines.push(`${dry ? 'Would go to' : 'Now in'}: ${r.quarantine}` + (r.moved ? ` (for example ${r.sample})` : ''));
     else lines.push(`Quarantine: ${r.quarantine}`);
     if (!dry && r.moved) lines.push('These are copies, so nothing was lost. Run Find duplicates again to refresh the list.');
-    if (warn) lines.push(warn);
+    if (notes.length) lines.push(...notes);
     if (r.errors && r.errors.length) lines.push(...r.errors);
   }
   $('#dupResult').className = 'msg ' + (r.error || (r.errors && r.errors.length) ? 'err' : 'good');

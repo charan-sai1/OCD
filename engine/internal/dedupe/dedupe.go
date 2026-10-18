@@ -229,39 +229,37 @@ type MovedFile struct {
 	Group string `json:"group"`
 }
 
-// quarantineDest rebuilds the source path underneath the quarantine folder,
-// keeping the volume name as the first component:
-//
-//	F:\test\a.jpg  ->  <quarantine>\F\test\a.jpg
-//
-// That extra component guarantees the rebuilt path can never land back on the
-// original file. Without it, a quarantine folder that sat above a scanned root
-// (quarantine F:\, root F:\test) rebuilt the source path exactly, so the "move"
-// renamed a file next to itself and nothing ever landed in quarantine.
-func quarantineDest(quarantineDir string, f File) string {
-	vol := filepath.VolumeName(f.Path)
-	rest := strings.TrimLeft(strings.TrimPrefix(f.Path, vol), `\/`)
-	label := sanitizeComponent(vol)
-	if label == "" {
-		label = sanitizeComponent(filepath.Base(f.Root))
+// flatDest returns a free path for a copy inside dir. Duplicates are dropped
+// straight into the chosen folder, so names collide easily: the file's own name
+// is tried first, then "name (1).jpg", "name (2).jpg" and so on, skipping names
+// already on disk and names claimed earlier in the same batch.
+func flatDest(dir, name string, claimed map[string]bool) string {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	cand := filepath.Join(dir, name)
+	for i := 1; ; i++ {
+		if !claimed[pathKey(cand)] {
+			if _, err := os.Stat(cand); os.IsNotExist(err) {
+				claimed[pathKey(cand)] = true
+				return cand
+			}
+		}
+		cand = filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
 	}
-	if label == "" {
-		label = "shared"
-	}
-	return filepath.Join(quarantineDir, label, rest)
-}
-
-// sanitizeComponent turns a volume name ("F:", "\\server\share") into a single
-// safe path element ("F", "server_share").
-func sanitizeComponent(s string) string {
-	s = strings.TrimSuffix(s, ":")
-	s = strings.NewReplacer(":", "_", "\\", "_", "/", "_").Replace(s)
-	return strings.Trim(s, "_ ")
 }
 
 // caseInsensitiveFS reports whether this system compares paths
 // case-insensitively, which decides how samePath is checked.
 const caseInsensitiveFS = runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+
+// pathKey normalises a path for use as a map key on this system.
+func pathKey(p string) string {
+	p = filepath.Clean(p)
+	if caseInsensitiveFS {
+		return strings.ToLower(p)
+	}
+	return p
+}
 
 // samePath reports whether two paths point at the same location.
 func samePath(a, b string) bool {
@@ -270,15 +268,14 @@ func samePath(a, b string) bool {
 	if err1 != nil || err2 != nil {
 		return filepath.Clean(a) == filepath.Clean(b)
 	}
-	ca, cb = filepath.Clean(ca), filepath.Clean(cb)
-	if caseInsensitiveFS {
-		return strings.EqualFold(ca, cb)
-	}
-	return ca == cb
+	return pathKey(ca) == pathKey(cb)
 }
 
-// Quarantine moves the non-keeper copies of each group into opts.QuarantineDir,
-// preserving each file's original path beneath it. Non-destructive.
+// Quarantine moves the non-keeper copies of each group into opts.QuarantineDir.
+// Every copy lands directly in that folder, keeping only its own file name; if
+// a name is already taken the usual " (1)", " (2)" suffix is added. The whole
+// batch is planned before anything moves, so a preview and the move it
+// previews agree on every destination. Non-destructive.
 func Quarantine(groups []Group, opts QuarantineOptions) (QuarantineResult, error) {
 	var out QuarantineResult
 	if opts.Keep == "" {
@@ -290,13 +287,18 @@ func Quarantine(groups []Group, opts QuarantineOptions) (QuarantineResult, error
 		}
 	}
 
+	claimed := map[string]bool{}
 	for _, g := range groups {
 		keeper := pickKeeper(g.Files, opts.Keep)
 		for _, f := range g.Files {
 			if f.Path == keeper.Path {
 				continue
 			}
-			dest := quarantineDest(opts.QuarantineDir, f)
+			if samePath(opts.QuarantineDir, filepath.Dir(f.Path)) {
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: already sits in the quarantine folder - choose a different folder", f.Path))
+				continue
+			}
+			dest := flatDest(opts.QuarantineDir, filepath.Base(f.Path), claimed)
 			if opts.DryRun {
 				out.Moved = append(out.Moved, MovedFile{From: f.Path, To: dest, Size: f.Size, Group: g.Hash})
 				out.Freed += f.Size
