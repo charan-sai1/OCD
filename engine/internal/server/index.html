@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#ffffff" />
+<title>Photos — OCD Manager</title>
+<style>
+  :root{
+    --bg:#fff; --surface:#fff; --line:#dadce0; --line2:#e8eaed;
+    --fg:#202124; --mut:#5f6368; --mut2:#80868b;
+    --blue:#1a73e8; --blue-h:#1b66c9; --blue-soft:#e8f0fe; --blue-text:#1967d2;
+    --hover:#f1f3f4; --chip:#f1f3f4; --tile:#f1f3f4;
+    --ok:#188038; --ok-soft:#e6f4ea; --bad:#d93025; --bad-soft:#fce8e6;
+    --warn:#b06000; --warn-soft:#fef7e0;
+    --shadow-sm:0 1px 2px rgba(60,64,67,.18);
+    --shadow-md:0 1px 3px rgba(60,64,67,.18),0 4px 12px rgba(60,64,67,.12);
+    --sidebar:256px; --topbar:64px; --h:220px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#202124; --surface:#292a2d; --line:#3c4043; --line2:#35363a;
+      --fg:#e8eaed; --mut:#9aa0a6; --mut2:#80868b;
+      --blue:#8ab4f8; --blue-h:#aecbfa; --blue-soft:#28374d; --blue-text:#8ab4f8;
+      --hover:#303134; --chip:#303134; --tile:#3c4043;
+      --ok:#81c995; --ok-soft:#1f3327; --bad:#f28b82; --bad-soft:#3b2422;
+      --warn:#fdd663; --warn-soft:#3a2f1a;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.5);
+      --shadow-md:0 1px 3px rgba(0,0,0,.5),0 4px 12px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:14px/1.5 "Google Sans","Product Sans",Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  button,input{font:inherit}
+  a{color:var(--blue);text-decoration:none}
+  .icon{width:20px;height:20px;flex:none;display:block}
+  .grow{flex:1}
+
+  /* ---------- shell ---------- */
+  .side{
+    position:fixed; inset:0 auto 0 0; width:var(--sidebar);
+    display:flex; flex-direction:column; padding:8px 12px 12px;
+    background:var(--bg); border-right:1px solid var(--line2); z-index:40;
+  }
+  .brand{display:flex;align-items:center;gap:11px;padding:14px 12px 20px}
+  .brand .txt{font-size:19px;font-weight:500;letter-spacing:-.2px}
+  nav{display:flex;flex-direction:column;gap:2px}
+  nav button{
+    display:flex;align-items:center;gap:16px;width:100%;
+    padding:0 16px;height:44px;border:0;border-radius:999px;background:transparent;
+    color:var(--mut);font-size:14px;font-weight:500;cursor:pointer;text-align:left;
+    transition:background .12s,color .12s;
+  }
+  nav button:hover{background:var(--hover);color:var(--fg)}
+  nav button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
+  .sidefoot{
+    margin-top:auto;display:flex;align-items:center;gap:9px;
+    padding:12px;font-size:12.5px;color:var(--mut);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--mut2);flex:none}
+  .dot.on{background:var(--ok)}
+
+  .main{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column}
+  .topbar{
+    position:sticky;top:0;z-index:30;height:var(--topbar);
+    display:flex;align-items:center;gap:10px;padding:0 28px;
+    background:var(--bg);border-bottom:1px solid transparent;
+  }
+  .topbar h1{margin:0;font-size:22px;font-weight:400;letter-spacing:0}
+  .tb-btn{
+    display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;
+    color:var(--blue);font-size:14px;font-weight:600;padding:9px 16px;border-radius:999px;cursor:pointer;
+  }
+  .tb-btn:hover{background:var(--hover)}
+  .content{padding:6px 28px 90px;flex:1}
+
+  section{display:none}
+  section.on{display:block;animation:fade .16s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  .pagehead{margin:0 0 4px;font-size:15px;color:var(--mut)}
+  h2{font-size:20px;font-weight:500;margin:6px 0 6px}
+  h3{font-size:16px;font-weight:500;margin:26px 0 6px}
+  .lead{color:var(--mut);margin:0 0 20px;font-size:14px;max-width:70ch}
+
+  /* ---------- filter chips ---------- */
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 18px}
+  .chip{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--chip);color:var(--fg);border:1px solid transparent;
+    border-radius:8px;padding:7px 14px;font-size:13.5px;font-weight:500;
+    max-width:100%;cursor:pointer;
+  }
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip:hover{filter:brightness(.97)}
+  .chip.sel{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
+  .chip .x{
+    border:0;background:transparent;color:inherit;opacity:.6;cursor:pointer;
+    font-size:15px;line-height:1;padding:0 0 0 2px;border-radius:50%;
+  }
+  .chip .x:hover{opacity:1}
+  .chip.add{background:transparent;border:1px dashed var(--line);color:var(--blue)}
+
+  /* ---------- justified photo grid ---------- */
+  .dayhead{
+    position:sticky;top:var(--topbar);z-index:10;background:var(--bg);
+    padding:16px 2px 10px;font-size:15px;font-weight:600;letter-spacing:.1px;
+  }
+  .grid{display:flex;flex-wrap:wrap;gap:2px;margin:0 0 8px}
+  .grid::after{content:"";flex:1000000 1 0;height:0}
+  .tile{
+    position:relative;display:block;height:var(--h);border-radius:6px;overflow:hidden;
+    background:var(--tile);flex:var(--ar) 1 calc(var(--ar) * var(--h));cursor:zoom-in;
+  }
+  .tile img{width:100%;height:100%;object-fit:cover;display:block}
+  .tile::after{content:"";position:absolute;inset:0;background:rgba(32,33,36,0);transition:background .15s}
+  .tile:hover::after{background:rgba(32,33,36,.08)}
+  .gridmsg{padding:60px 4px;color:var(--mut);font-size:14px;text-align:center}
+  .gridmsg b{display:block;color:var(--fg);font-size:16px;font-weight:500;margin-bottom:6px}
+
+  /* ---------- notices / cards ---------- */
+  .notice{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 20px;
+    background:var(--surface);
+  }
+  .notice .t{font-size:14px;font-weight:500}
+  .notice .s{font-size:13px;color:var(--mut)}
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:20px;margin-top:20px;box-shadow:var(--shadow-sm);
+  }
+  .card.hidden{display:none}
+  .stats{display:flex;flex-wrap:wrap;gap:12px}
+  .stat{flex:1;min-width:130px;background:var(--hover);border-radius:10px;padding:14px 16px}
+  .stat b{display:block;font-size:24px;font-weight:500;letter-spacing:-.5px}
+  .stat span{font-size:12.5px;color:var(--mut)}
+  .msg{margin-top:14px;font-size:13.5px;color:var(--mut);white-space:pre-wrap;word-break:break-word}
+  .msg.err{color:var(--bad)} .msg.good{color:var(--ok)}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    border:0;border-radius:999px;padding:11px 24px;font-size:14px;font-weight:600;
+    cursor:pointer;transition:background .14s,box-shadow .14s,border-color .14s;
+  }
+  .btn.primary{background:var(--blue);color:#fff}
+  @media (prefers-color-scheme: dark){ .btn.primary{color:#202124} }
+  .btn.primary:hover{background:var(--blue-h);box-shadow:var(--shadow-sm)}
+  .btn.ghost{background:transparent;color:var(--blue);border:1px solid var(--line)}
+  .btn.ghost:hover{background:var(--hover);border-color:var(--line)}
+  .btn.danger{background:transparent;color:var(--bad);border:1px solid var(--line)}
+  .btn.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
+  .btn.small{padding:8px 18px;font-size:13px}
+  .btn:disabled{opacity:.38;cursor:default;box-shadow:none}
+  .row{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+  .row .btn{min-width:150px}
+
+  /* ---------- form bits ---------- */
+  .fl{display:block;font-size:12.5px;font-weight:600;letter-spacing:.3px;color:var(--mut);margin:24px 0 9px}
+  .pick{
+    width:100%;display:flex;align-items:center;gap:12px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;padding:14px 16px;color:var(--fg);
+    text-align:left;cursor:pointer;transition:border-color .14s,background .14s;
+  }
+  .pick:hover{border-color:var(--mut2);background:var(--hover)}
+  .pick .val{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+  .pick .val.empty{color:var(--mut2)}
+  .seg{display:flex;gap:8px;flex-wrap:wrap}
+  .seg button{
+    display:inline-flex;align-items:center;gap:8px;background:var(--chip);color:var(--fg);
+    border:1px solid transparent;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:500;
+    cursor:pointer;transition:background .14s;
+  }
+  .seg button:hover{filter:brightness(.97)}
+  .seg button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
+  .hint{font-size:12.5px;color:var(--mut);margin-top:8px}
+  .check{
+    display:flex;align-items:flex-start;gap:12px;margin-top:24px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;padding:15px 16px;cursor:pointer;
+  }
+  .check input{margin:2px 0 0;width:18px;height:18px;accent-color:var(--blue);flex:none}
+  .check .t{font-size:14px}
+  .check .s{font-size:12.5px;color:var(--mut);margin-top:3px;display:block}
+  .code{
+    font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--hover);
+    border-radius:6px;padding:2px 7px;color:var(--fg);
+  }
+  .divider{height:1px;background:var(--line2);margin:32px 0 0}
+
+  /* ---------- library cards ---------- */
+  .libs{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:16px;margin-top:18px}
+  .lib{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);transition:box-shadow .16s,border-color .16s}
+  .lib:hover{box-shadow:var(--shadow-md);border-color:transparent}
+  .lib.off{opacity:.68}
+  .lib .cover{height:148px;background:var(--tile);display:block;position:relative;overflow:hidden}
+  .lib .cover img{width:100%;height:100%;object-fit:cover;display:block}
+  .lib .cover .ph{display:grid;place-items:center;height:100%;color:var(--mut2)}
+  .lib .body{padding:12px 14px 14px}
+  .lib .nm{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lib .pth{font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .lib .foot{display:flex;align-items:center;gap:8px;margin-top:12px}
+  .lib .cnt{font-size:12px;color:var(--mut);flex:1}
+  .lib.add{
+    display:grid;place-items:center;min-height:220px;border-style:dashed;color:var(--blue);
+    cursor:pointer;font-size:14px;font-weight:600;background:transparent;gap:8px;
+  }
+  .lib.add:hover{background:var(--hover)}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .badge.ok{background:var(--ok-soft);color:var(--ok)}
+  .badge.no{background:var(--chip);color:var(--mut)}
+  .iconbtn{
+    background:transparent;border:0;color:var(--mut);width:34px;height:34px;border-radius:50%;
+    cursor:pointer;display:grid;place-items:center;flex:none;
+  }
+  .iconbtn:hover{background:var(--hover);color:var(--fg)}
+  .iconbtn:disabled{opacity:.35;cursor:default}
+
+  /* ---------- tools ---------- */
+  .tools{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+  .tool{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line2)}
+  .tool:last-child{border-bottom:0}
+  .tool .n{flex:1;font-size:14px}
+  .tool .d{font-size:12.5px;color:var(--mut)}
+  .tool .mono{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+
+  /* ---------- activity pill ---------- */
+  #activity{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);
+    display:flex;align-items:center;gap:12px;max-width:min(560px,92vw);
+    background:#323639;color:#fff;border-radius:10px;padding:13px 18px;font-size:13.5px;
+    box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:.2s;z-index:80;
+  }
+  #activity.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .spin{
+    width:14px;height:14px;border:2px solid rgba(255,255,255,.28);border-top-color:#fff;
+    border-radius:50%;animation:spin .7s linear infinite;flex:none;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #activity .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---------- folder picker ---------- */
+  #picker{position:fixed;inset:0;background:rgba(32,33,36,.55);z-index:90;display:flex;align-items:center;justify-content:center;padding:24px}
+  #picker[hidden]{display:none}
+  .sheet{
+    background:var(--surface);border-radius:16px;width:min(760px,100%);height:min(640px,90vh);
+    display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);
+  }
+  .sheet header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line2);flex:none}
+  .path{flex:1;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sheet .body{flex:1;display:flex;min-height:0}
+  .roots{width:160px;border-right:1px solid var(--line2);overflow:auto;padding:8px;flex:none}
+  .roots button{
+    width:100%;text-align:left;background:none;border:0;color:var(--mut);padding:10px 12px;
+    border-radius:999px;cursor:pointer;font-size:13.5px;margin-bottom:2px;
+  }
+  .roots button:hover{background:var(--hover);color:var(--fg)}
+  .roots button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
+  .list{flex:1;overflow:auto;padding:8px}
+  .item{
+    width:100%;display:flex;align-items:center;gap:12px;background:none;border:0;color:var(--fg);
+    padding:11px 12px;border-radius:8px;cursor:pointer;font-size:14px;text-align:left;
+  }
+  .item:hover:not(:disabled){background:var(--hover)}
+  .item:disabled{opacity:.45;cursor:default}
+  .item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .sz{font-size:12px;color:var(--mut);flex:none}
+  .sheet .foot{display:flex;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line2);flex:none}
+  .foot .h{flex:1;font-size:13px;color:var(--mut)}
+  .list .empty{padding:28px 14px;text-align:center;color:var(--mut);font-size:13.5px}
+
+  /* ---------- lightbox ---------- */
+  #lightbox{position:fixed;inset:0;background:rgba(32,33,36,.97);z-index:100;display:flex;align-items:center;justify-content:center}
+  #lightbox[hidden]{display:none}
+  #lbImg{max-width:92vw;max-height:76vh;object-fit:contain;border-radius:4px}
+  .lbtop{
+    position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;
+    padding:16px 20px;color:#fff;
+  }
+  .lbtop .m{font-size:12.5px;opacity:.7}
+  .lbtop .n{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbnav{
+    position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;
+    background:rgba(255,255,255,.12);border:0;color:#fff;cursor:pointer;display:grid;place-items:center;
+  }
+  .lbnav:hover{background:rgba(255,255,255,.24)}
+  #lbPrev{left:20px} #lbNext{right:20px}
+  .lbclose{
+    position:absolute;top:12px;right:16px;width:44px;height:44px;border-radius:50%;border:0;
+    background:transparent;color:#fff;cursor:pointer;display:grid;place-items:center;
+  }
+  .lbclose:hover{background:rgba(255,255,255,.12)}
+
+  /* ---------- mobile ---------- */
+  @media (max-width:900px){
+    :root{--h:118px;--topbar:56px}
+    .side{inset:auto 0 0 0;width:auto;flex-direction:row;padding:6px;border-right:0;border-top:1px solid var(--line2);background:var(--bg)}
+    .brand,.sidefoot{display:none}
+    nav{flex-direction:row;width:100%;gap:2px}
+    nav button{flex-direction:column;gap:3px;height:auto;padding:8px 2px;font-size:11px;border-radius:12px;justify-content:center;text-align:center}
+    nav button .icon{width:22px;height:22px}
+    .main{margin-left:0;padding-bottom:74px}
+    .topbar{padding:0 16px}
+    .content{padding:4px 12px 40px}
+    .lbnav{width:42px;height:42px}
+    #activity{bottom:84px}
+  }
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+      <path fill="#4285F4" d="M12 2a5 5 0 0 1 5 5v5h-5a5 5 0 0 1 0-10z"/>
+      <path fill="#EA4335" d="M22 12a5 5 0 0 1-5 5h-5v-5a5 5 0 0 1 10 0z"/>
+      <path fill="#FBBC04" d="M12 22a5 5 0 0 1-5-5v-5h5a5 5 0 0 1 0 10z"/>
+      <path fill="#34A853" d="M2 12a5 5 0 0 1 5-5h5v5a5 5 0 0 1-10 0z"/>
+    </svg>
+    <span class="txt">Photos</span>
+  </div>
+
+  <nav id="mainNav">
+    <button data-tab="photos" class="on">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2z"/></svg>
+      Photos
+    </button>
+    <button data-tab="library">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+      Folders
+    </button>
+    <button data-tab="import">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      Import
+    </button>
+    <button data-tab="dupes">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
+      Duplicates
+    </button>
+    <button data-tab="setup">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+      Setup
+    </button>
+  </nav>
+
+  <div class="sidefoot"><span class="dot" id="dot"></span><span id="statusTxt">checking…</span></div>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <h1 id="viewTitle">Photos</h1>
+    <div class="grow"></div>
+    <button class="tb-btn" id="galOpen" title="Open the full-screen gallery">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+      Open gallery
+    </button>
+  </header>
+
+  <div class="content">
+
+    <!-- ============ PHOTOS ============ -->
+    <section id="photos" class="on">
+      <div class="filters" id="photoChips"></div>
+      <div id="galState"></div>
+      <div id="photoGrid"><div class="gridmsg">Loading photos…</div></div>
+    </section>
+
+    <!-- ============ FOLDERS ============ -->
+    <section id="library">
+      <p class="pagehead">Folders saved in OCD. Connected ones can be browsed right now.</p>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" id="libRefresh">Refresh counts</button>
+      </div>
+      <div class="libs" id="libList"></div>
+    </section>
+
+    <!-- ============ IMPORT ============ -->
+    <section id="import">
+      <p class="pagehead">Copies new photos onto a drive, verifies every byte, then optionally clears the phone.</p>
+
+      <label class="fl">FROM</label>
+      <button class="pick" data-field="source">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
+        <span class="val empty">Choose a phone or folder…</span>
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+      </button>
+      <div class="filters" id="deviceChips" style="margin-top:10px"></div>
+
+      <label class="fl">TO</label>
+      <button class="pick" data-field="dest">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h2v2H6z"/></svg>
+        <span class="val empty">Choose where to save…</span>
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+      </button>
+
+      <label class="fl">DUPLICATES</label>
+      <div class="seg" id="segAction">
+        <button data-v="skip" class="on">Skip what I already have</button>
+        <button data-v="copy">Keep every copy</button>
+      </div>
+      <div class="hint" id="actionHint">Files already on the drive are not copied again — no wasted space.</div>
+
+      <label class="fl">HOW TO COMPARE</label>
+      <div class="seg" id="segCheck">
+        <button data-v="content" class="on">Content · exact</button>
+        <button data-v="name">Name + size · fast</button>
+      </div>
+      <div class="hint" id="checkHint">Reads the whole file. Safest — catches renamed copies too.</div>
+
+      <label class="check">
+        <input type="checkbox" id="wipe" />
+        <span>
+          <span class="t">Remove from the phone after verifying</span>
+          <span class="s">Each file is deleted only after the copy on the drive has been re-read and matched.</span>
+        </span>
+      </label>
+
+      <div class="row">
+        <button class="btn primary" id="impGo">Import photos</button>
+        <button class="btn ghost" id="impPreview">Preview first (safe)</button>
+      </div>
+
+      <div class="card hidden" id="impCard">
+        <div class="stats" id="impStats"></div>
+        <div class="msg" id="impMsg"></div>
+      </div>
+    </section>
+
+    <!-- ============ DUPLICATES ============ -->
+    <section id="dupes">
+      <p class="pagehead">Finds files that are identical by content — not just by name — and moves the extra copies to a quarantine folder. Nothing is deleted.</p>
+
+      <label class="fl">FOLDERS TO CHECK</label>
+      <div class="filters" id="dupChips"></div>
+      <div class="filters" id="dupQuick"></div>
+
+      <label class="fl">QUARANTINE FOLDER</label>
+      <button class="pick" data-field="quarantine">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/></svg>
+        <span class="val empty">Where extra copies are moved…</span>
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+      </button>
+
+      <div class="row"><button class="btn primary" id="dupScan">Find duplicates</button></div>
+
+      <div class="card hidden" id="dupCard">
+        <div class="stats" id="dupStats"></div>
+        <div class="msg" id="dupMsg"></div>
+        <div class="row" id="dupActions" style="display:none">
+          <button class="btn ghost" id="dupPreview">Preview what moves</button>
+          <button class="btn danger" id="dupMove">Move to quarantine</button>
+        </div>
+        <div class="msg" id="dupResult"></div>
+      </div>
+    </section>
+
+    <!-- ============ SETUP ============ -->
+    <section id="setup">
+      <p class="pagehead">These helpers are optional, but they unlock phone import and better thumbnails.</p>
+      <div class="tools" id="toolList" style="margin-top:16px"></div>
+      <div class="card">
+        <div class="msg" style="margin-top:0">
+Install on this PC with winget:<br><br>
+<span class="code">winget install Google.PlatformTools</span> — Android import (adb)<br>
+<span class="code">winget install libimobiledevice.ifuse</span> — iPhone import<br>
+<span class="code">winget install Gyan.FFmpeg</span> — video thumbnails<br>
+<span class="code">winget install OliverBetz.ExifTool</span> — richer photo details
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<div id="activity"><span class="spin"></span><span class="txt" id="actTxt"></span></div>
+
+<div id="lightbox" hidden>
+  <div class="lbtop">
+    <div style="min-width:0">
+      <div class="n" id="lbTitle"></div>
+      <div class="m" id="lbMeta"></div>
+    </div>
+  </div>
+  <button class="lbclose" id="lbClose" title="Close">
+    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+  </button>
+  <button class="lbnav" id="lbPrev" title="Previous">
+    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+  </button>
+  <img id="lbImg" alt="" />
+  <button class="lbnav" id="lbNext" title="Next">
+    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+  </button>
+</div>
+
+<div id="picker" hidden>
+  <div class="sheet">
+    <header>
+      <button class="iconbtn" id="pkUp" title="Up one level">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      <div class="path" id="pkPath">…</div>
+      <button class="iconbtn" id="pkClose" title="Close">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </header>
+    <div class="body">
+      <div class="roots" id="pkRoots"></div>
+      <div class="list" id="pkList"></div>
+    </div>
+    <div class="foot">
+      <div class="h" id="pkHint"></div>
+      <button class="btn primary" id="pkUse">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+/* ---------- tabs ---------- */
+const TITLES = { photos:'Photos', library:'Folders', import:'Import', dupes:'Duplicates', setup:'Setup' };
+function showTab(name){
+  if (!TITLES[name]) name = 'photos';
+  $$('#mainNav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  $$('section').forEach(x => x.classList.toggle('on', x.id === name));
+  $('#viewTitle').textContent = TITLES[name];
+  if (name === 'photos') refreshPhotos();
+  if (name === 'library') loadLibraries();
+  window.scrollTo(0, 0);
+}
+$$('#mainNav button').forEach(b => b.onclick = () => {
+  location.hash = b.dataset.tab;
+  showTab(b.dataset.tab);
+});
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+/* ---------- state ---------- */
+const sel = { source:'', sourceType:'folder', dest:'', quarantine:'' };
+let dupDirs = [];
+let duplicateAction = 'skip';
+let duplicateCheck  = 'content';
+let libraries = [];
+let homeDir = '';
+let photos = [];
+let photoFilter = 'all';
+let lbIndex = -1;
+
+const get  = async u => (await fetch(u)).json();
+const post = async (u,b) => (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();
+const del  = async u => (await fetch(u,{method:'DELETE'})).json();
+const esc  = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num  = n => (n ?? 0).toLocaleString();
+const thumbURL = (p, w, h) => `/api/thumb/${encodeURIComponent(p.id)}/${encodeURIComponent(p.name)}?w=${w}` + (h ? `&h=${h}` : '');
+function size(b){
+  b = b || 0; if (b < 1024) return b + ' B';
+  const u = ['KB','MB','GB','TB']; let i = -1;
+  do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+  return b.toFixed(b >= 100 ? 0 : b >= 10 ? 1 : 2) + ' ' + u[i];
+}
+
+/* ---------- activity pill ---------- */
+let actTimer = null;
+function activity(text, busy = true){
+  $('#activity').classList.add('on');
+  $('#actTxt').textContent = text;
+  $('.spin').style.display = busy ? '' : 'none';
+  clearTimeout(actTimer);
+  if (!busy) actTimer = setTimeout(() => $('#activity').classList.remove('on'), 2600);
+}
+const es = new EventSource('/api/events');
+es.onmessage = e => {
+  try {
+    const d = JSON.parse(e.data);
+    const name = (d.message || '').split(/[\\/]/).pop();
+    const pct = d.total ? ` ${d.done}/${d.total}` : (d.done ? ` ${d.done}` : '');
+    if (d.phase && d.phase !== 'counted') activity(`${d.phase}${pct}${name ? ' · ' + name : ''}`, d.phase !== 'done');
+  } catch(_) {}
+};
+
+/* ---------- folder picker ---------- */
+const pk = { path:'', parent:'', onPick:null, rootsReady:false };
+function openPicker(onPick, startPath){
+  pk.onPick = onPick;
+  $('#picker').hidden = false;
+  if (!pk.rootsReady) loadRoots();
+  pkLoad(startPath || homeDir || '');
+}
+async function loadRoots(){
+  const r = await get('/api/fs/roots');
+  homeDir = r.home || '';
+  const box = $('#pkRoots'); box.innerHTML = '';
+  (r.roots || []).forEach(root => {
+    const b = document.createElement('button');
+    b.textContent = root.name;
+    b.dataset.path = root.path;
+    b.onclick = () => pkLoad(root.path);
+    box.appendChild(b);
+  });
+  pk.rootsReady = true;
+}
+async function pkLoad(path){
+  if (!path) return;
+  $('#pkList').innerHTML = '<div class="empty">Loading…</div>';
+  const r = await get('/api/fs/list?path=' + encodeURIComponent(path));
+  pk.path = r.path || path;
+  pk.parent = r.parent || '';
+  $('#pkPath').textContent = pk.path;
+  $('#pkUp').disabled = !pk.parent;
+  $$('#pkRoots button').forEach(b => b.classList.toggle('on', b.dataset.path === pk.path));
+  const list = $('#pkList'); list.innerHTML = '';
+  if (r.error || !(r.entries || []).length){
+    list.innerHTML = `<div class="empty">${esc(r.error || 'This folder is empty.')}</div>`;
+  } else {
+    r.entries.forEach(e => {
+      const el = document.createElement('button');
+      el.className = 'item';
+      el.disabled = !e.isDir;
+      el.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="opacity:${e.isDir?1:.45}"><path d="${
+        e.isDir ? 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'
+                : 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4z'
+      }"/></svg>
+                      <span class="nm">${esc(e.name)}</span>
+                      ${e.isDir ? '' : `<span class="sz">${size(e.size)}</span>`}`;
+      if (e.isDir) el.onclick = () => pkLoad(e.path);
+      list.appendChild(el);
+    });
+  }
+  const n = r.dirs || 0;
+  $('#pkHint').textContent = n ? `${n} folder${n > 1 ? 's' : ''}` : '';
+  list.scrollTop = 0;
+}
+$('#pkUp').onclick    = () => pk.parent && pkLoad(pk.parent);
+$('#pkClose').onclick = () => $('#picker').hidden = true;
+$('#pkUse').onclick   = () => { if (pk.onPick) pk.onPick(pk.path); $('#picker').hidden = true; };
+$('#picker').onclick  = e => { if (e.target.id === 'picker') $('#picker').hidden = true; };
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){
+    if (!$('#lightbox').hidden) { closeLightbox(); return; }
+    $('#picker').hidden = true;
+  }
+  if ($('#lightbox').hidden) return;
+  if (e.key === 'ArrowLeft')  stepLightbox(-1);
+  if (e.key === 'ArrowRight') stepLightbox(1);
+});
+
+$$('.pick').forEach(btn => {
+  const field = btn.dataset.field;
+  btn.onclick = () => openPicker(path => {
+    sel[field] = path;
+    if (field === 'source') sel.sourceType = 'folder';
+    const v = btn.querySelector('.val');
+    v.textContent = path;
+    v.classList.remove('empty');
+    if (field === 'source') $('#deviceChips').innerHTML = '';
+  }, sel[field]);
+});
+
+/* ---------- photos (main page) ---------- */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function renderPhotoChips(){
+  const box = $('#photoChips');
+  const avail = libraries.filter(l => l.available && l.collectionId);
+  const items = [{ id:'all', name:'All photos' }].concat(avail.map(l => ({ id:l.collectionId, name:l.name })));
+  if (photoFilter !== 'all' && !items.some(x => x.id === photoFilter)) photoFilter = 'all';
+  box.innerHTML = items.map(x =>
+    `<button class="chip ${x.id === photoFilter ? 'sel' : ''}" data-c="${esc(x.id)}"><span>${esc(x.name)}</span></button>`
+  ).join('');
+  box.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    photoFilter = c.dataset.c;
+    renderPhotoChips();
+    loadPhotos();
+    window.scrollTo(0, 0);
+  });
+}
+
+async function refreshPhotos(){
+  await loadLibraries();
+  renderPhotoChips();
+  await loadPhotos();
+}
+
+async function loadPhotos(){
+  const host = $('#photoGrid');
+  host.innerHTML = '<div class="gridmsg">Loading photos…</div>';
+  let r;
+  try {
+    r = await get('/api/photos?limit=300' + (photoFilter === 'all' ? '' : '&collection=' + encodeURIComponent(photoFilter)));
+  } catch (e) {
+    host.innerHTML = '<div class="gridmsg">Could not reach the server.</div>';
+    return;
+  }
+  if (!r.running){
+    $('#galState').innerHTML = `
+      <div class="notice">
+        <div style="flex:1;min-width:200px">
+          <div class="t">The gallery engine is stopped</div>
+          <div class="s">Start it to browse photos from your folders.</div>
+        </div>
+        <button class="btn primary" id="galStart">Start gallery</button>
+      </div>`;
+    $('#galStart').onclick = async () => {
+      activity('Starting gallery…');
+      const res = await post('/api/photofield/start');
+      if (res.error){ activity(res.error, false); return; }
+      activity('Gallery ready', false);
+      galStatus();
+      setTimeout(loadPhotos, 1200);
+    };
+    host.innerHTML = '';
+    return;
+  }
+  $('#galState').innerHTML = '';
+  photos = r.items || [];
+  renderPhotos();
+}
+
+function dayKey(d){
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function dayLabel(d){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((today - d) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  const m = MONTHS[d.getMonth()], day = d.getDate();
+  return d.getFullYear() === today.getFullYear() ? `${m} ${day}` : `${m} ${day}, ${d.getFullYear()}`;
+}
+function fmtDT(s){
+  const d = new Date(s);
+  if (isNaN(d)) return '';
+  return d.toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' });
+}
+
+function renderPhotos(){
+  const host = $('#photoGrid');
+  if (!photos.length){
+    host.innerHTML = `<div class="gridmsg"><b>No photos here yet</b>${
+      libraries.length ? 'Import from a phone, or add another folder.'
+                       : 'Add a folder to get started.'}</div>`;
+    return;
+  }
+  const groups = [];
+  const index = new Map();
+  photos.forEach((p, i) => {
+    const d = new Date(p.datetime);
+    const key = isNaN(d) ? '__unknown' : dayKey(d);
+    let g = index.get(key);
+    if (!g){ g = { key, date: d, items: [] }; index.set(key, g); groups.push(g); }
+    g.items.push(Object.assign({}, p, { _i: i }));
+  });
+
+  host.innerHTML = groups.map(g => {
+    const head = g.key === '__unknown' ? 'Unknown date' : dayLabel(g.date);
+    const tiles = g.items.map(p => {
+      const ar = Math.max(0.45, Math.min(3.2, (p.width || 1) / (p.height || 1)));
+      return `<a class="tile" style="--ar:${ar.toFixed(3)}" data-i="${p._i}" title="${esc(p.name)}">
+        <img loading="lazy" decoding="async" src="${thumbURL(p, 512, 512)}" alt="${esc(p.name)}">
+      </a>`;
+    }).join('');
+    return `<div class="dayhead">${esc(head)}</div><div class="grid">${tiles}</div>`;
+  }).join('');
+
+  host.querySelectorAll('.tile').forEach(t => t.onclick = e => {
+    e.preventDefault();
+    openLightbox(+t.dataset.i);
+  });
+}
+
+/* ---------- lightbox ---------- */
+function openLightbox(i){
+  lbIndex = i;
+  paintLightbox();
+  $('#lightbox').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function paintLightbox(){
+  const p = photos[lbIndex];
+  if (!p) return;
+  $('#lbImg').src = thumbURL(p, 1600);
+  $('#lbTitle').textContent = p.name;
+  $('#lbMeta').textContent = [fmtDT(p.datetime), p.collectionName].filter(Boolean).join(' · ');
+}
+function stepLightbox(d){
+  if (!photos.length) return;
+  lbIndex = (lbIndex + d + photos.length) % photos.length;
+  paintLightbox();
+}
+function closeLightbox(){ $('#lightbox').hidden = true; $('#lbImg').src = ''; document.body.style.overflow = ''; }
+$('#lbClose').onclick = closeLightbox;
+$('#lbPrev').onclick  = () => stepLightbox(-1);
+$('#lbNext').onclick  = () => stepLightbox(1);
+$('#lbImg').onclick   = e => e.stopPropagation();
+$('#lightbox').onclick = e => { if (e.target.id === 'lightbox') closeLightbox(); };
+
+/* ---------- libraries (folders page) ---------- */
+async function loadLibraries(){
+  const r = await get('/api/libraries');
+  libraries = r.items || [];
+  renderLibraries();
+}
+
+function renderLibraries(){
+  const box = $('#libList');
+  const cards = libraries.map(l => `
+    <div class="lib ${l.available ? '' : 'off'}" data-id="${esc(l.id)}">
+      <div class="cover" data-cover="${esc(l.collectionId || '')}">
+        <div class="ph">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:28px;height:28px">
+            <path d="${l.available ? 'M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2z' : 'M15 7v4h4l-7 7-7-7h4V7h6z'}"/>
+          </svg>
+        </div>
+      </div>
+      <div class="body">
+        <div class="nm">${esc(l.name)}</div>
+        <div class="pth" title="${esc(l.path)}">${esc(l.path)}</div>
+        <div class="foot">
+          <span class="badge ${l.available ? 'ok' : 'no'}">${l.available ? 'Connected' : 'Not connected'}</span>
+          <span class="cnt">${l.count ? num(l.count) + ' photos' : (l.countedAt ? '0 photos' : 'Not counted yet')}</span>
+          <button class="iconbtn" data-remove title="Remove this folder">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  box.innerHTML = cards + `
+    <button class="lib add" id="libAdd">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      Add folder
+    </button>`;
+
+  box.querySelectorAll('.lib[data-id]').forEach(card => {
+    const lib = libraries.find(x => x.id === card.dataset.id);
+    if (!lib) return;
+    const avail = libraryAvailable(lib);
+    const browse = card.querySelector('.cover');
+    if (avail) browse.onclick = () => browseGallery(lib);
+    card.querySelector('[data-remove]').onclick = async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Remove “${lib.name}” from your folders?\n\nYour files are not touched.`)) return;
+      const r = await del('/api/libraries?id=' + encodeURIComponent(lib.id));
+      libraries = r.items || [];
+      renderLibraries();
+      renderPhotoChips();
+    };
+  });
+
+  // covers load lazily, one small request per folder
+  box.querySelectorAll('[data-cover]').forEach(async el => {
+    const id = el.dataset.cover;
+    if (!id) return;
+    try {
+      const r = await get('/api/photos?limit=1&collection=' + encodeURIComponent(id));
+      const p = (r.items || [])[0];
+      if (!p) return;
+      el.innerHTML = `<img loading="lazy" src="${thumbURL(p, 400, 400)}" alt="">`;
+    } catch(_) {}
+  });
+
+  $('#libAdd').onclick = () => openPicker(async path => {
+    const lib = await post('/api/libraries', { path });
+    await loadLibraries();
+    renderPhotoChips();
+    activity(`Added ${lib.name || path}`, false);
+  }, '');
+}
+
+function libraryAvailable(lib){
+  // the server reports availability; a folder is browsable when it is connected
+  return !!lib.available;
+}
+
+$('#libRefresh').onclick = async () => {
+  activity('Counting photos…');
+  await post('/api/libraries/scan', {});
+  let n = 0;
+  const t = setInterval(async () => {
+    await loadLibraries();
+    if (++n > 6) { clearInterval(t); activity('Counts updated', false); }
+  }, 1500);
+};
+
+/* ---------- browse gallery ---------- */
+async function galStatus(){
+  let s; try { s = await get('/api/photofield/status'); } catch(_) { return; }
+  $('#dot').classList.toggle('on', !!s.running);
+  $('#statusTxt').textContent = s.running ? 'gallery running' : 'gallery stopped';
+}
+async function browseGallery(lib){
+  activity('Starting gallery…');
+  const r = await post('/api/photofield/start');
+  if (r.error){ activity(r.error, false); return; }
+  activity('Gallery ready', false);
+  galStatus();
+  window.open('http://' + location.hostname + ':8080', '_blank');
+}
+$('#galOpen').onclick = () => browseGallery(null);
+
+/* ---------- import ---------- */
+const HINTS = {
+  action: {
+    skip: 'Files already on the drive are not copied again — no wasted space.',
+    copy: 'Everything is copied, even if an identical file is already there.',
+  },
+  check: {
+    content: 'Reads the whole file. Safest — catches renamed copies too.',
+    name:    'Compares name + size only. Instant, but a renamed copy will slip through.',
+  },
+};
+function wireSeg(id, initial, onChange, hintId, hintGroup){
+  const box = $('#' + id);
+  box.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === initial);
+    b.onclick = () => {
+      box.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      onChange(b.dataset.v);
+      $('#' + hintId).textContent = HINTS[hintGroup][b.dataset.v];
+    };
+  });
+}
+wireSeg('segAction', 'skip',    v => duplicateAction = v, 'actionHint', 'action');
+wireSeg('segCheck',  'content', v => duplicateCheck  = v, 'checkHint',  'check');
+
+async function runImport(dry){
+  if (!sel.source){ activity('Pick a source first', false); return; }
+  if (!sel.dest){ activity('Pick a destination first', false); return; }
+  $('#impGo').disabled = $('#impPreview').disabled = true;
+  activity('Starting import…');
+  try {
+    const r = await post('/api/import/run', {
+      sourceType: sel.sourceType,
+      source: sel.source,
+      destRoot: sel.dest,
+      dryRun: dry,
+      deleteAfterVerify: !dry && $('#wipe').checked,
+      dupCheck: duplicateCheck,
+      dupAction: duplicateAction,
+    });
+    renderImport(r, dry);
+  } catch (e) {
+    renderImport({ error: String(e) }, dry);
+  }
+  $('#impGo').disabled = $('#impPreview').disabled = false;
+  activity(dry ? 'Preview finished' : 'Import finished', false);
+}
+function renderImport(r, dry){
+  const card = $('#impCard'); card.classList.remove('hidden');
+  if (r.error){
+    $('#impStats').innerHTML = '';
+    $('#impMsg').className = 'msg err';
+    $('#impMsg').textContent = r.error;
+    return;
+  }
+  $('#impStats').innerHTML = [
+    [num(r.imported), dry ? 'would copy' : 'copied'],
+    [num(r.skipped),  'skipped (already have)'],
+    [num(r.deleted),  'cleared from phone'],
+    [size(r.bytes),   'total'],
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+  const errs = r.errors || [];
+  $('#impMsg').className = 'msg ' + (errs.length ? 'err' : 'good');
+  $('#impMsg').textContent = (dry ? 'Preview only — nothing was changed.\n' : '') +
+    (errs.length ? errs.join('\n') : (dry ? 'Ready to import.' : 'All files verified.'));
+}
+$('#impGo').onclick      = () => runImport(false);
+$('#impPreview').onclick = () => runImport(true);
+
+/* ---------- devices ---------- */
+async function loadDevices(){
+  let r; try { r = await get('/api/import/devices'); } catch(_) { return; }
+  const box = $('#deviceChips'); box.innerHTML = '';
+  (r.android || []).forEach(serial => {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    c.innerHTML = `<span>Android · ${esc(serial)}</span>`;
+    c.onclick = () => {
+      sel.source = serial + '|/sdcard/DCIM';
+      sel.sourceType = 'adb';
+      const pick = document.querySelector('.pick[data-field="source"]');
+      const v = pick.querySelector('.val');
+      v.textContent = 'Android phone — /sdcard/DCIM';
+      v.classList.remove('empty');
+    };
+    box.appendChild(c);
+  });
+}
+
+/* ---------- duplicates ---------- */
+function renderDupChips(){
+  const box = $('#dupChips'); box.innerHTML = '';
+  if (!dupDirs.length){
+    box.innerHTML = '<span class="hint" style="margin:0">No folders yet — add a drive below.</span>';
+    return;
+  }
+  dupDirs.forEach((d, i) => {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    c.innerHTML = `<span>${esc(d)}</span>`;
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.innerHTML = '✕';
+    x.onclick = () => { dupDirs.splice(i, 1); renderDupChips(); };
+    c.appendChild(x);
+    box.appendChild(c);
+  });
+}
+async function loadDriveQuick(){
+  let r; try { r = await get('/api/fs/roots'); } catch(_) { return; }
+  const box = $('#dupQuick'); box.innerHTML = '';
+  (r.roots || []).filter(x => /^[A-Z]:$/.test(x.name)).forEach(d => {
+    const c = document.createElement('span');
+    c.className = 'chip add';
+    c.textContent = '+ ' + d.name;
+    c.onclick = () => { if (!dupDirs.includes(d.path)) dupDirs.push(d.path); renderDupChips(); };
+    box.appendChild(c);
+  });
+  const add = document.createElement('span');
+  add.className = 'chip add';
+  add.textContent = '+ Browse…';
+  add.onclick = () => openPicker(p => {
+    if (!dupDirs.includes(p)) dupDirs.push(p);
+    renderDupChips();
+  }, '');
+  box.appendChild(add);
+}
+
+let lastScan = null;
+$('#dupScan').onclick = async () => {
+  if (!dupDirs.length){ activity('Add at least one folder', false); return; }
+  $('#dupScan').disabled = true;
+  $('#dupCard').classList.add('hidden');
+  activity('Scanning for duplicates…');
+  const r = await post('/api/dedupe/scan', { dirs: dupDirs, minSize: 1024 });
+  $('#dupScan').disabled = false;
+  if (r.error){ activity(r.error, false); return; }
+  lastScan = r;
+  $('#dupCard').classList.remove('hidden');
+  $('#dupStats').innerHTML = [
+    [num(r.groupCount), 'duplicate sets'],
+    [num(r.redundantCopies), 'extra copies'],
+    [r.reclaimableHuman || size(r.reclaimableBytes), 'reclaimable'],
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+  $('#dupMsg').className = 'msg';
+  $('#dupMsg').textContent = r.redundantCopies
+    ? 'Preview the move first, or go ahead — extra copies are moved, never deleted.'
+    : 'No duplicates found. You are clean.';
+  $('#dupActions').style.display = r.redundantCopies ? 'flex' : 'none';
+  activity('Scan finished', false);
+};
+
+async function quarantine(dry){
+  if (!sel.quarantine){
+    $('#dupResult').className = 'msg err';
+    $('#dupResult').textContent = 'Pick a quarantine folder first (a place to keep the extra copies).';
+    return;
+  }
+  if (!dry && !confirm('Move all extra copies into the quarantine folder?\n\nYour originals and the first copy of each file are left untouched.')) return;
+  $('#dupPreview').disabled = $('#dupMove').disabled = true;
+  activity(dry ? 'Checking what would move…' : 'Moving duplicates…');
+  const r = await post('/api/dedupe/quarantine', { dryRun: dry, quarantineDir: sel.quarantine });
+  $('#dupPreview').disabled = $('#dupMove').disabled = false;
+  $('#dupResult').className = 'msg ' + (r.errors && r.errors.length ? 'err' : 'good');
+  $('#dupResult').textContent = r.error ? r.error
+    : `${dry ? 'Would move' : 'Moved'} ${num(r.moved)} file(s), freeing ${r.freedHuman || size(r.freedBytes)}.\nQuarantine: ${r.quarantine}` +
+      ((r.errors && r.errors.length) ? '\n' + r.errors.join('\n') : '');
+  activity(dry ? 'Preview finished' : 'Done', false);
+}
+$('#dupPreview').onclick = () => quarantine(true);
+$('#dupMove').onclick    = () => quarantine(false);
+
+/* ---------- setup ---------- */
+const TOOLDESC = { adb:'Android import', idevice_id:'iPhone detection', ifuse:'iPhone import', ffmpeg:'video thumbnails', exiftool:'photo details' };
+async function loadTools(){
+  const r = await get('/api/tools');
+  $('#toolList').innerHTML = Object.entries(r.tools || {}).map(([k, ok]) =>
+    `<div class="tool"><div class="n"><div class="mono">${k}</div><div class="d">${TOOLDESC[k] || ''}</div></div>
+       <span class="badge ${ok ? 'ok' : 'no'}">${ok ? 'installed' : 'missing'}</span></div>`).join('');
+}
+
+/* ---------- boot ---------- */
+renderDupChips();
+loadRoots();
+loadDriveQuick();
+loadDevices();
+loadTools();
+galStatus();
+setInterval(galStatus, 8000);
+showTab((location.hash || '#photos').slice(1));
+</script>
+</body>
+</html>

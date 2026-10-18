@@ -1,0 +1,25 @@
+# ---- local data: never commit ----
+# Photofield's config + thumbnail/metadata caches (grows with the library)
+data/
+# saved folders, duplicate indexes, quarantine
+engine-data/
+
+# ---- built binaries ----
+engine/dist/
+engine/ocd
+engine/ocd.exe
+engine/ocd.exe~
+engine/ocd-*
+engine/ocd-test.exe
+
+# ---- vendored third-party engine (download separately, see README) ----
+photofield/
+photofield_*.zip
+
+# ---- OS / editor noise ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.swp

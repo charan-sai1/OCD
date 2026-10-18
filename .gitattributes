@@ -1,0 +1,9 @@
+# Keep one canonical line ending in the repository so the tree is identical
+# on Windows, Linux and macOS. Checkouts use LF everywhere; the Go toolchain,
+# PowerShell and the shell scripts all handle it fine.
+* text=auto eol=lf
+
+# Real binaries
+*.exe binary
+*.db binary
+*.zip binary
