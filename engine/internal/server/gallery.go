@@ -270,6 +270,7 @@ func (s *Server) indexStatus(w http.ResponseWriter, r *http.Request) {
 		"scanned":  s.index.ScannedAt().Unix(),
 		"building": building,
 		"done":     prog.Done,
+		"skipped":  prog.Skipped,
 		"message":  prog.Message,
 		"libraries": func() int {
 			n := 0
@@ -341,13 +342,13 @@ func (s *Server) startScan(reason string) bool {
 		}()
 
 		libs := s.libMedia()
-		s.emitJSON("index", 0, 0, reason)
+		s.emitIndex("index", 0, 0, 0, reason)
 
 		err := s.index.Build(libs, func(p media.Progress) {
 			s.scanMu.Lock()
 			s.scanProg = p
 			s.scanMu.Unlock()
-			s.emitJSON("index", p.Done, 0, p.Message)
+			s.emitIndex("index", p.Done, 0, p.Skipped, p.Message)
 		})
 		if err != nil {
 			s.emitJSON("index-error", 0, 0, err.Error())

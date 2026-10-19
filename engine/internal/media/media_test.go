@@ -283,6 +283,51 @@ func TestEmptyFileIsListedWithoutInventingAnything(t *testing.T) {
 	}
 }
 
+func TestUnderRootMakesAMatchablePrefix(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "drive")
+	nested := filepath.Join(root, "Others", "a b")
+	got, ok := underRoot(root, nested)
+	if !ok || got != "Others/a b/" {
+		t.Errorf("got %q (%v), want \"Others/a b/\"", got, ok)
+	}
+	// The root itself stands for everything beneath it.
+	if got, ok := underRoot(root, root); !ok || got != "" {
+		t.Errorf("root: got %q (%v), want an empty prefix", got, ok)
+	}
+}
+
+// A folder that cannot be read for a moment must not remove its photos from the
+// library; they are kept until a scan can read them again.
+func TestAnUnreadableFolderKeepsItsItems(t *testing.T) {
+	prev := map[string]Item{
+		"L:Pictures/a.jpg":          {Lib: "L", Rel: "Pictures/a.jpg"},
+		"L:Pictures/sub/b.jpg":      {Lib: "L", Rel: "Pictures/sub/b.jpg"},
+		"L:Pictures/sub/deep/c.jpg": {Lib: "L", Rel: "Pictures/sub/deep/c.jpg"},
+		"L:Other/d.jpg":             {Lib: "L", Rel: "Other/d.jpg"},
+		"M:Elsewhere/e.jpg":         {Lib: "M", Rel: "Elsewhere/e.jpg"},
+	}
+	kept := appendKeptUnder(nil, prev, "L", []string{"Pictures/sub/"})
+	got := map[string]bool{}
+	for _, it := range kept {
+		got[it.Key()] = true
+	}
+	want := []string{"L:Pictures/sub/b.jpg", "L:Pictures/sub/deep/c.jpg"}
+	for _, k := range want {
+		if !got[k] {
+			t.Errorf("%s should have been kept", k)
+		}
+	}
+	if len(kept) != len(want) {
+		t.Errorf("kept %d items, want %d: %v", len(kept), len(want), got)
+	}
+
+	// An empty prefix means the whole library could not be read.
+	all := appendKeptUnder(nil, prev, "L", []string{""})
+	if len(all) != 4 {
+		t.Errorf("a failed root should keep all four items of the library, kept %d", len(all))
+	}
+}
+
 /* ---------- capture dates from file names ---------- */
 
 func TestDateFromName(t *testing.T) {

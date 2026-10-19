@@ -121,6 +121,17 @@ func (s *Server) emitJSON(phase string, done, total int, message string) {
 	s.emit(string(b))
 }
 
+// emitIndex reports scan progress. It carries how many files could not be read,
+// so the interface can say so instead of quietly showing fewer photos than the
+// drive holds.
+func (s *Server) emitIndex(phase string, done, total, skipped int, message string) {
+	b, _ := json.Marshal(map[string]any{
+		"phase": phase, "done": done, "total": total,
+		"skipped": skipped, "message": message,
+	})
+	s.emit(string(b))
+}
+
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
 	if !ok {

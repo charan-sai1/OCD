@@ -240,6 +240,7 @@
   .lib.add:hover{background:var(--hover)}
   .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .badge.ok{background:var(--ok-soft);color:var(--ok)}
+  .badge.warn{background:var(--warn-soft);color:var(--warn)}
   .badge.no{background:var(--chip);color:var(--mut)}
   .iconbtn{
     background:transparent;border:0;color:var(--mut);width:34px;height:34px;border-radius:50%;
@@ -832,8 +833,12 @@ es.onmessage = e => {
   // it is handled here and kept out of the activity pill.
   if (d.phase === 'index'){
     galIndexing = true;
+    galSkipped = d.skipped || 0;
     galIndexMsg = d.done ? `${num(d.done)} files read · ${name || 'looking…'}`
                          : (d.message || 'Looking for photos and videos…');
+    if (galSkipped){
+      galIndexMsg = `${num(d.done || 0)} files read · ${num(galSkipped)} could not be read, they are kept in the list`;
+    }
     $('#dot').classList.add('on');
     $('#statusTxt').textContent = `indexing · ${num(d.done || 0)}`;
     if (photosTabOn()){
@@ -1052,6 +1057,7 @@ let galStats = null;
 let galYears = [];
 let galIndexing = false;
 let galIndexMsg = '';
+let galSkipped = 0;
 let galIndexedAt = 0;
 let galHaveNew = false;
 let galLastPeek = 0;
@@ -1127,7 +1133,9 @@ async function pollIndex(){
 }
 function applyIndexState(s){
   galIndexing = !!s.building;
+  galSkipped = s.skipped || 0;
   galIndexMsg = s.done ? `${num(s.done)} files read` : '';
+  if (galSkipped) galIndexMsg += ` · ${num(galSkipped)} could not be read`;
   galIndexedAt = s.indexed || 0;
   $('#dot').classList.toggle('on', galIndexedAt > 0 || galIndexing);
   $('#statusTxt').textContent = galIndexing
@@ -1949,6 +1957,14 @@ async function loadTools(){
 async function renderIndexInfo(){
   let s; try { s = await get('/api/index'); } catch(_) { return; }
   const when = s.scanned > 0 ? new Date(s.scanned * 1000).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }) : 'never';
+  const unreadable = s.skipped > 0 ? `
+    <div class="tool">
+      <div class="n">
+        <div class="mono">Folders that could not be read</div>
+        <div class="d">${num(s.skipped)} item${s.skipped === 1 ? '' : 's'} sat in a folder that would not open during the last read. They are still listed, so nothing has gone missing; reading the folders again usually settles it.</div>
+      </div>
+      <span class="badge warn">${num(s.skipped)} kept</span>
+    </div>` : '';
   $('#indexInfo').innerHTML = `
     <div class="tool">
       <div class="n">
@@ -1956,7 +1972,7 @@ async function renderIndexInfo(){
         <div class="d">${num(s.indexed)} items across ${num(s.libraries)} connected folder${s.libraries === 1 ? '' : 's'} · last read ${esc(when)}</div>
       </div>
       <button class="btn ghost small" id="setupReindex" title="Walk every saved folder and record new or changed files. Already-known files are skipped, so this is quick after the first run.">Read folders now</button>
-    </div>
+    </div>${unreadable}
     <div class="tool">
       <div class="n">
         <div class="mono">Previews</div>

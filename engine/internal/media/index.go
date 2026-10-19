@@ -61,11 +61,47 @@ func (it Item) Key() string { return it.Lib + ":" + it.Rel }
 // TakenAt is the capture time as a Time.
 func (it Item) TakenAt() time.Time { return time.Unix(it.ShotAt, 0) }
 
+// underRoot turns a path into a slash-separated prefix relative to the library
+// root, with a trailing slash, so everything beneath it can be matched with a
+// plain string prefix. An unreadable root yields "", which matches everything.
+func underRoot(root, p string) (string, bool) {
+	if p == root {
+		return "", true
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	return filepath.ToSlash(rel) + "/", true
+}
+
+// appendKeptUnder re-adds the previously indexed items that live under a folder
+// which could not be read this time. They cannot have been found by the walk,
+// so this adds no duplicates, and it means a dropped connection or a bad sector
+// shows as a stale entry rather than as photos that have gone missing.
+func appendKeptUnder(items []Item, prev map[string]Item, libID string, prefixes []string) []Item {
+	for _, it := range prev {
+		if it.Lib != libID {
+			continue
+		}
+		for _, pref := range prefixes {
+			if strings.HasPrefix(it.Rel, pref) {
+				items = append(items, it)
+				break
+			}
+		}
+	}
+	return items
+}
+
 // Progress reports how a scan is going.
 type Progress struct {
 	Phase   string
 	Done    int
 	Message string
+	// Skipped counts files that could not be read at all. A scan that quietly
+	// leaves files out is the one failure a library index must never hide.
+	Skipped int
 }
 
 // Bucket counts items in one month of one year.
@@ -382,7 +418,7 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 	}
 
 	var items []Item
-	seen, sinceSave := 0, 0
+	seen, sinceSave, skipped := 0, 0, 0
 	checkpoint := func() {
 		all := make([]Item, 0, len(items)+len(carried))
 		all = append(all, items...)
@@ -405,9 +441,24 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 			continue
 		}
 		root := lib.Path
+		var unreadable []string
 		err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 			if err != nil {
-				return nil // unreadable folder: skip, never abort the whole scan
+				// An unreadable folder or file is skipped so that one bad spot
+				// cannot abort a whole drive, but it is counted, reported, and
+				// remembered: whatever lives underneath keeps its previous
+				// entry, so a momentary read error never empties part of the
+				// library. A scan that quietly leaves things out is the one
+				// failure an index must not hide.
+				skipped++
+				if pref, ok := underRoot(root, p); ok {
+					unreadable = append(unreadable, pref)
+				}
+				if progress != nil {
+					progress(Progress{Phase: "scan", Done: seen, Skipped: skipped,
+						Message: "cannot read " + filepath.Base(p)})
+				}
+				return nil
 			}
 			if d.IsDir() {
 				if p != root && skipDir(d.Name()) {
@@ -421,6 +472,7 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 			}
 			fi, err := d.Info()
 			if err != nil {
+				skipped++
 				return nil
 			}
 			rel, err := filepath.Rel(root, p)
@@ -463,7 +515,7 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 				items = append(items, it)
 			}
 			if seen%400 == 0 && progress != nil {
-				progress(Progress{Phase: "scan", Done: seen, Message: d.Name()})
+				progress(Progress{Phase: "scan", Done: seen, Message: d.Name(), Skipped: skipped})
 			}
 			if sinceSave >= 4000 {
 				checkpoint()
@@ -473,6 +525,14 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 		if err != nil {
 			return err
 		}
+		if len(unreadable) > 0 {
+			items = appendKeptUnder(items, prev, lib.ID, unreadable)
+		}
+	}
+
+	if skipped > 0 && progress != nil {
+		progress(Progress{Phase: "scan", Done: seen, Skipped: skipped,
+			Message: fmt.Sprintf("%d files could not be read", skipped)})
 	}
 
 	ix.mu.Lock()
