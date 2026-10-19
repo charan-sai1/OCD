@@ -197,12 +197,20 @@ func (ix *Index) load() error {
 		}
 	}
 	ix.items = items
-	ix.reindex()
-	ix.sortItems()
+	ix.ready()
 	if fi, err := os.Stat(ix.indexPath()); err == nil {
 		ix.scanned = fi.ModTime()
 	}
 	return sc.Err()
+}
+
+// ready puts the items into display order and rebuilds the key lookup. The two
+// steps belong together and in this order: reindex records where each key sits
+// in the slice, so sorting afterwards would leave every lookup pointing at the
+// wrong file. Callers hold the write lock.
+func (ix *Index) ready() {
+	ix.sortItems()
+	ix.reindex()
 }
 
 // sortItems orders the library newest first, with the file name breaking ties
@@ -470,8 +478,7 @@ func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 	ix.mu.Lock()
 	ix.items = append(items, carried...)
 	ix.scanned = time.Now()
-	ix.reindex()
-	ix.sortItems()
+	ix.ready()
 	ix.mu.Unlock()
 	return ix.Save()
 }

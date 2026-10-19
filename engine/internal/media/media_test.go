@@ -795,6 +795,42 @@ func TestIndexBuildOrderPageAndFilters(t *testing.T) {
 	}
 }
 
+// Asking for one file by key must hand back that same file. The index is stored
+// in display order, which is never the order the drives were walked in, so the
+// key lookup and the order have to be rebuilt together — otherwise the grid
+// shows one picture and the viewer opens a different one.
+func TestLookupByKeyReturnsTheItemThatWasStored(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(root, "drive")
+	base := time.Date(2024, 5, 1, 9, 0, 0, 0, time.Local)
+	// Walked a, b, c; shown newest first as c, b, a.
+	newTestImage(t, filepath.Join(lib, "a.png"), 10, 10, base)
+	newTestImage(t, filepath.Join(lib, "b.png"), 20, 20, base.Add(time.Hour))
+	newTestImage(t, filepath.Join(lib, "c.png"), 30, 30, base.Add(2*time.Hour))
+
+	data := filepath.Join(root, "data")
+	ix := New(data)
+	if err := ix.Build([]Library{{ID: "lib1", Path: lib}}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(ix *Index, when string) {
+		t.Helper()
+		for _, name := range []string{"a.png", "b.png", "c.png"} {
+			it, ok := ix.Get("lib1:" + name)
+			if !ok {
+				t.Fatalf("%s: %s is missing from the index", when, name)
+			}
+			if it.Rel != name {
+				t.Errorf("%s: looking up %s returned %s", when, name, it.Rel)
+			}
+		}
+	}
+	check(ix, "after a scan")
+	// The same has to hold once the index is read back from disk.
+	check(New(data), "after a reload")
+}
+
 func TestIndexIsIncrementalAndPersistsFavourites(t *testing.T) {
 	root := t.TempDir()
 	lib := filepath.Join(root, "drive")
