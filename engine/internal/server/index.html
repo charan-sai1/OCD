@@ -52,6 +52,7 @@
   .brand .txt{font-size:19px;font-weight:500;letter-spacing:-.2px}
   nav{display:flex;flex-direction:column;gap:2px}
   nav button{
+    position:relative;
     display:flex;align-items:center;gap:16px;width:100%;
     padding:0 16px;height:44px;border:0;border-radius:999px;background:transparent;
     color:var(--mut);font-size:14px;font-weight:500;cursor:pointer;text-align:left;
@@ -247,6 +248,21 @@
   .badge.ok{background:var(--ok-soft);color:var(--ok)}
   .badge.warn{background:var(--warn-soft);color:var(--warn)}
   .badge.no{background:var(--chip);color:var(--mut)}
+
+  /* How many files are waiting in the phone's folder, shown on the Import tab
+     so a phone needs no page of its own to say "you have photos to collect". */
+  .navbadge{
+    position:absolute;top:4px;right:8px;min-width:17px;height:17px;padding:0 5px;
+    border-radius:999px;background:var(--blue);color:#fff;font-size:10.5px;font-weight:700;
+    display:grid;place-items:center;line-height:1;
+  }
+  .navbadge[hidden]{display:none}
+
+  /* Phone over Wi-Fi card */
+  .phhead{display:flex;gap:14px;align-items:flex-start}
+  .phhead .icon{width:26px;height:26px;flex:none;color:var(--blue);margin-top:2px}
+  .phhead .t{font-size:16px;font-weight:500;letter-spacing:-.1px}
+  .phhead .s{font-size:13px;color:var(--mut);margin-top:3px;max-width:76ch;line-height:1.45}
   .iconbtn{
     background:transparent;border:0;color:var(--mut);width:34px;height:34px;border-radius:50%;
     cursor:pointer;display:grid;place-items:center;flex:none;
@@ -508,6 +524,7 @@
     <button data-tab="import" title="Copy new photos off a phone, with verification">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
       Import
+      <span class="navbadge" id="phoneBadge" hidden>0</span>
     </button>
     <button data-tab="dupes" title="Find identical files and get the space back">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
@@ -576,6 +593,60 @@
     <!-- ============ IMPORT ============ -->
     <section id="import">
       <p class="pagehead">Copies new photos onto a drive, verifies every byte, then optionally clears the phone.</p>
+
+      <!-- Phone over Wi-Fi: nothing is plugged in, the phone just needs to get
+           its files into one folder on this PC, and this is where they are
+           collected from and watched for. -->
+      <div class="card" id="phoneCard" style="margin-top:0">
+        <div class="phhead">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
+          <div>
+            <div class="t">Phone over Wi-Fi</div>
+            <div class="s">Quick Share, Phone Link and a cable copy all end up doing the same thing — writing files into a folder on this PC. Point OCD at that folder once and the phone never needs plugging in again.</div>
+          </div>
+        </div>
+
+        <label class="fl">THE FOLDER YOUR PHONE SENDS TO<span class="tip" tabindex="0" data-tip="Where Quick Share, Phone Link or your phone's sync app puts the photos. Point OCD at that folder once — it is remembered from then on.">?</span></label>
+        <div class="pickline">
+          <button class="pick" data-field="inbox" title="Choose the folder your phone's photos arrive in">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm0 12H4V8h16v10z"/></svg>
+            <span class="val empty">Choose the folder your phone sends to…</span>
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+          </button>
+          <button class="pickclr off" data-clear="inbox" type="button" title="Stop watching this folder">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+
+        <label class="fl">THE DRIVE THEY BELONG ON<span class="tip" tabindex="0" data-tip="Where the verified copies are saved. Photos are sorted into year/month subfolders inside it. Pick one of your saved folders below, or choose any folder.">?</span></label>
+        <div class="pickline">
+          <button class="pick" data-field="phoneDest" title="Choose the drive these photos belong on">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h2v2H6z"/></svg>
+            <span class="val empty">Choose where they should be saved…</span>
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+          </button>
+          <button class="pickclr off" data-clear="phoneDest" type="button" title="Clear the drive">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="filters" id="phoneDests"></div>
+
+        <label class="check" style="margin-top:18px" title="Look in the folder every few seconds and show how many photos are waiting, without you pressing anything.">
+          <input type="checkbox" id="phoneWatch" />
+          <span>
+            <span class="t">Keep an eye on the folder<span class="tip" tabindex="0" data-tip="Checks the folder every few seconds and shows how many files are waiting. It only ever reads — nothing is copied or removed until you press one of the buttons below.">?</span></span>
+            <span class="s" id="phoneWait">Choose the folder your phone sends to.</span>
+          </span>
+        </label>
+
+        <div class="row">
+          <button class="btn primary" id="phoneGo" title="Copies everything waiting onto the drive and checks every byte that lands. Nothing is removed from the folder.">Put them on the drive</button>
+          <button class="btn ghost" id="phoneClear" title="Copies everything waiting, checks every byte, and only then removes the copy from the folder. If anything fails to verify, it stays where it is.">Put them on the drive, then clear the folder</button>
+        </div>
+        <div class="msg" id="phoneMsg"></div>
+      </div>
+
+      <p class="pagehead" style="margin-top:28px">Or copy straight from a phone plugged in by cable, or from any folder on this PC.</p>
 
       <label class="fl">FROM<span class="tip" tabindex="0" data-tip="Where the photos come from — a phone connected by USB, or any folder on this PC.">?</span></label>
       <div class="pickline">
@@ -780,6 +851,7 @@ function showTab(name){
     else paintGalState();
   }
   if (name === 'library') loadLibraries();
+  if (name === 'import') loadPhone();
   window.scrollTo(0, 0);
 }
 $$('#mainNav button').forEach(b => b.onclick = () => {
@@ -789,7 +861,7 @@ $$('#mainNav button').forEach(b => b.onclick = () => {
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 
 /* ---------- state ---------- */
-const sel = { source:'', sourceType:'folder', dest:'', quarantine:'' };
+const sel = { source:'', sourceType:'folder', dest:'', quarantine:'', inbox:'', phoneDest:'' };
 let dupDirs = [];
 let duplicateAction = 'skip';
 let duplicateCheck  = 'content';
@@ -866,6 +938,18 @@ es.onmessage = e => {
       else loadPhotos(true);
     }
     activity(`Library ready · ${num(d.done || 0)} items`, false);
+    return;
+  }
+  // The phone's folder has its own line on the Import page too, so it does not
+  // become a toast either.
+  if (d.phase === 'inbox'){
+    setPhoneBadge(d.ready ? (d.done || 0) : 0);
+    if (sel.inbox){
+      $('#phoneWait').textContent = phoneWaitingText({
+        inbox: sel.inbox, ready: d.ready, count: d.done || 0,
+        countHuman: d.human, newest: d.newest, note: d.message,
+      });
+    }
     return;
   }
   if (d.phase === 'index-error'){
@@ -1033,6 +1117,7 @@ $$('.pick').forEach(btn => {
     delete pickLabel[field];
     if (field === 'source'){ sel.sourceType = 'folder'; $('#deviceChips').innerHTML = ''; }
     syncPick();
+    if (field === 'inbox' || field === 'phoneDest') savePhone();
   }, sel[field]);
 });
 $$('.pickclr').forEach(btn => {
@@ -1043,6 +1128,7 @@ $$('.pickclr').forEach(btn => {
     delete pickLabel[field];
     if (field === 'source'){ sel.sourceType = 'folder'; $('#deviceChips').innerHTML = ''; }
     syncPick();
+    if (field === 'inbox' || field === 'phoneDest') savePhone();
   };
 });
 
@@ -1811,6 +1897,132 @@ function renderImport(r, dry){
 $('#impGo').onclick      = () => runImport(false);
 $('#impPreview').onclick = () => runImport(true);
 
+/* ---------- phone over Wi-Fi ---------- */
+// The arrival folder and the drive live on the server, not in this page, so a
+// phone on the same Wi-Fi sees the same setup the PC was given.
+
+const samePath = (a, b) => String(a || '').replace(/[\\/]+$/, '').toLowerCase()
+                        === String(b || '').replace(/[\\/]+$/, '').toLowerCase();
+
+async function loadPhone(){
+  let s; try { s = await get('/api/phone'); } catch(_) { return; }
+  renderPhone(s);
+}
+
+function renderPhone(s){
+  if (!s || s.error) return;
+  sel.inbox = s.inbox || '';
+  sel.phoneDest = s.dest || '';
+  delete pickLabel.inbox; delete pickLabel.phoneDest;
+  syncPick();
+
+  $('#phoneWatch').checked = !!s.watch;
+  $('#phoneWait').textContent = phoneWaitingText(s);
+  setPhoneBadge(s.ready ? s.count : 0);
+
+  const box = $('#phoneDests');
+  box.innerHTML = '';
+  (s.destChoices || []).forEach(c => {
+    const chip = document.createElement('span');
+    chip.className = 'chip' + (samePath(c.path, sel.phoneDest) ? ' sel' : '');
+    chip.innerHTML = `<span>${esc(c.name)}</span>`;
+    chip.title = c.available
+      ? `Save phone photos on ${c.path}`
+      : `${c.path} is not connected right now`;
+    chip.onclick = () => {
+      sel.phoneDest = c.path;
+      pickLabel.phoneDest = c.name;
+      syncPick();
+      savePhone();
+    };
+    box.appendChild(chip);
+  });
+}
+
+function phoneWaitingText(s){
+  if (!s.inbox) return 'Choose the folder your phone sends to.';
+  if (!s.ready) return s.note || 'That folder is not reachable right now.';
+  if (!s.count) return 'Nothing waiting right now. Files appear here as soon as your phone sends them.';
+  return `${num(s.count)} file${s.count === 1 ? '' : 's'} waiting · ${s.countHuman}` +
+         (s.newest ? ` · newest is ${s.newest}` : '');
+}
+
+function setPhoneBadge(n){
+  const b = $('#phoneBadge');
+  const count = n || 0;
+  b.hidden = !count;
+  b.textContent = count > 99 ? '99+' : num(count);
+}
+
+async function savePhone(){
+  let s;
+  try {
+    s = await post('/api/phone', {
+      inbox: sel.inbox || '',
+      dest: sel.phoneDest || '',
+      watch: $('#phoneWatch').checked,
+    });
+  } catch (e) {
+    phoneNote(String(e), 'err');
+    return;
+  }
+  if (s.error){ phoneNote(s.error, 'err'); return; }
+  renderPhone(s);
+  phoneNote('Saved.');
+}
+
+function phoneNote(text, cls){
+  const m = $('#phoneMsg');
+  m.className = 'msg' + (cls ? ' ' + cls : '');
+  m.textContent = text;
+}
+
+// One description for a run, whether it just happened or is the remembered one.
+function describePhoneRun(r){
+  const when = r.at ? new Date(r.at * 1000).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }) + ' — ' : '';
+  const parts = [`${num(r.imported)} ${r.dryRun ? 'would be' : ''} copied`.replace('  ', ' ')];
+  if (r.skipped) parts.push(`${num(r.skipped)} already on the drive`);
+  if (r.cleared) parts.push(r.dryRun ? `${num(r.imported + r.skipped)} would leave the folder`
+                                     : `${num(r.removed)} left the folder`);
+  let text = when + parts.join(', ') + '.';
+  if (r.errors && r.errors.length){
+    return { text: text + '\n' + r.errors.join('\n'), cls: 'err' };
+  }
+  if (r.dryRun) return { text: text + ' Nothing was written or removed.', cls: '' };
+  if (r.cleared && r.imported + r.skipped > 0){
+    return { text: text + ' Everything that left the folder is verified on the drive, so the phone is safe to clear.', cls: 'good' };
+  }
+  if (!r.imported && !r.skipped){
+    return { text: text + ' There was nothing new to move.', cls: '' };
+  }
+  return { text: text + ' The originals are still in the folder — nothing was removed.', cls: 'good' };
+}
+
+async function runPhoneImport(clear){
+  if (!sel.inbox){ activity('Choose the folder your phone sends to first', false); return; }
+  if (!sel.phoneDest){ activity('Choose the drive these photos belong on first', false); return; }
+  const go = $('#phoneGo'), clr = $('#phoneClear');
+  go.disabled = clr.disabled = true;
+  activity(clear ? 'Copying, then clearing the folder…' : 'Copying from the phone folder…');
+  try {
+    const r = await post('/api/phone/import', { clear: clear, dryRun: false });
+    if (r.error){ phoneNote(r.error, 'err'); }
+    else {
+      renderPhone(r.state);
+      const d = describePhoneRun(r.result);
+      phoneNote(d.text, d.cls);
+    }
+  } catch (e) {
+    phoneNote(String(e), 'err');
+  }
+  go.disabled = clr.disabled = false;
+  activity('Phone import finished', false);
+}
+
+$('#phoneGo').onclick    = () => runPhoneImport(false);
+$('#phoneClear').onclick = () => runPhoneImport(true);
+$('#phoneWatch').onchange = savePhone;
+
 /* ---------- devices ---------- */
 async function loadDevices(){
   let r; try { r = await get('/api/import/devices'); } catch(_) { return; }
@@ -2075,6 +2287,7 @@ loadRoots();
 loadDriveQuick();
 loadDevices();
 loadTools();
+loadPhone();
 renderIndexInfo();
 pollIndex();
 setInterval(() => { if (!galIndexing) pollIndex(); }, 15000);

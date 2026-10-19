@@ -82,6 +82,7 @@ func serve(args []string) {
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("OCD Manager on http://localhost%s", addr)
 	s.StartBackgroundIndex()
+	s.StartPhoneWatch()
 	log.Fatal(http.ListenAndServe(addr, s.Handler()))
 }
 

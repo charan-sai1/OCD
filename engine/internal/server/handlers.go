@@ -233,20 +233,33 @@ func (s *Server) importDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) importRun(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		SourceType        string `json:"sourceType"`
-		Source            string `json:"source"`
-		DestRoot          string `json:"destRoot"`
-		DryRun            bool   `json:"dryRun"`
-		DeleteAfterVerify bool   `json:"deleteAfterVerify"`
-		DupCheck          string `json:"dupCheck"`  // "content" | "name"
-		DupAction         string `json:"dupAction"` // "skip" | "copy"
-	}
-	_ = decode(r, &req)
+// importRequest is one import run, however it was asked for: through the form
+// on the Import page, or through the phone inbox shortcut.
+type importRequest struct {
+	SourceType        string
+	Source            string
+	DestRoot          string
+	DryRun            bool
+	DeleteAfterVerify bool
+	DupCheck          string // "content" | "name"
+	DupAction         string // "skip" | "copy"
+	MediaExts         []string
+}
+
+type importOutcome struct {
+	Imported int
+	Skipped  int
+	Deleted  int
+	Bytes    int64
+	Errors   []string
+}
+
+// doImport copies, verifies and optionally clears, and is the single place all
+// of that happens, so the phone shortcut and the form cannot drift apart.
+func (s *Server) doImport(req importRequest) (importOutcome, error) {
+	var out importOutcome
 	if req.DestRoot == "" || req.Source == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "source and destRoot are required"})
-		return
+		return out, fmt.Errorf("source and destRoot are required")
 	}
 	if req.DupCheck == "" {
 		req.DupCheck = "content"
@@ -282,8 +295,7 @@ func (s *Server) importRun(w http.ResponseWriter, r *http.Request) {
 			idx, err = importer.LoadOrBuildIndex(idxPath, []string{req.DestRoot}, build)
 		}
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-			return
+			return out, err
 		}
 	}
 
@@ -293,25 +305,69 @@ func (s *Server) importRun(w http.ResponseWriter, r *http.Request) {
 		DeleteAfterVerify: req.DeleteAfterVerify,
 		DupCheck:          req.DupCheck,
 		DupAction:         req.DupAction,
+		MediaExts:         req.MediaExts,
 		Index:             idx,
 		Progress: func(p importer.Progress) {
 			s.emitJSON(p.Phase, p.Done, p.Total, p.Message)
 		},
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
+		return out, err
 	}
 	if !req.DryRun && idx != nil {
 		_ = idx.Save()
 	}
+	return importOutcome{
+		Imported: len(res.Imported),
+		Skipped:  len(res.Skipped),
+		Deleted:  len(res.Deleted),
+		Bytes:    res.Bytes,
+		Errors:   res.Errors,
+	}, nil
+}
+
+func (s *Server) importRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SourceType        string `json:"sourceType"`
+		Source            string `json:"source"`
+		DestRoot          string `json:"destRoot"`
+		DryRun            bool   `json:"dryRun"`
+		DeleteAfterVerify bool   `json:"deleteAfterVerify"`
+		DupCheck          string `json:"dupCheck"`  // "content" | "name"
+		DupAction         string `json:"dupAction"` // "skip" | "copy"
+	}
+	_ = decode(r, &req)
+	if req.DestRoot == "" || req.Source == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "source and destRoot are required"})
+		return
+	}
+	if req.DupCheck == "" {
+		req.DupCheck = "content"
+	}
+	if req.DupAction == "" {
+		req.DupAction = "skip"
+	}
+
+	out, err := s.doImport(importRequest{
+		SourceType:        req.SourceType,
+		Source:            req.Source,
+		DestRoot:          req.DestRoot,
+		DryRun:            req.DryRun,
+		DeleteAfterVerify: req.DeleteAfterVerify,
+		DupCheck:          req.DupCheck,
+		DupAction:         req.DupAction,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"imported":  len(res.Imported),
-		"skipped":   len(res.Skipped),
-		"deleted":   len(res.Deleted),
-		"bytes":     res.Bytes,
-		"human":     human(res.Bytes),
-		"errors":    res.Errors,
+		"imported":  out.Imported,
+		"skipped":   out.Skipped,
+		"deleted":   out.Deleted,
+		"bytes":     out.Bytes,
+		"human":     human(out.Bytes),
+		"errors":    out.Errors,
 		"dupCheck":  req.DupCheck,
 		"dupAction": req.DupAction,
 	})

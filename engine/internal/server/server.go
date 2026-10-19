@@ -28,6 +28,7 @@ type Server struct {
 	clients map[chan string]struct{}
 
 	libs       *libraryStore
+	phone      *phoneStore
 	lastDedupe []dedupe.Group
 	pfCmd      *exec.Cmd
 
@@ -57,6 +58,7 @@ func New(cfg Config) *Server {
 
 	s.index = media.New(cfg.DataDir)
 	s.thumbs = media.NewThumbs(filepath.Join(cfg.DataDir, "thumbs"), ffmpegPath)
+	s.phone = newPhoneStore(filepath.Join(cfg.DataDir, "phone.json"))
 	return s
 }
 
@@ -99,6 +101,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/dedupe/quarantine", s.dedupeQuarantine)
 	mux.HandleFunc("/api/import/devices", s.importDevices)
 	mux.HandleFunc("/api/import/run", s.importRun)
+	mux.HandleFunc("/api/phone", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s.phonePut(w, r)
+			return
+		}
+		s.phoneGet(w, r)
+	})
+	mux.HandleFunc("/api/phone/import", s.phoneImportRun)
 	mux.HandleFunc("/", s.static)
 	return mux
 }
