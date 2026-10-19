@@ -20,7 +20,7 @@ import (
 // makes the next scan re-read everything instead of reusing cached entries,
 // which is the only way a correction to date or dimension handling reaches
 // files that were already indexed.
-const indexVersion = 3
+const indexVersion = 4
 
 // Library is the minimum a scan needs to know about a saved folder.
 type Library struct {

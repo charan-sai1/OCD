@@ -171,6 +171,118 @@ func TestVideoWithoutAnIndexIsStillListed(t *testing.T) {
 	}
 }
 
+/* ---------- the bytes win over the file name ---------- */
+
+func TestImageWithTheWrongExtensionIsStillRead(t *testing.T) {
+	// Messaging apps save PNGs with a .jpg name, so the name cannot be trusted
+	// by anything that actually reads the picture.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "IMG-20260924-WA0002.jpg")
+	newTestImage(t, path, 1080, 1466, time.Now())
+
+	m, err := Probe(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Kind != KindImage {
+		t.Fatalf("kind: got %q", m.Kind)
+	}
+	if m.Width != 1080 || m.Height != 1466 {
+		t.Errorf("size: got %dx%d, want 1080x1466", m.Width, m.Height)
+	}
+}
+
+func TestSniffFormat(t *testing.T) {
+	cases := []struct {
+		name string
+		head []byte
+		want string
+	}{
+		{"jpeg", []byte{0xFF, 0xD8, 0xFF, 0xE0}, ".jpg"},
+		{"png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, ".png"},
+		{"gif 87a", []byte("GIF87a"), ".gif"},
+		{"gif 89a", []byte("GIF89a"), ".gif"},
+		{"bmp", []byte("BM"), ".bmp"},
+		{"webp", []byte("RIFF\x00\x00\x00\x00WEBPVP8 "), ".webp"},
+		{"tiff little endian", []byte("II*\x00"), ".tiff"},
+		{"tiff big endian", []byte("MM\x00*"), ".tiff"},
+		{"jpeg xl", []byte{0xFF, 0x0A}, ".jxl"},
+		{"not a picture", []byte("hello there"), ""},
+		{"too short to tell", []byte{0xFF}, ""},
+		{"empty", nil, ""},
+	}
+	for _, c := range cases {
+		if got := sniffFormat(c.head); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSniffFormatReadsTheIsoBrand(t *testing.T) {
+	iso := func(brand, compatible string) []byte {
+		return cat([]byte{0, 0, 0, 24}, []byte("ftyp"+brand), []byte(compatible))
+	}
+	if got := sniffFormat(iso("heic", "mif1heic")); got != ".heic" {
+		t.Errorf("heic: got %q", got)
+	}
+	if got := sniffFormat(iso("mif1", "mif1heic")); got != ".heif" {
+		t.Errorf("heif: got %q", got)
+	}
+	if got := sniffFormat(iso("avif", "avifmif1")); got != ".avif" {
+		t.Errorf("avif: got %q", got)
+	}
+	// A video brand must not be claimed as a picture.
+	if got := sniffFormat(iso("isom", "isomiso2")); got != "" {
+		t.Errorf("mp4: got %q, want nothing", got)
+	}
+}
+
+func TestHeicDimensionsAreFoundWhenTheMetadataIsAtTheEnd(t *testing.T) {
+	// Most writers put the image properties box near the front, but some leave
+	// it after the picture data, out of reach of a fixed read of the start.
+	ispe := box("ispe", cat([]byte{0, 0, 0, 0}, be32(4032), be32(3024)))
+	file := cat(
+		box("ftyp", []byte("heicmif1heic")),
+		box("mdat", make([]byte, 160<<10)),
+		box("meta", box("iprp", box("ipco", ispe))),
+	)
+	path := filepath.Join(t.TempDir(), "IMG_0001.heic")
+	if err := os.WriteFile(path, file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Probe(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Width != 4032 || m.Height != 3024 {
+		t.Errorf("size: got %dx%d, want 4032x3024", m.Width, m.Height)
+	}
+}
+
+func be32(v uint32) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, v)
+	return b
+}
+
+func TestEmptyFileIsListedWithoutInventingAnything(t *testing.T) {
+	// A transfer that died half way leaves a zero byte file behind. It should
+	// still be listed, and clearly have nothing known about it.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "IMG_20250218_161928.jpg")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Probe(path)
+	if err != nil {
+		t.Fatalf("an empty file should not be an error: %v", err)
+	}
+	if m.Width != 0 || m.Height != 0 || m.Duration != 0 {
+		t.Errorf("nothing should have been invented: %dx%d, %v", m.Width, m.Height, m.Duration)
+	}
+}
+
 /* ---------- capture dates from file names ---------- */
 
 func TestDateFromName(t *testing.T) {

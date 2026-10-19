@@ -38,13 +38,6 @@ var videoExts = map[string]bool{
 	".vob": true, ".ogv": true, ".divx": true, ".asf": true, ".rm": true,
 }
 
-// tiffExts are RAW/scan formats whose file starts with a TIFF header, so the
-// same EXIF parser can read them directly.
-var tiffExts = map[string]bool{
-	".tif": true, ".tiff": true, ".dng": true, ".cr2": true, ".nef": true,
-	".arw": true, ".rw2": true, ".orf": true, ".pef": true, ".srw": true,
-}
-
 // KindOf classifies a file purely by its extension.
 func KindOf(ext string) Kind {
 	ext = strings.ToLower(ext)
@@ -89,13 +82,21 @@ func Probe(path string) (Meta, error) {
 		return m, err
 	}
 	if m.Kind == KindImage {
-		probeImage(head, ext, &m)
+		probeImage(head, ext, path, &m)
 	}
 	return m, nil
 }
 
-func probeImage(b []byte, ext string, m *Meta) {
-	switch ext {
+func probeImage(b []byte, ext, path string, m *Meta) {
+	// Read the header rather than the name. Photos copied off a phone
+	// regularly arrive with the wrong extension - messaging apps save PNGs as
+	// .jpg - and the bytes are the only reliable answer.
+	format := sniffFormat(b)
+	if format == "" {
+		format = ext
+	}
+
+	switch format {
 	case ".jpg", ".jpeg", ".jpe", ".jfif":
 		if ex, ok := parseJPEGExif(b); ok {
 			m.Exif = ex
@@ -114,8 +115,16 @@ func probeImage(b []byte, ext string, m *Meta) {
 		m.Width, m.Height = webpSize(b)
 	case ".heic", ".heif", ".avif":
 		m.Width, m.Height = ispeSize(b)
+		if m.Width == 0 {
+			// Some writers leave the metadata box at the end, past a fixed
+			// read of the start of the file.
+			m.Width, m.Height = ispeFromFile(path)
+		}
 	}
-	if tiffExts[ext] {
+
+	// RAW formats are TIFF underneath whatever the camera calls them, so this
+	// runs on the sniffed format too.
+	if tiffFormat(format) {
 		if ex, ok := parseTIFF(b); ok {
 			m.Exif = ex
 			if ex.Width > 0 && ex.Height > 0 {
@@ -123,6 +132,62 @@ func probeImage(b []byte, ext string, m *Meta) {
 			}
 		}
 	}
+}
+
+// sniffFormat names an image from its leading bytes, or returns "" when nothing
+// recognisable is there. It only covers formats the library can display.
+func sniffFormat(b []byte) string {
+	switch {
+	case len(b) >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF:
+		return ".jpg"
+	case len(b) >= 8 && bytes.Equal(b[:8], pngMagic):
+		return ".png"
+	case len(b) >= 6 && (string(b[:6]) == "GIF87a" || string(b[:6]) == "GIF89a"):
+		return ".gif"
+	case len(b) >= 2 && b[0] == 'B' && b[1] == 'M':
+		return ".bmp"
+	case len(b) >= 12 && string(b[:4]) == "RIFF" && string(b[8:12]) == "WEBP":
+		return ".webp"
+	case len(b) >= 4 && tiffFormat(string(b[:4])):
+		return ".tiff"
+	case len(b) >= 12 && string(b[4:8]) == "ftyp":
+		return isoBrandImage(b)
+	case len(b) >= 2 && b[0] == 0xFF && b[1] == 0x0A:
+		return ".jxl"
+	}
+	return ""
+}
+
+var pngMagic = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
+
+// tiffFormat reports whether these leading bytes are a TIFF header. RAW files
+// from most camera makers start with one.
+func tiffFormat(head string) bool {
+	return head == "II*\x00" || head == "MM\x00*"
+}
+
+// isoBrandImage maps an ISO base media brand to an image extension. Anything
+// else with an ftyp box is a video, which this path is not for.
+func isoBrandImage(b []byte) string {
+	brand := string(b[8:min(12, len(b))])
+	switch brand {
+	case "heic", "heix", "heim", "heis", "hevc", "hevx":
+		return ".heic"
+	case "mif1", "msf1":
+		return ".heif"
+	case "avif", "avis":
+		return ".avif"
+	}
+	// Some writers put the real brand in the compatible list instead.
+	for i := 16; i+4 <= len(b) && i < 44; i += 4 {
+		switch string(b[i : i+4]) {
+		case "heic", "heix", "mif1":
+			return ".heic"
+		case "avif":
+			return ".avif"
+		}
+	}
+	return ""
 }
 
 // probeVideo describes a clip by walking its box headers. The movie header is
@@ -334,6 +399,33 @@ func ispeSize(b []byte) (int, int) {
 		}
 	}
 	return bw, bh
+}
+
+// ispeFromFile finds the image properties box by locating the metadata box
+// first, so its position in the file does not matter.
+func ispeFromFile(path string) (int, int) {
+	if path == "" {
+		return 0, 0
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, 0
+	}
+	off, length, ok := locateBox(f, 0, fi.Size(), "meta")
+	if !ok || length <= 0 {
+		return 0, 0
+	}
+	if length > 256<<10 {
+		length = 256 << 10
+	}
+	buf := make([]byte, length)
+	n, _ := f.ReadAt(buf, off)
+	return ispeSize(buf[:n])
 }
 
 /* ---------- ISO base media (MP4/MOV/3GP) ---------- */
