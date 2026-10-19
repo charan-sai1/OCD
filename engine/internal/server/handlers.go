@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,7 +17,15 @@ import (
 
 func decode(r *http.Request, v any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(v)
+	br := bufio.NewReader(r.Body)
+	// Windows tools write UTF-8 with a byte-order mark more often than not, and
+	// a JSON decoder refuses one outright with a message about the first
+	// character. Skip it rather than make the caller work out that the invisible
+	// thing at the front of their body is the problem.
+	if b, err := br.Peek(3); err == nil && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
+		_, _ = br.Discard(3)
+	}
+	return json.NewDecoder(br).Decode(v)
 }
 
 func (s *Server) tools(w http.ResponseWriter, r *http.Request) {

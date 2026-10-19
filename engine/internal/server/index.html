@@ -81,6 +81,11 @@
   .content{padding:6px 28px 90px;flex:1}
 
   section{display:none}
+  /* Opening a tab by its address — a shared link, a reload, the phone's home
+     screen — makes the browser scroll that section to the top of the window,
+     where the sticky top bar would sit on top of its heading. Keep that much
+     room above it instead. */
+  section{scroll-margin-top:calc(var(--topbar) + 10px)}
   section.on{display:block;animation:fade .16s ease}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
 
