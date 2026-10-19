@@ -263,6 +263,25 @@
   .phhead .icon{width:26px;height:26px;flex:none;color:var(--blue);margin-top:2px}
   .phhead .t{font-size:16px;font-weight:500;letter-spacing:-.1px}
   .phhead .s{font-size:13px;color:var(--mut);margin-top:3px;max-width:76ch;line-height:1.45}
+
+  /* Getting the phone to the app: the code to scan and the address to type, in
+     the same card as the folder settings, because they are used together. */
+  .netsplit{
+    display:flex;gap:22px;align-items:flex-start;margin-top:26px;padding-top:22px;
+    border-top:1px solid var(--line2);
+  }
+  .netqr{
+    width:150px;flex:none;background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:9px;box-sizing:border-box;
+  }
+  .netqr svg{width:100%;height:auto;display:block}
+  .netqr.off{display:none}
+  .netmeta{flex:1;min-width:0}
+  .neturl{
+    display:inline-block;font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    font-size:14px;background:var(--chip);border-radius:8px;padding:9px 12px;
+    word-break:break-all;user-select:all;
+  }
   .iconbtn{
     background:transparent;border:0;color:var(--mut);width:34px;height:34px;border-radius:50%;
     cursor:pointer;display:grid;place-items:center;flex:none;
@@ -486,6 +505,10 @@
     .lbnav{width:38px;height:38px;background:rgba(255,255,255,.08)}
     #lbPrev{left:8px} #lbNext{right:8px}
     #lbZoom{bottom:auto;top:8px;left:auto;right:10px;transform:none}
+    /* The code and the address go one above the other: side by side on a phone
+       leaves the explanation in a column too narrow to read. */
+    .netsplit{flex-direction:column;gap:16px}
+    .netqr{width:132px}
   }
   @media (max-width:560px){
     #picker{padding:0;align-items:flex-end}
@@ -495,7 +518,10 @@
            border-right:0;border-bottom:1px solid var(--line2);padding:8px}
     .roots button{width:auto;flex:none;white-space:nowrap;margin:0}
     .pickclr{width:44px}
-    .row .btn{min-width:0;flex:1}
+    /* Full-width buttons read as buttons. Side by side on a phone, each one is
+       narrow enough to wrap its own label onto three lines. */
+    .row{flex-direction:column;align-items:stretch}
+    .row .btn{min-width:0;width:100%;flex:none}
   }
 </style>
 </head>
@@ -644,6 +670,19 @@
           <button class="btn ghost" id="phoneClear" title="Copies everything waiting, checks every byte, and only then removes the copy from the folder. If anything fails to verify, it stays where it is.">Put them on the drive, then clear the folder</button>
         </div>
         <div class="msg" id="phoneMsg"></div>
+
+        <div class="netsplit">
+          <div class="netqr off" id="netQR"></div>
+          <div class="netmeta">
+            <label class="fl" style="margin-top:0">DRIVE IT FROM THE PHONE<span class="tip" tabindex="0" data-tip="The phone opens this very page. The folder and the drive are read from this PC, so pressing a button on the phone does exactly what pressing it here does.">?</span></label>
+            <div class="neturl"><span id="netAddr">Looking for this PC's address…</span></div>
+            <div class="filters" id="netAddrs"></div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn ghost" id="netCopy" title="Copy the address, for pasting into a message or into the phone's browser.">Copy the address</button>
+            </div>
+            <div class="s" id="netNote" style="margin-top:12px;max-width:none">Scan the code with the phone camera, or type the address into the phone's browser. Both devices have to be on the same Wi-Fi. If nothing loads, Windows is probably asking whether OCD Manager may use the network — allow it for private networks.</div>
+          </div>
+        </div>
       </div>
 
       <p class="pagehead" style="margin-top:28px">Or copy straight from a phone plugged in by cable, or from any folder on this PC.</p>
@@ -851,7 +890,7 @@ function showTab(name){
     else paintGalState();
   }
   if (name === 'library') loadLibraries();
-  if (name === 'import') loadPhone();
+  if (name === 'import') { loadPhone(); loadNet(); }
   window.scrollTo(0, 0);
 }
 $$('#mainNav button').forEach(b => b.onclick = () => {
@@ -1954,6 +1993,70 @@ function setPhoneBadge(n){
   b.textContent = count > 99 ? '99+' : num(count);
 }
 
+/* The address the phone should open. Nothing else about the phone flow needs
+   typing, so this is the one thing worth a code to scan. */
+const net = { urls: [], pick: 0 };
+
+async function loadNet(){
+  let n; try { n = await get('/api/net'); } catch(_) { return; }
+  net.urls = (n && n.urls) || [];
+  net.pick = 0;
+  renderNet();
+}
+
+function renderNet(){
+  const qr = $('#netQR'), addr = $('#netAddr'), chips = $('#netAddrs');
+  if (!net.urls.length){
+    qr.classList.add('off');
+    addr.textContent = 'No address found — connect this PC to the network and reload.';
+    chips.innerHTML = '';
+    return;
+  }
+  const one = net.urls[net.pick] || net.urls[0];
+  qr.classList.toggle('off', !one.qr);
+  qr.innerHTML = one.qr || '';
+  addr.textContent = one.url;
+
+  chips.innerHTML = '';
+  // One address is the usual case. Only offer a choice when there is one to make,
+  // which happens on a machine with both Wi-Fi and a cable plugged in.
+  if (net.urls.length < 2) return;
+  net.urls.forEach((u, i) => {
+    const c = document.createElement('span');
+    c.className = 'chip' + (i === net.pick ? ' sel' : '');
+    c.innerHTML = `<span>${esc(u.address)}</span>`;
+    c.title = `Use ${u.address}, the address of this PC on that network`;
+    c.onclick = () => { net.pick = i; renderNet(); };
+    chips.appendChild(c);
+  });
+}
+
+$('#netCopy').onclick = async () => {
+  const btn = $('#netCopy'), span = $('#netAddr'), url = span.textContent;
+  let done = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(url); done = true; } catch (_) {}
+  }
+  if (!done) done = selectAndCopy(span);
+  const was = btn.textContent;
+  btn.textContent = done ? 'Copied' : 'Press Ctrl+C to copy';
+  setTimeout(() => { btn.textContent = was; }, 1600);
+};
+
+// Over the local network the page is plain http, where the clipboard API does
+// not exist, so selecting the text and asking the browser to copy it is what
+// still works there. Leaving it selected is also what the message promises when
+// even that is refused.
+function selectAndCopy(el){
+  try {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const s = window.getSelection();
+    s.removeAllRanges(); s.addRange(r);
+    return document.execCommand('copy');
+  } catch(_) { return false; }
+}
+
 async function savePhone(){
   let s;
   try {
@@ -2288,6 +2391,7 @@ loadDriveQuick();
 loadDevices();
 loadTools();
 loadPhone();
+loadNet();
 renderIndexInfo();
 pollIndex();
 setInterval(() => { if (!galIndexing) pollIndex(); }, 15000);

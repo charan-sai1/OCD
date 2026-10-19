@@ -19,6 +19,7 @@ type Config struct {
 	PhotofieldExe  string // optional path to photofield binary
 	PhotofieldData string
 	AutoScan       bool // refresh the media index shortly after start
+	Port           int  // the port being served, for the address a phone should open
 }
 
 // Server is the HTTP app.
@@ -109,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 		s.phoneGet(w, r)
 	})
 	mux.HandleFunc("/api/phone/import", s.phoneImportRun)
+	mux.HandleFunc("/api/net", s.netInfo)
 	mux.HandleFunc("/", s.static)
 	return mux
 }
