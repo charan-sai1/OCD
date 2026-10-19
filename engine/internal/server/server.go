@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"ocd/internal/dedupe"
+	"ocd/internal/media"
 )
 
 // Config holds runtime paths.
@@ -17,6 +18,7 @@ type Config struct {
 	DataDir        string // where indexes/reports live
 	PhotofieldExe  string // optional path to photofield binary
 	PhotofieldData string
+	AutoScan       bool // refresh the media index shortly after start
 }
 
 // Server is the HTTP app.
@@ -28,6 +30,13 @@ type Server struct {
 	libs       *libraryStore
 	lastDedupe []dedupe.Group
 	pfCmd      *exec.Cmd
+
+	index  *media.Index
+	thumbs *media.Thumbs
+
+	scanMu   sync.Mutex
+	scanning bool
+	scanProg media.Progress
 }
 
 // New creates a server.
@@ -45,7 +54,19 @@ func New(cfg Config) *Server {
 		s.libs.seedFromPhotofield(filepath.Join(cfg.PhotofieldData, "configuration.yaml"))
 		_ = s.libs.save()
 	}
+
+	s.index = media.New(cfg.DataDir)
+	s.thumbs = media.NewThumbs(filepath.Join(cfg.DataDir, "thumbs"), ffmpegPath)
 	return s
+}
+
+// ffmpegPath is looked up fresh each time so installing ffmpeg while the app is
+// running starts producing video thumbnails without a restart.
+func ffmpegPath() string {
+	if p, err := exec.LookPath("ffmpeg"); err == nil {
+		return p
+	}
+	return ""
 }
 
 // Handler returns the root mux.
@@ -57,8 +78,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/fs/list", s.fsList)
 	mux.HandleFunc("/api/libraries", s.libsRouter)
 	mux.HandleFunc("/api/libraries/scan", s.libsScan)
-	mux.HandleFunc("/api/photos", s.photos)
-	mux.HandleFunc("/api/thumb/", s.thumb)
+	mux.HandleFunc("/api/photos", s.gallery)
+	mux.HandleFunc("/api/item", s.itemInfo)
+	mux.HandleFunc("/api/fav", s.favToggle)
+	mux.HandleFunc("/api/orig", s.orig)
+	mux.HandleFunc("/api/t", s.thumb)
+	mux.HandleFunc("/api/reveal", s.reveal)
+	mux.HandleFunc("/api/index", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s.indexRebuild(w, r)
+			return
+		}
+		s.indexStatus(w, r)
+	})
 	mux.HandleFunc("/api/photofield/status", s.pfStatus)
 	mux.HandleFunc("/api/photofield/start", s.pfStart)
 	mux.HandleFunc("/api/photofield/stop", s.pfStop)
@@ -121,6 +153,21 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers ----
+
+// photofieldBase is where the optional gallery engine listens. OCD Manager now
+// indexes and serves previews itself, so the engine is only used when someone
+// opens its own interface.
+const photofieldBase = "http://localhost:8080"
+
+func str(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func num(v any) float64 {
+	f, _ := v.(float64)
+	return f
+}
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

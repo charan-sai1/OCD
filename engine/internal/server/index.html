@@ -246,6 +246,11 @@
   }
   .iconbtn:hover{background:var(--hover);color:var(--fg)}
   .iconbtn:disabled{opacity:.35;cursor:default}
+  .linkbtn{
+    border:0;background:transparent;color:var(--blue);font-size:12.5px;font-weight:600;
+    padding:5px 8px;border-radius:8px;cursor:pointer;flex:none;
+  }
+  .linkbtn:hover{background:var(--hover)}
 
   /* ---------- tools ---------- */
   .tools{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
@@ -307,27 +312,134 @@
   .foot .h{flex:1;font-size:13px;color:var(--mut)}
   .list .empty{padding:28px 14px;text-align:center;color:var(--mut);font-size:13.5px}
 
-  /* ---------- lightbox ---------- */
-  #lightbox{position:fixed;inset:0;background:rgba(32,33,36,.97);z-index:100;display:flex;align-items:center;justify-content:center}
-  #lightbox[hidden]{display:none}
-  #lbImg{max-width:92vw;max-height:76vh;object-fit:contain;border-radius:4px}
-  .lbtop{
-    position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;
-    padding:16px 20px;color:#fff;
+  /* ---------- gallery toolbar ---------- */
+  .galbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px}
+  .search{
+    display:flex;align-items:center;gap:9px;background:var(--chip);border:1px solid transparent;
+    border-radius:999px;padding:9px 14px;flex:1;min-width:220px;max-width:520px;
+    transition:background .14s,border-color .14s,box-shadow .14s;
   }
-  .lbtop .m{font-size:12.5px;opacity:.7}
+  .search:focus-within{background:var(--surface);border-color:var(--blue);box-shadow:var(--shadow-sm)}
+  .search input{border:0;background:transparent;outline:none;flex:1;color:var(--fg);font-size:14px;min-width:0}
+  .search .icon{color:var(--mut)}
+  .search .clr{
+    border:0;background:transparent;color:var(--mut);cursor:pointer;padding:3px;
+    display:none;border-radius:50%;place-items:center;
+  }
+  .search.has .clr{display:grid}
+  .search .clr:hover{background:var(--hover);color:var(--fg)}
+  .seg.mini button{padding:8px 14px;font-size:13px}
+  .seg.mini .icon{width:17px;height:17px}
+
+  /* ---------- timeline ---------- */
+  .tl{display:flex;gap:7px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none;margin:0}
+  .tl::-webkit-scrollbar{display:none}
+  .tl button{
+    flex:none;display:inline-flex;align-items:baseline;gap:7px;border:1px solid transparent;
+    background:var(--chip);color:var(--fg);border-radius:8px;padding:7px 13px;
+    font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .13s;
+  }
+  .tl button:hover{filter:brightness(.96)}
+  .tl button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
+  .tl button .n{font-size:11.5px;opacity:.62;font-weight:400}
+  .tl.mo button{background:transparent;border-color:var(--line);padding:6px 12px;font-size:12.5px}
+  .tl.mo button.on{background:var(--blue-soft);border-color:transparent;color:var(--blue-text)}
+
+  /* ---------- tile extras ---------- */
+  .tile .dur{
+    position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.68);color:#fff;
+    font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:4px;letter-spacing:.2px;
+  }
+  .tile .play{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+  .tile .play svg{width:46px;height:46px;color:rgba(255,255,255,.94);filter:drop-shadow(0 1px 6px rgba(0,0,0,.55))}
+  .tile .ph{
+    position:absolute;inset:0;display:flex;flex-direction:column;gap:7px;align-items:center;
+    justify-content:center;color:var(--mut);background:var(--tile);padding:10px;
+    font-size:11px;text-align:center;line-height:1.35;word-break:break-word;
+  }
+  .tile .ph .icon{width:26px;height:26px;opacity:.55}
+  .tile .fav{
+    position:absolute;right:7px;top:7px;width:32px;height:32px;border:0;border-radius:50%;
+    background:rgba(32,33,36,.52);color:#fff;cursor:pointer;display:grid;place-items:center;
+    opacity:0;transition:opacity .13s,background .13s;
+  }
+  .tile:hover .fav,.tile .fav.on{opacity:1}
+  .tile .fav:hover{background:rgba(32,33,36,.78)}
+  .tile .fav.on{color:#f28b82}
+  .tile.fav-marked::before{
+    content:"";position:absolute;left:0;top:0;width:0;height:0;
+    border-left:22px solid rgba(242,139,130,.9);border-bottom:22px solid transparent;
+  }
+  .gridmsg.hint2{font-size:13px}
+
+  /* ---------- skeleton tiles ---------- */
+  .skel{
+    height:var(--h);border-radius:6px;flex:1 1 210px;
+    background:linear-gradient(90deg,var(--tile) 25%,var(--hover) 37%,var(--tile) 63%);
+    background-size:400% 100%;animation:sk 1.3s ease infinite;
+  }
+  @keyframes sk{0%{background-position:100% 0}100%{background-position:0 0}}
+
+  /* ---------- lightbox ---------- */
+  #lightbox{
+    position:fixed;inset:0;background:rgba(32,33,36,.98);z-index:100;
+    display:flex;flex-direction:column;
+  }
+  #lightbox[hidden]{display:none}
+  .lbtop{
+    flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px;color:#fff;z-index:2;
+  }
   .lbtop .n{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbtop .m{font-size:12px;opacity:.66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lbtop .id{min-width:0;flex:1}
+  .lbbtn{
+    flex:none;width:42px;height:42px;border:0;border-radius:50%;background:transparent;
+    color:#fff;cursor:pointer;display:grid;place-items:center;position:relative;
+  }
+  .lbbtn:hover{background:rgba(255,255,255,.14)}
+  .lbbtn:disabled{opacity:.3;cursor:default}
+  .lbbtn:disabled:hover{background:transparent}
+  .lbbtn.on{color:#f28b82}
+  .lbbtn .icon{width:22px;height:22px}
+  #lbStage{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none}
+  #lbMedia{
+    transform-origin:0 0;will-change:transform;display:flex;align-items:center;justify-content:center;
+    max-width:100%;max-height:100%;
+  }
+  #lbMedia img,#lbMedia video{max-width:94vw;max-height:100%;display:block;border-radius:3px;
+    box-shadow:0 8px 40px rgba(0,0,0,.5);user-select:none;-webkit-user-drag:none}
+  #lbMedia video{outline:none}
   .lbnav{
-    position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;
-    background:rgba(255,255,255,.12);border:0;color:#fff;cursor:pointer;display:grid;place-items:center;
+    position:absolute;top:50%;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;
+    background:rgba(255,255,255,.1);border:0;color:#fff;cursor:pointer;display:grid;place-items:center;z-index:2;
   }
   .lbnav:hover{background:rgba(255,255,255,.24)}
-  #lbPrev{left:20px} #lbNext{right:20px}
-  .lbclose{
-    position:absolute;top:12px;right:16px;width:44px;height:44px;border-radius:50%;border:0;
-    background:transparent;color:#fff;cursor:pointer;display:grid;place-items:center;
+  .lbnav:disabled{opacity:.22;cursor:default}
+  #lbPrev{left:16px} #lbNext{right:16px}
+  #lbPanel{
+    position:absolute;right:0;top:0;bottom:0;width:min(348px,88vw);background:#292a2d;color:#e8eaed;
+    border-left:1px solid rgba(255,255,255,.1);overflow:auto;padding:18px 20px 40px;z-index:3;
   }
-  .lbclose:hover{background:rgba(255,255,255,.12)}
+  #lbPanel[hidden]{display:none}
+  #lbPanel h4{margin:0 0 14px;font-size:14px;font-weight:600;letter-spacing:.2px}
+  #lbPanel .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;opacity:.6;margin:16px 0 4px}
+  #lbPanel .v{font-size:13.5px;word-break:break-word}
+  #lbPanel .v.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;opacity:.85}
+  #lbZoom{
+    position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:2;
+    display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.55);border-radius:999px;padding:4px 8px;
+  }
+  #lbZoom[hidden]{display:none}
+  #lbZoom button{
+    border:0;background:transparent;color:#fff;width:34px;height:34px;border-radius:50%;
+    cursor:pointer;font-size:19px;line-height:1;display:grid;place-items:center;
+  }
+  #lbZoom button:hover{background:rgba(255,255,255,.16)}
+  #lbPct{color:#fff;font-size:12px;min-width:52px;text-align:center;opacity:.85}
+  .lbswipehint{
+    position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.55);
+    font-size:12px;pointer-events:none;z-index:1;
+  }
 
   /* ---------- mobile ---------- */
   @media (max-width:900px){
@@ -342,6 +454,15 @@
     .content{padding:4px 12px 40px}
     .lbnav{width:42px;height:42px}
     #activity{bottom:84px}
+    .search{max-width:none;flex:1 1 100%}
+    .galbar{gap:8px}
+    #lbPanel{width:100%;top:auto;bottom:0;height:62vh;border-left:0;border-top:1px solid rgba(255,255,255,.1);border-radius:14px 14px 0 0}
+    .lbtop{gap:4px;padding:8px 10px}
+    .lbbtn{width:38px;height:38px}
+    #lbMedia img,#lbMedia video{max-width:100vw}
+    .lbnav{width:38px;height:38px;background:rgba(255,255,255,.08)}
+    #lbPrev{left:8px} #lbNext{right:8px}
+    #lbZoom{bottom:auto;top:8px;left:auto;right:10px;transform:none}
   }
   @media (max-width:560px){
     #picker{padding:0;align-items:flex-end}
@@ -398,9 +519,9 @@
   <header class="topbar">
     <h1 id="viewTitle">Photos</h1>
     <div class="grow"></div>
-    <button class="tb-btn" id="galOpen" title="Open the full-screen gallery">
-      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-      Open gallery
+    <button class="tb-btn" id="galRefresh" title="Look for new files in your folders and update the index.">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      Refresh
     </button>
   </header>
 
@@ -408,9 +529,32 @@
 
     <!-- ============ PHOTOS ============ -->
     <section id="photos" class="on">
-      <div class="filters" id="photoChips"></div>
+      <div class="galbar">
+        <label class="search" id="searchWrap">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+          <input type="search" id="galSearch" placeholder="Search names, folders, cameras, or a year" autocomplete="off" spellcheck="false"
+                 title="Type to filter. Names, folder names and camera models all match, and a year or month like “June 2021” jumps to that time.">
+          <button class="clr" id="galSearchClear" type="button" title="Clear the search">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </label>
+        <div class="seg mini" id="kindSeg">
+          <button data-v="" class="on" title="Show photos and videos together">All</button>
+          <button data-v="image" title="Show still photos only">Photos</button>
+          <button data-v="video" title="Show videos only">Videos</button>
+          <button data-v="fav" title="Show only the items you have starred">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            Favourites
+          </button>
+        </div>
+      </div>
+      <div class="filters" id="galChips" style="margin:0 0 6px"></div>
+      <div class="tl" id="yearRow" hidden></div>
+      <div class="tl mo" id="monthRow" hidden></div>
       <div id="galState"></div>
-      <div id="photoGrid"><div class="gridmsg">Loading photos…</div></div>
+      <div id="photoGrid"><div class="gridmsg">Reading your library…</div></div>
+      <div id="galSentinel" style="height:1px"></div>
+      <div id="galMore"></div>
     </section>
 
     <!-- ============ FOLDERS ============ -->
@@ -492,7 +636,7 @@
       <div class="filters" id="dupChips"></div>
       <div class="filters" id="dupQuick"></div>
 
-      <label class="fl">QUARANTINE FOLDER<span class="tip" tabindex="0" data-tip="Where the extra copies are moved. Their original folder layout is kept, so you can look through them and delete them yourself later. Nothing is ever erased for you.">?</span></label>
+      <label class="fl">QUARANTINE FOLDER<span class="tip" tabindex="0" data-tip="Where the extra copies are moved. Files go straight into this one folder keeping their original file names — no subfolders — so you can look through them and delete them yourself later. Nothing is ever erased for you.">?</span></label>
       <div class="pickline">
         <button class="pick" data-field="quarantine" title="Choose where extra copies are moved">
           <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/></svg>
@@ -520,6 +664,9 @@
     <!-- ============ SETUP ============ -->
     <section id="setup">
       <p class="pagehead">These helpers are optional, but they unlock phone import and better thumbnails.</p>
+
+      <div class="tools" id="indexInfo" style="margin-top:16px"></div>
+
       <div class="tools" id="toolList" style="margin-top:16px"></div>
       <div class="card">
         <div class="msg" style="margin-top:0">
@@ -539,21 +686,48 @@ Install on this PC with winget:<br><br>
 
 <div id="lightbox" hidden>
   <div class="lbtop">
-    <div style="min-width:0">
+    <div class="id">
       <div class="n" id="lbTitle"></div>
       <div class="m" id="lbMeta"></div>
     </div>
+    <button class="lbbtn" id="lbFav" title="Star this item (F)">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+    </button>
+    <button class="lbbtn" id="lbInfo" title="Show the details of this file (I)">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+    </button>
+    <button class="lbbtn" id="lbReveal" title="Show this file in its folder on this PC">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm0 12H4V8h16v10z"/></svg>
+    </button>
+    <a class="lbbtn" id="lbDown" download title="Save a copy of the original file">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+    </a>
+    <button class="lbbtn" id="lbClose" title="Close (Esc)">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
   </div>
-  <button class="lbclose" id="lbClose" title="Close">
-    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-  </button>
-  <button class="lbnav" id="lbPrev" title="Previous">
-    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-  </button>
-  <img id="lbImg" alt="" />
-  <button class="lbnav" id="lbNext" title="Next">
-    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
-  </button>
+
+  <div id="lbStage">
+    <div id="lbMedia"></div>
+    <button class="lbnav" id="lbPrev" title="Previous (←)">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+    </button>
+    <button class="lbnav" id="lbNext" title="Next (→)">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+    <div id="lbZoom" hidden>
+      <button id="lbOut" title="Zoom out (−)">−</button>
+      <span id="lbPct">100%</span>
+      <button id="lbIn" title="Zoom in (+)">+</button>
+      <button id="lbFit" title="Fit to the window (0)" style="font-size:13px">Fit</button>
+    </div>
+    <div class="lbswipehint" id="lbHint">Swipe or use ← → to move through your library · scroll to zoom</div>
+  </div>
+
+  <aside id="lbPanel" hidden>
+    <h4>Details</h4>
+    <div id="lbPanelBody"></div>
+  </aside>
 </div>
 
 <div id="picker" hidden>
@@ -591,7 +765,13 @@ function showTab(name){
   $$('#mainNav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
   $$('section').forEach(x => x.classList.toggle('on', x.id === name));
   $('#viewTitle').textContent = TITLES[name];
-  if (name === 'photos') refreshPhotos();
+  $('#galRefresh').style.display = name === 'photos' ? '' : 'none';
+  if (name === 'photos'){
+    // Load the grid the first time it is opened; after that the filters and the
+    // scroll position are still exactly where they were left.
+    if (!galItems.length) refreshPhotos();
+    else paintGalState();
+  }
   if (name === 'library') loadLibraries();
   window.scrollTo(0, 0);
 }
@@ -608,16 +788,22 @@ let duplicateAction = 'skip';
 let duplicateCheck  = 'content';
 let libraries = [];
 let homeDir = '';
-let photos = [];
-let photoFilter = 'all';
-let lbIndex = -1;
+let photoLib = 'all';
 
 const get  = async u => (await fetch(u)).json();
 const post = async (u,b) => (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();
 const del  = async u => (await fetch(u,{method:'DELETE'})).json();
 const esc  = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const num  = n => (n ?? 0).toLocaleString();
-const thumbURL = (p, w, h) => `/api/thumb/${encodeURIComponent(p.id)}/${encodeURIComponent(p.name)}?w=${w}` + (h ? `&h=${h}` : '');
+// Previews come from OCD's own cache, keyed by the item and its timestamp so a
+// replaced file can never show a stale picture.
+const thumbSrc = (it, w) => `/api/t?k=${encodeURIComponent(it.key)}&w=${w}&v=${it.v}`;
+const origSrc  = (it, dl) => `/api/orig?k=${encodeURIComponent(it.key)}` + (dl ? '&dl=1' : '');
+function hms(s){
+  s = Math.max(0, Math.round(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2,'0') : String(m)) + ':' + String(x).padStart(2,'0');
+}
 function size(b){
   b = b || 0; if (b < 1024) return b + ' B';
   const u = ['KB','MB','GB','TB']; let i = -1;
@@ -636,12 +822,48 @@ function activity(text, busy = true){
 }
 const es = new EventSource('/api/events');
 es.onmessage = e => {
-  try {
-    const d = JSON.parse(e.data);
-    const name = (d.message || '').split(/[\\/]/).pop();
-    const pct = d.total ? ` ${d.done}/${d.total}` : (d.done ? ` ${d.done}` : '');
-    if (d.phase && d.phase !== 'counted') activity(`${d.phase}${pct}${name ? ' · ' + name : ''}`, d.phase !== 'done');
-  } catch(_) {}
+  let d;
+  try { d = JSON.parse(e.data); } catch(_) { return; }
+  const name = (d.message || '').split(/[\\/]/).pop();
+  const pct = d.total ? ` ${d.done}/${d.total}` : (d.done ? ` ${d.done}` : '');
+
+  // Indexing has its own progress line in the gallery rather than a toast, so
+  // it is handled here and kept out of the activity pill.
+  if (d.phase === 'index'){
+    galIndexing = true;
+    galIndexMsg = d.done ? `${num(d.done)} files read · ${name || 'looking…'}`
+                         : (d.message || 'Looking for photos and videos…');
+    $('#dot').classList.add('on');
+    $('#statusTxt').textContent = `indexing · ${num(d.done || 0)}`;
+    if (photosTabOn()){
+      paintGalState();
+      // Show what has already been found, but only now and then so the grid
+      // is not rebuilt on every progress message.
+      if (!galItems.length && !galBusy && Date.now() - galLastPeek > 7000){
+        galLastPeek = Date.now();
+        loadPhotos(true, true);
+      }
+    }
+    return;
+  }
+  if (d.phase === 'indexed'){
+    galIndexing = false;
+    galIndexedAt = d.done || galIndexedAt;
+    pollIndex();
+    if (photosTabOn()){
+      if (galItems.length){ galHaveNew = true; paintGalState(); }
+      else loadPhotos(true);
+    }
+    activity(`Library ready · ${num(d.done || 0)} items`, false);
+    return;
+  }
+  if (d.phase === 'index-error'){
+    galIndexing = false;
+    if (photosTabOn()) paintGalState();
+    activity(d.message || 'Could not read the folders', false);
+    return;
+  }
+  if (d.phase && d.phase !== 'counted') activity(`${d.phase}${pct}${name ? ' · ' + name : ''}`, d.phase !== 'done');
 };
 
 /* ---------- tooltips ---------- */
@@ -755,13 +977,29 @@ $('#pkCancel').onclick = () => $('#picker').hidden = true;
 $('#pkUse').onclick    = () => pkChoose(pk.path);
 $('#picker').onclick   = e => { if (e.target.id === 'picker') $('#picker').hidden = true; };
 document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) || e.target.isContentEditable;
+
+  if (e.key === '/') {
+    if (!typing && photosTabOn()){ e.preventDefault(); $('#galSearch').focus(); return; }
+  }
   if (e.key === 'Escape'){
-    if (!$('#lightbox').hidden) { closeLightbox(); return; }
-    $('#picker').hidden = true;
+    if (!$('#lightbox').hidden){ closeLightbox(); return; }
+    if (!$('#picker').hidden){ $('#picker').hidden = true; return; }
+    if (typing) e.target.blur();
+    return;
   }
   if ($('#lightbox').hidden) return;
-  if (e.key === 'ArrowLeft')  stepLightbox(-1);
-  if (e.key === 'ArrowRight') stepLightbox(1);
+  if (typing) return;
+
+  switch (e.key){
+    case 'ArrowLeft':  stepLightbox(-1); break;
+    case 'ArrowRight': stepLightbox(1);  break;
+    case '+': case '=': $('#lbIn').click(); break;
+    case '-': case '_': $('#lbOut').click(); break;
+    case '0': fitView(); break;
+    case 'i': case 'I': $('#lbInfo').click(); break;
+    case 'f': case 'F': $('#lbFav').click(); break;
+  }
 });
 
 const pickLabel = {};   // friendly override for the text shown in a picker button
@@ -799,65 +1037,322 @@ $$('.pickclr').forEach(btn => {
 
 /* ---------- photos (main page) ---------- */
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT = MONTHS.map(m => m.slice(0, 3));
 
-function renderPhotoChips(){
-  const box = $('#photoChips');
-  const avail = libraries.filter(l => l.available && l.collectionId);
-  const items = [{ id:'all', name:'All photos' }].concat(avail.map(l => ({ id:l.collectionId, name:l.name })));
-  if (photoFilter !== 'all' && !items.some(x => x.id === photoFilter)) photoFilter = 'all';
-  box.innerHTML = items.map(x =>
-    `<button class="chip ${x.id === photoFilter ? 'sel' : ''}" data-c="${esc(x.id)}" title="${
-      x.id === 'all' ? 'Show photos from every folder' : 'Show only photos from ' + esc(x.name)
-    }"><span>${esc(x.name)}</span></button>`
-  ).join('');
-  box.querySelectorAll('.chip').forEach(c => c.onclick = () => {
-    photoFilter = c.dataset.c;
-    renderPhotoChips();
-    loadPhotos();
-    window.scrollTo(0, 0);
-  });
+// The gallery pulls one page at a time and appends what it gets, so opening a
+// folder with fifty thousand photos costs the same as opening one with fifty.
+const gal = { q:'', kind:'', fav:false, year:0, month:0, fromSearch:false };
+let galItems = [];
+let galCursor = null;
+let galMore = false;
+let galBusy = false;
+let galDayKey = null;
+let galStats = null;
+let galYears = [];
+let galIndexing = false;
+let galIndexMsg = '';
+let galIndexedAt = 0;
+let galHaveNew = false;
+let galLastPeek = 0;
+
+const photosTabOn = () => $('#photos').classList.contains('on');
+
+function galParams(){
+  const p = new URLSearchParams();
+  if (photoLib !== 'all') p.set('lib', photoLib);
+  if (gal.kind) p.set('kind', gal.kind);
+  if (gal.fav) p.set('fav', '1');
+  if (gal.q) p.set('q', gal.q);
+  if (gal.year) p.set('year', gal.year);
+  if (gal.month) p.set('month', gal.month);
+  return p;
+}
+
+function renderGalChips(){
+  const box = $('#galChips');
+  if (photoLib === 'all'){ box.innerHTML = ''; return; }
+  const lib = libraries.find(l => l.id === photoLib);
+  box.innerHTML = `<button class="chip sel" title="You are looking at one folder. Clear it to see everything again.">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:17px;height:17px"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+      <span>${esc(lib ? lib.name : photoLib)}</span><span class="x" role="button" title="Show every folder">×</span>
+    </button>`;
+  box.querySelector('.x').onclick = ev => {
+    ev.stopPropagation();
+    photoLib = 'all'; renderGalChips(); loadPhotos(true);
+  };
+}
+
+function paintGalState(){
+  const bits = [];
+  if (galIndexing){
+    bits.push(`<div class="notice">
+      <span class="spin" style="border-color:var(--line);border-top-color:var(--blue)"></span>
+      <div style="flex:1;min-width:170px">
+        <div class="t">Reading your folders</div>
+        <div class="s" id="galIndexMsg">${esc(galIndexMsg || 'Looking for photos and videos…')}</div>
+      </div></div>`);
+  } else if (galHaveNew){
+    bits.push(`<div class="notice">
+      <div style="flex:1;min-width:170px">
+        <div class="t">Your folders finished indexing</div>
+        <div class="s">New items may be waiting.</div>
+      </div>
+      <button class="btn primary small" id="galNew">Show them</button></div>`);
+  }
+  if (galStats && galStats.total){
+    const s = galStats;
+    bits.push(`<p class="pagehead" style="margin:0 0 10px">${num(s.total)} ${s.total === 1 ? 'item' : 'items'}` +
+      (s.videos ? ` · ${num(s.videos)} video${s.videos === 1 ? '' : 's'}` : '') +
+      (s.favorites ? ` · ${num(s.favorites)} starred` : '') +
+      ` · ${size(s.bytes)}</p>`);
+  }
+  $('#galState').innerHTML = bits.join('');
+  const nb = $('#galNew');
+  if (nb) nb.onclick = () => { galHaveNew = false; loadPhotos(true); };
 }
 
 async function refreshPhotos(){
   await loadLibraries();
-  renderPhotoChips();
-  await loadPhotos();
+  renderGalChips();
+  await loadPhotos(true);
+  if (!galIndexedAt) pollIndex();
 }
 
-async function loadPhotos(){
-  const host = $('#photoGrid');
-  host.innerHTML = '<div class="gridmsg">Loading photos…</div>';
-  let r;
-  try {
-    r = await get('/api/photos?limit=300' + (photoFilter === 'all' ? '' : '&collection=' + encodeURIComponent(photoFilter)));
-  } catch (e) {
-    host.innerHTML = '<div class="gridmsg">Could not reach the server.</div>';
-    return;
-  }
-  if (!r.running){
-    $('#galState').innerHTML = `
-      <div class="notice">
-        <div style="flex:1;min-width:200px">
-          <div class="t">The gallery engine is stopped</div>
-          <div class="s">Start it to browse photos from your folders.</div>
-        </div>
-        <button class="btn primary" id="galStart">Start gallery</button>
-      </div>`;
-    $('#galStart').onclick = async () => {
-      activity('Starting gallery…');
-      const res = await post('/api/photofield/start');
-      if (res.error){ activity(res.error, false); return; }
-      activity('Gallery ready', false);
-      galStatus();
-      setTimeout(loadPhotos, 1200);
-    };
-    host.innerHTML = '';
-    return;
-  }
-  $('#galState').innerHTML = '';
-  photos = r.items || [];
-  renderPhotos();
+// updateIndexState keeps the sidebar and the banner honest about whether the
+// index is still being built.
+async function pollIndex(){
+  let s; try { s = await get('/api/index'); } catch(_) { return; }
+  applyIndexState(s);
 }
+function applyIndexState(s){
+  galIndexing = !!s.building;
+  galIndexMsg = s.done ? `${num(s.done)} files read` : '';
+  galIndexedAt = s.indexed || 0;
+  $('#dot').classList.toggle('on', galIndexedAt > 0 || galIndexing);
+  $('#statusTxt').textContent = galIndexing
+    ? `indexing · ${num(s.done || 0)}`
+    : (galIndexedAt ? `${num(galIndexedAt)} items indexed` : 'not indexed yet');
+  if (photosTabOn()) paintGalState();
+}
+
+function skeleton(){
+  let h = '<div class="dayhead" style="opacity:.5">Loading…</div><div class="grid">';
+  for (let i = 0; i < 12; i++) h += '<div class="skel"></div>';
+  return h + '</div>';
+}
+
+async function loadPhotos(reset, quiet){
+  if (galBusy) return;
+  galBusy = true;
+  const host = $('#photoGrid');
+  if (reset){
+    galItems = []; galCursor = null; galMore = false; galDayKey = null;
+    if (!quiet) host.innerHTML = skeleton();
+    $('#galMore').innerHTML = '';
+  }
+  const p = galParams();
+  p.set('limit', '200');
+  if (!reset && galCursor){ p.set('before', galCursor.before); p.set('befname', galCursor.name); }
+  if (reset) p.set('stats', '1');
+
+  let r;
+  try { r = await get('/api/photos?' + p); }
+  catch(_){
+    galBusy = false;
+    if (reset) host.innerHTML = '<div class="gridmsg"><b>Could not reach the server</b>Check that OCD Manager is still running.</div>';
+    return;
+  }
+  galBusy = false;
+
+  if (r.stats) galStats = r.stats;
+  if (r.years) galYears = r.years;
+  galMore = !!r.hasMore;
+  galCursor = r.cursor || null;
+  const items = r.items || [];
+
+  if (reset){
+    host.innerHTML = '';
+    renderTimeline();
+    paintGalState();
+  }
+  for (const it of items) it._el = null;
+  galItems = galItems.concat(items);
+
+  if (reset && !items.length){ renderEmptyGallery(); return; }
+  appendTiles(items);
+  updateGalMore();
+  preloadAround();
+}
+
+function renderEmptyGallery(){
+  const host = $('#photoGrid');
+  const filtered = gal.q || gal.kind || gal.fav || gal.year || photoLib !== 'all';
+  if (galIndexing){
+    host.innerHTML = '<div class="gridmsg"><b>Getting your library ready</b>Reading the folders now — pictures appear here as they are found.</div>';
+  } else if (filtered){
+    host.innerHTML = '<div class="gridmsg"><b>Nothing matches</b>Try clearing the search or the filters above.</div>';
+  } else if (!libraries.length){
+    host.innerHTML = '<div class="gridmsg"><b>No folders yet</b>Add a drive or folder on the Folders page to get started.</div>';
+  } else if (!galIndexedAt){
+    host.innerHTML = '<div class="gridmsg"><b>Nothing indexed yet</b>Use Refresh to read your folders.</div>';
+  } else {
+    host.innerHTML = '<div class="gridmsg"><b>No photos here</b>Import from a phone, or add another folder.</div>';
+  }
+}
+
+function updateGalMore(){
+  $('#galMore').innerHTML = galMore
+    ? ''
+    : (galItems.length > 40 ? `<p class="pagehead" style="text-align:center;margin:26px 0 10px">That is all ${num(galItems.length)} items.</p>` : '');
+}
+
+// appendTiles adds to the existing DOM instead of re-rendering, which is what
+// keeps scrolling smooth once a few thousand tiles are on screen.
+function appendTiles(items){
+  const host = $('#photoGrid');
+  let grid = null;
+  for (const it of items){
+    const d = new Date(it.shot * 1000);
+    const key = dayKey(d);
+    if (key !== galDayKey || !grid){
+      const last = host.lastElementChild;
+      if (key === galDayKey && last && last.classList.contains('grid')){
+        // A new page that carries on the day already open below it.
+        grid = last;
+      } else {
+        const h = document.createElement('div');
+        h.className = 'dayhead';
+        h.textContent = dayLabel(d);
+        host.appendChild(h);
+        grid = document.createElement('div');
+        grid.className = 'grid';
+        host.appendChild(grid);
+        galDayKey = key;
+      }
+    }
+    grid.appendChild(tileEl(it));
+  }
+}
+
+function placeholderTile(it){
+  const d = document.createElement('div');
+  d.className = 'ph';
+  const isVid = it.kind === 'video';
+  d.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="${
+    isVid ? 'M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z'
+          : 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4z'
+  }"/></svg>
+    <span>${esc((it.ext || '').replace('.', '').toUpperCase())}</span>
+    <span style="opacity:.72">${isVid ? 'install ffmpeg for a preview' : 'preview not available'}</span>`;
+  return d;
+}
+
+function tileEl(it){
+  const a = document.createElement('a');
+  a.className = 'tile';
+  a.href = '#';
+  a.dataset.key = it.key;
+  a.title = it.name + (it.dir ? '  —  ' + it.dir : '');
+  const ar = (it.w > 0 && it.h > 0) ? it.w / it.h : 1;
+  a.style.setProperty('--ar', Math.max(0.42, Math.min(3.4, ar)).toFixed(3));
+
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.alt = it.name;
+  img.src = thumbSrc(it, 512);
+  img.onerror = () => { img.remove(); a.insertBefore(placeholderTile(it), a.firstChild); };
+  a.appendChild(img);
+
+  if (it.kind === 'video'){
+    const pl = document.createElement('div');
+    pl.className = 'play';
+    pl.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    a.appendChild(pl);
+    if (it.dur > 0){
+      const d = document.createElement('span');
+      d.className = 'dur';
+      d.textContent = hms(it.dur);
+      a.appendChild(d);
+    }
+  }
+
+  const fav = document.createElement('button');
+  fav.type = 'button';
+  fav.className = 'fav' + (it.fav ? ' on' : '');
+  fav.title = it.fav ? 'Remove from favourites' : 'Add to favourites';
+  fav.innerHTML = '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+  fav.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); setFavourite(it); };
+  a.appendChild(fav);
+
+  a.onclick = ev => { ev.preventDefault(); openLightbox(it.key); };
+  it._el = a;
+  return a;
+}
+
+async function setFavourite(it){
+  it.fav = !it.fav;
+  if (it._el){
+    it._el.classList.toggle('fav-marked', it.fav);
+    const b = it._el.querySelector('.fav');
+    if (b){ b.classList.toggle('on', it.fav); b.title = it.fav ? 'Remove from favourites' : 'Add to favourites'; }
+  }
+  if (lb.key === it.key) $('#lbFav').classList.toggle('on', it.fav);
+  if (galStats){
+    galStats.favorites = Math.max(0, (galStats.favorites || 0) + (it.fav ? 1 : -1));
+    paintGalState();
+  }
+  try { await post('/api/fav', { key: it.key, on: it.fav }); } catch(_) {}
+}
+
+function renderTimeline(){
+  const yr = $('#yearRow'), mo = $('#monthRow');
+  if (!galYears.length){ yr.hidden = true; mo.hidden = true; return; }
+  yr.hidden = false;
+  yr.innerHTML =
+    `<button data-y="0" class="${gal.year ? '' : 'on'}" title="See every year">All years<span class="n">${num(galStats ? galStats.total : 0)}</span></button>` +
+    galYears.map(y => `<button data-y="${y.year}" class="${gal.year === y.year ? 'on' : ''}" title="See only ${y.year}">${y.year}<span class="n">${num(y.count)}</span></button>`).join('');
+  yr.querySelectorAll('button').forEach(b => b.onclick = () => {
+    clearSearchDates();
+    gal.year = +b.dataset.y; gal.month = 0;
+    renderTimeline(); loadPhotos(true);
+  });
+
+  const y = galYears.find(v => v.year === gal.year);
+  if (!y){ mo.hidden = true; return; }
+  mo.hidden = false;
+  mo.innerHTML = `<button data-m="0" class="${gal.month ? '' : 'on'}" title="Every month of ${y.year}">All ${y.year}</button>` +
+    y.months.map((c, i) => c
+      ? `<button data-m="${i + 1}" class="${gal.month === i + 1 ? 'on' : ''}" title="See only ${MONTHS[i]} ${y.year}">${MONTHS_SHORT[i]}<span class="n">${num(c)}</span></button>`
+      : '').join('');
+  mo.querySelectorAll('button').forEach(b => b.onclick = () => {
+    clearSearchDates();
+    gal.month = +b.dataset.m;
+    renderTimeline(); loadPhotos(true);
+  });
+}
+
+// preloadAround fetches the previews either side of the one on screen so that
+// stepping through the library feels immediate.
+function preloadAround(){
+  const i = lb.key ? galItems.findIndex(x => x.key === lb.key) : -1;
+  if (i < 0) return;
+  [i + 1, i + 2, i - 1].forEach(j => {
+    const it = galItems[j];
+    if (it && it.kind !== 'video'){ const im = new Image(); im.src = thumbSrc(it, 1600); }
+  });
+}
+
+/* ---------- infinite scroll ---------- */
+function maybeLoadMore(){
+  if (!galMore || galBusy || !photosTabOn()) return;
+  const s = $('#galSentinel').getBoundingClientRect();
+  if (s.top < innerHeight + 900) loadPhotos(false);
+}
+window.addEventListener('scroll', maybeLoadMore, { passive: true });
+window.addEventListener('resize', maybeLoadMore);
+
+/* ---------- lightbox ---------- */
 
 function dayKey(d){
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -870,72 +1365,259 @@ function dayLabel(d){
   const m = MONTHS[d.getMonth()], day = d.getDate();
   return d.getFullYear() === today.getFullYear() ? `${m} ${day}` : `${m} ${day}, ${d.getFullYear()}`;
 }
-function fmtDT(s){
-  const d = new Date(s);
-  if (isNaN(d)) return '';
+function fmtDate(unix){
+  const d = new Date((unix || 0) * 1000);
+  if (isNaN(d) || !unix) return '';
   return d.toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' });
 }
 
-function renderPhotos(){
-  const host = $('#photoGrid');
-  if (!photos.length){
-    host.innerHTML = `<div class="gridmsg"><b>No photos here yet</b>${
-      libraries.length ? 'Import from a phone, or add another folder.'
-                       : 'Add a folder to get started.'}</div>`;
-    return;
-  }
-  const groups = [];
-  const index = new Map();
-  photos.forEach((p, i) => {
-    const d = new Date(p.datetime);
-    const key = isNaN(d) ? '__unknown' : dayKey(d);
-    let g = index.get(key);
-    if (!g){ g = { key, date: d, items: [] }; index.set(key, g); groups.push(g); }
-    g.items.push(Object.assign({}, p, { _i: i }));
-  });
+const lb = { key:'', scale:1, tx:0, ty:0, fitW:0, fitH:0, video:false };
+const lbPts = new Map();
+let lbDrag = null;
+let lbPinch = null;
 
-  host.innerHTML = groups.map(g => {
-    const head = g.key === '__unknown' ? 'Unknown date' : dayLabel(g.date);
-    const tiles = g.items.map(p => {
-      const ar = Math.max(0.45, Math.min(3.2, (p.width || 1) / (p.height || 1)));
-      return `<a class="tile" style="--ar:${ar.toFixed(3)}" data-i="${p._i}" title="${esc(p.name)}">
-        <img loading="lazy" decoding="async" src="${thumbURL(p, 512, 512)}" alt="${esc(p.name)}">
-      </a>`;
-    }).join('');
-    return `<div class="dayhead">${esc(head)}</div><div class="grid">${tiles}</div>`;
-  }).join('');
+function lbItem(){ return galItems.find(x => x.key === lb.key) || null; }
 
-  host.querySelectorAll('.tile').forEach(t => t.onclick = e => {
-    e.preventDefault();
-    openLightbox(+t.dataset.i);
-  });
-}
-
-/* ---------- lightbox ---------- */
-function openLightbox(i){
-  lbIndex = i;
-  paintLightbox();
+function openLightbox(key){
+  lb.key = key;
   $('#lightbox').hidden = false;
   document.body.style.overflow = 'hidden';
+  paintMedia();
+  fitView();
+  paintDetail();
 }
-function paintLightbox(){
-  const p = photos[lbIndex];
-  if (!p) return;
-  $('#lbImg').src = thumbURL(p, 1600);
-  $('#lbTitle').textContent = p.name;
-  $('#lbMeta').textContent = [fmtDT(p.datetime), p.collectionName].filter(Boolean).join(' · ');
+
+function closeLightbox(){
+  const v = $('#lbMedia').querySelector('video');
+  if (v) v.pause();
+  $('#lightbox').hidden = true;
+  $('#lbMedia').innerHTML = '';
+  $('#lbPanel').hidden = true;
+  document.body.style.overflow = '';
+  lb.key = '';
 }
-function stepLightbox(d){
-  if (!photos.length) return;
-  lbIndex = (lbIndex + d + photos.length) % photos.length;
-  paintLightbox();
+
+function paintMedia(){
+  const it = lbItem();
+  const host = $('#lbMedia');
+  const old = host.querySelector('video');
+  if (old) old.pause();
+  host.innerHTML = '';
+  if (!it) return;
+
+  lb.video = it.kind === 'video';
+  if (lb.video){
+    const v = document.createElement('video');
+    v.controls = true; v.autoplay = true; v.playsInline = true; v.preload = 'auto';
+    v.src = origSrc(it, false);
+    host.appendChild(v);
+    $('#lbZoom').hidden = true;
+  } else {
+    const img = document.createElement('img');
+    img.alt = it.name;
+    img.draggable = false;
+    // Show the cached preview at once, then quietly swap in the original so
+    // the picture is sharp without making anyone wait for a 12 megapixel file.
+    img.src = thumbSrc(it, 1600);
+    img.onerror = () => { img.remove(); host.insertBefore(placeholderTile(it), host.firstChild); };
+    host.appendChild(img);
+    $('#lbZoom').hidden = false;
+    const key = it.key;
+    const full = new Image();
+    full.onload = () => { if (lb.key === key && img.isConnected) { img.src = full.src; fitView(); } };
+    full.src = origSrc(it, false);
+  }
+
+  $('#lbTitle').textContent = it.name;
+  $('#lbMeta').textContent = [
+    fmtDate(it.shot), size(it.size),
+    it.w && it.h ? `${num(it.w)}×${num(it.h)}` : '',
+    it.dir || '',
+  ].filter(Boolean).join(' · ');
+  $('#lbFav').classList.toggle('on', !!it.fav);
+  $('#lbDown').href = origSrc(it, true);
+  $('#lbDown').setAttribute('download', it.name);
+  const i = galItems.findIndex(x => x.key === it.key);
+  $('#lbPrev').disabled = i <= 0;
+  $('#lbNext').disabled = i < 0 || i >= galItems.length - 1;
 }
-function closeLightbox(){ $('#lightbox').hidden = true; $('#lbImg').src = ''; document.body.style.overflow = ''; }
-$('#lbClose').onclick = closeLightbox;
-$('#lbPrev').onclick  = () => stepLightbox(-1);
-$('#lbNext').onclick  = () => stepLightbox(1);
-$('#lbImg').onclick   = e => e.stopPropagation();
-$('#lightbox').onclick = e => { if (e.target.id === 'lightbox') closeLightbox(); };
+
+function fitView(){
+  lb.scale = 1; lb.tx = 0; lb.ty = 0;
+  const el = $('#lbMedia');
+  el.style.transform = '';
+  requestAnimationFrame(() => {
+    const r = el.getBoundingClientRect();
+    lb.fitW = r.width; lb.fitH = r.height;
+    applyView();
+  });
+}
+
+function applyView(){
+  $('#lbMedia').style.transform = `translate(${lb.tx}px,${lb.ty}px) scale(${lb.scale})`;
+  $('#lbPct').textContent = Math.round(lb.scale * 100) + '%';
+}
+
+function clampPan(){
+  const st = $('#lbStage').getBoundingClientRect();
+  const mx = Math.max(0, (lb.fitW * lb.scale - st.width) / 2) + 90;
+  const my = Math.max(0, (lb.fitH * lb.scale - st.height) / 2) + 90;
+  lb.tx = Math.max(-mx, Math.min(mx, lb.tx));
+  lb.ty = Math.max(-my, Math.min(my, lb.ty));
+}
+
+// zoomAt keeps the point under the cursor still while the scale changes.
+function zoomAt(f, cx, cy){
+  if (lb.video) return;
+  const st = $('#lbStage').getBoundingClientRect();
+  const px = cx - (st.left + st.width / 2);
+  const py = cy - (st.top + st.height / 2);
+  const ns = Math.max(1, Math.min(8, lb.scale * f));
+  if (Math.abs(ns - lb.scale) < 0.001) return;
+  const k = ns / lb.scale;
+  lb.tx = px - k * (px - lb.tx);
+  lb.ty = py - k * (py - lb.ty);
+  lb.scale = ns;
+  clampPan();
+  applyView();
+}
+
+async function stepLightbox(d){
+  const i = galItems.findIndex(x => x.key === lb.key);
+  if (i < 0) return;
+  const n = i + d;
+  if (n < 0) return;
+  if (n >= galItems.length){
+    if (!galMore) return;
+    await loadPhotos(false);
+  }
+  const next = galItems[n];
+  if (!next) return;
+  lb.key = next.key;
+  paintMedia();
+  fitView();
+  paintDetail();
+  preloadAround();
+}
+
+async function paintDetail(){
+  const body = $('#lbPanelBody');
+  if ($('#lbPanel').hidden) return;
+  const it = lbItem();
+  if (!it) return;
+  const p = galParams();
+  p.set('k', it.key);
+  let r;
+  try { r = await get('/api/item?' + p); } catch(_) { return; }
+  if (!r.item || r.item.key !== lb.key) return;
+  const d = r.item;
+
+  const rows = [];
+  const row = (k, v, mono) => { if (v) rows.push(`<div class="k">${k}</div><div class="v${mono ? ' mono' : ''}">${esc(v)}</div>`); };
+
+  row('Taken', d.shot ? new Date(d.shot * 1000).toLocaleString(undefined, { dateStyle:'full', timeStyle:'short' }) : '');
+  row('Type', d.kind === 'video' ? 'Video' : 'Photo');
+  if (d.w && d.h) row('Dimensions', `${num(d.w)} × ${num(d.h)}` + (d.w && d.h ? `  ·  ${(d.w / d.h).toFixed(2)}:1` : ''));
+  if (d.dur) row('Length', hms(d.dur));
+  row('Size', size(d.size));
+  row('Camera', [d.make, d.model].filter(Boolean).join(' '));
+  if (d.focal) row('Focal length', `${d.focal.toFixed(d.focal < 10 ? 1 : 0)} mm`);
+  if (d.fnumber) row('Aperture', `ƒ/${d.fnumber.toFixed(d.fnumber < 10 ? 1 : 0)}`);
+  if (d.exposure) row('Shutter', d.exposure < 1 ? `1/${Math.round(1 / d.exposure)} s` : `${d.exposure} s`);
+  if (d.iso) row('ISO', String(d.iso));
+  row('File name', d.name, true);
+  row('Folder', d.folder, true);
+  if (d.lat || d.lon){
+    rows.push(`<div class="k">Location</div><div class="v"><a href="https://www.openstreetmap.org/?mlat=${d.lat}&mlon=${d.lon}#map=16/${d.lat}/${d.lon}" target="_blank" rel="noopener">${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}</a></div>`);
+  }
+  body.innerHTML = rows.join('') || '<div class="v">No extra details for this file.</div>';
+}
+
+/* ---------- lightbox: pointer gestures ---------- */
+const stage = $('#lbStage');
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button') || e.target.tagName === 'VIDEO') return;
+  lbPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { stage.setPointerCapture(e.pointerId); } catch(_) {}
+  if (lbPts.size === 1){
+    lbDrag = { x: e.clientX, y: e.clientY, tx: lb.tx, ty: lb.ty, t: Date.now() };
+  } else {
+    lbDrag = null;
+    lbPinch = null;
+  }
+});
+stage.addEventListener('pointermove', e => {
+  if (!lbPts.has(e.pointerId)) return;
+  lbPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (lbPts.size >= 2){
+    const [a, b] = [...lbPts.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (!lbPinch){ lbPinch = { dist, scale: lb.scale }; return; }
+    zoomAt((dist / lbPinch.dist) * lbPinch.scale / lb.scale, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    return;
+  }
+  if (!lbDrag) return;
+  const dx = e.clientX - lbDrag.x, dy = e.clientY - lbDrag.y;
+  if (lb.scale > 1){
+    lb.tx = lbDrag.tx + dx; lb.ty = lbDrag.ty + dy;
+    clampPan(); applyView();
+  } else {
+    // A gentle follow so a swipe feels connected to the finger.
+    $('#lbMedia').style.transform = `translate(${dx * 0.35}px,${dy * 0.2}px)`;
+  }
+});
+function endPointer(e){
+  if (!lbPts.has(e.pointerId)) return;
+  lbPts.delete(e.pointerId);
+  if (lbPts.size < 2) lbPinch = null;
+  if (!lbDrag) return;
+  const dx = e.clientX - lbDrag.x, dy = e.clientY - lbDrag.y;
+  const dt = Math.max(1, Date.now() - lbDrag.t);
+  const quick = Math.abs(dx) / dt > 0.4 && Math.abs(dx) > 24;
+  const clear = Math.abs(dx) > 70;
+  const horizontal = Math.abs(dx) > Math.abs(dy) * 1.3;
+  lbDrag = null;
+  if (lb.scale > 1) return;
+  if ((clear || quick) && horizontal){ stepLightbox(dx < 0 ? 1 : -1); return; }
+  applyView();
+}
+stage.addEventListener('pointerup', endPointer);
+stage.addEventListener('pointercancel', endPointer);
+stage.addEventListener('lostpointercapture', endPointer);
+
+stage.addEventListener('wheel', e => {
+  if ($('#lightbox').hidden || lb.video) return;
+  e.preventDefault();
+  zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
+}, { passive: false });
+
+stage.addEventListener('dblclick', e => {
+  if (lb.video || e.target.closest('button')) return;
+  if (lb.scale > 1.02){ lb.scale = 1; lb.tx = 0; lb.ty = 0; applyView(); }
+  else zoomAt(2.5, e.clientX, e.clientY);
+});
+
+$('#lbClose').onclick  = closeLightbox;
+$('#lbPrev').onclick   = () => stepLightbox(-1);
+$('#lbNext').onclick   = () => stepLightbox(1);
+$('#lbIn').onclick     = () => { const r = stage.getBoundingClientRect(); zoomAt(1.5, r.left + r.width / 2, r.top + r.height / 2); };
+$('#lbOut').onclick    = () => { const r = stage.getBoundingClientRect(); zoomAt(1 / 1.5, r.left + r.width / 2, r.top + r.height / 2); };
+$('#lbFit').onclick    = () => fitView();
+$('#lbFav').onclick    = () => { const it = lbItem(); if (it) setFavourite(it); };
+$('#lbDown').onclick   = e => e.stopPropagation();
+$('#lbReveal').onclick = async () => {
+  const it = lbItem();
+  if (!it) return;
+  const r = await post('/api/reveal?k=' + encodeURIComponent(it.key), {});
+  if (r.error) activity(r.error, false);
+};
+$('#lbInfo').onclick = () => {
+  const open = $('#lbPanel').hidden;
+  $('#lbPanel').hidden = !open;
+  $('#lbInfo').classList.toggle('on', open);
+  if (open) paintDetail();
+};
 
 /* ---------- libraries (folders page) ---------- */
 async function loadLibraries(){
@@ -960,7 +1642,8 @@ function renderLibraries(){
         <div class="pth" title="${esc(l.path)}">${esc(l.path)}</div>
         <div class="foot">
           <span class="badge ${l.available ? 'ok' : 'no'}">${l.available ? 'Connected' : 'Not connected'}</span>
-          <span class="cnt">${l.count ? num(l.count) + ' photos' : (l.countedAt ? '0 photos' : 'Not counted yet')}</span>
+          <span class="cnt">${l.count ? num(l.count) + ' items' : (l.countedAt ? '0 items' : 'Not read yet')}</span>
+          ${l.available ? `<button class="linkbtn" data-open title="Show only this folder in the photo grid">Open</button>` : ''}
           <button class="iconbtn" data-remove title="Remove this folder">
             <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
           </button>
@@ -978,35 +1661,47 @@ function renderLibraries(){
     const lib = libraries.find(x => x.id === card.dataset.id);
     if (!lib) return;
     const avail = libraryAvailable(lib);
-    const browse = card.querySelector('.cover');
-    if (avail) browse.onclick = () => browseGallery(lib);
+    const cover = card.querySelector('.cover');
+    if (avail) cover.onclick = () => {
+      photoLib = lib.id;
+      location.hash = 'photos';
+      showTab('photos');
+      renderGalChips();
+    };
+    card.querySelector('[data-open]').onclick = ev => {
+      ev.stopPropagation();
+      photoLib = lib.id;
+      location.hash = 'photos';
+      showTab('photos');
+      renderGalChips();
+    };
     card.querySelector('[data-remove]').onclick = async ev => {
       ev.stopPropagation();
       if (!confirm(`Remove “${lib.name}” from your folders?\n\nYour files are not touched.`)) return;
       const r = await del('/api/libraries?id=' + encodeURIComponent(lib.id));
       libraries = r.items || [];
+      if (photoLib === lib.id) photoLib = 'all';
       renderLibraries();
-      renderPhotoChips();
     };
   });
 
-  // covers load lazily, one small request per folder
+  // Covers come from the index, so showing them costs no drive access at all.
   box.querySelectorAll('[data-cover]').forEach(async el => {
     const id = el.dataset.cover;
     if (!id) return;
     try {
-      const r = await get('/api/photos?limit=1&collection=' + encodeURIComponent(id));
+      const r = await get('/api/photos?limit=1&lib=' + encodeURIComponent(id));
       const p = (r.items || [])[0];
       if (!p) return;
-      el.innerHTML = `<img loading="lazy" src="${thumbURL(p, 400, 400)}" alt="">`;
+      el.innerHTML = `<img loading="lazy" decoding="async" src="${thumbSrc(p, 400)}" alt="">`;
     } catch(_) {}
   });
 
   $('#libAdd').onclick = () => openPicker(async path => {
     const lib = await post('/api/libraries', { path });
     await loadLibraries();
-    renderPhotoChips();
-    activity(`Added ${lib.name || path}`, false);
+    activity(`Added ${lib.name || path} · reading it now`, false);
+    await post('/api/index', {});
   }, '');
 }
 
@@ -1016,30 +1711,21 @@ function libraryAvailable(lib){
 }
 
 $('#libRefresh').onclick = async () => {
-  activity('Counting photos…');
-  await post('/api/libraries/scan', {});
+  activity('Reading your folders…');
+  await post('/api/index', {});
   let n = 0;
   const t = setInterval(async () => {
     await loadLibraries();
-    if (++n > 6) { clearInterval(t); activity('Counts updated', false); }
+    await pollIndex();
+    if (!galIndexing || ++n > 600){ clearInterval(t); activity(galIndexing ? 'Still reading…' : 'Library updated', false); }
   }, 1500);
 };
 
-/* ---------- browse gallery ---------- */
-async function galStatus(){
-  let s; try { s = await get('/api/photofield/status'); } catch(_) { return; }
-  $('#dot').classList.toggle('on', !!s.running);
-  $('#statusTxt').textContent = s.running ? 'gallery running' : 'gallery stopped';
-}
-async function browseGallery(lib){
-  activity('Starting gallery…');
-  const r = await post('/api/photofield/start');
-  if (r.error){ activity(r.error, false); return; }
-  activity('Gallery ready', false);
-  galStatus();
-  window.open('http://' + location.hostname + ':8080', '_blank');
-}
-$('#galOpen').onclick = () => browseGallery(null);
+/* ---------- refresh + indexing ---------- */
+$('#galRefresh').onclick = () => {
+  activity('Looking for new files…');
+  post('/api/index', {}).then(pollIndex);
+};
 
 /* ---------- import ---------- */
 const HINTS = {
@@ -1257,6 +1943,109 @@ async function loadTools(){
        <span class="badge ${ok ? 'ok' : 'no'}">${ok ? 'installed' : 'missing'}</span></div>`).join('');
 }
 
+// renderIndexInfo explains where the app's own picture of the library comes
+// from, which is the question the Setup page is really answering.
+async function renderIndexInfo(){
+  let s; try { s = await get('/api/index'); } catch(_) { return; }
+  const when = s.scanned > 0 ? new Date(s.scanned * 1000).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }) : 'never';
+  $('#indexInfo').innerHTML = `
+    <div class="tool">
+      <div class="n">
+        <div class="mono">Library index</div>
+        <div class="d">${num(s.indexed)} items across ${num(s.libraries)} connected folder${s.libraries === 1 ? '' : 's'} · last read ${esc(when)}</div>
+      </div>
+      <button class="btn ghost small" id="setupReindex" title="Walk every saved folder and record new or changed files. Already-known files are skipped, so this is quick after the first run.">Read folders now</button>
+    </div>
+    <div class="tool">
+      <div class="n">
+        <div class="mono">Previews</div>
+        <div class="d">Small copies are cached on this PC the first time each picture is shown, so browsing never waits on the drive again.</div>
+      </div>
+      <span class="badge ok">automatic</span>
+    </div>`;
+  $('#setupReindex').onclick = async () => {
+    activity('Reading your folders…');
+    await post('/api/index', {});
+    pollIndex();
+    setTimeout(renderIndexInfo, 4000);
+  };
+}
+
+/* ---------- gallery controls ---------- */
+// Date words typed into the search box become the same year/month state the
+// timeline uses, so the two controls can never contradict each other.
+const MONTH_WORDS = {
+  january:1, jan:1, february:2, feb:2, march:3, mar:3, april:4, apr:4, may:5,
+  june:6, jun:6, july:7, jul:7, august:8, aug:8, september:9, sep:9, sept:9,
+  october:10, oct:10, november:11, nov:11, december:12, dec:12,
+};
+function parseSearch(text){
+  let year = 0, month = 0;
+  const keep = [];
+  for (const raw of String(text || '').split(/\s+/)){
+    if (!raw) continue;
+    const w = raw.toLowerCase().replace(/[,]+$/, '');
+    if (MONTH_WORDS[w] !== undefined){ month = MONTH_WORDS[w]; continue; }
+    if (/^(19|20)\d{2}$/.test(w)){ year = +w; continue; }
+    keep.push(raw);
+  }
+  return { year, month, rest: keep.join(' ') };
+}
+
+function applySearch(value){
+  const p = parseSearch(value);
+  gal.q = p.rest;
+  if (p.year || p.month){
+    gal.year = p.year; gal.month = p.month; gal.fromSearch = true;
+  } else if (gal.fromSearch){
+    gal.year = 0; gal.month = 0; gal.fromSearch = false;
+  }
+  loadPhotos(true);
+}
+
+// When the timeline takes over, the same date words are lifted out of the
+// search box so the two controls cannot disagree.
+function clearSearchDates(){
+  if (!gal.fromSearch) return;
+  const inp = $('#galSearch');
+  const p = parseSearch(inp.value);
+  inp.value = p.rest;
+  $('#searchWrap').classList.toggle('has', !!inp.value);
+  gal.q = p.rest;
+  gal.fromSearch = false;
+}
+
+let searchTimer = null;
+$('#galSearch').addEventListener('input', () => {
+  const v = $('#galSearch').value;
+  $('#searchWrap').classList.toggle('has', !!v);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => applySearch(v), 260);
+});
+$('#galSearch').addEventListener('keydown', e => {
+  if (e.key === 'Escape'){
+    e.stopPropagation();
+    $('#galSearch').value = '';
+    $('#searchWrap').classList.remove('has');
+    applySearch('');
+  }
+});
+$('#galSearchClear').onclick = () => {
+  $('#galSearch').value = '';
+  $('#searchWrap').classList.remove('has');
+  applySearch('');
+};
+
+$('#kindSeg').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    if (b.dataset.v === 'fav'){ gal.fav = true; gal.kind = ''; }
+    else { gal.fav = false; gal.kind = b.dataset.v; }
+    $('#kindSeg').querySelectorAll('button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    loadPhotos(true);
+  };
+});
+
 /* ---------- boot ---------- */
 syncPick();
 renderDupChips();
@@ -1264,8 +2053,10 @@ loadRoots();
 loadDriveQuick();
 loadDevices();
 loadTools();
-galStatus();
-setInterval(galStatus, 8000);
+renderIndexInfo();
+pollIndex();
+setInterval(() => { if (!galIndexing) pollIndex(); }, 15000);
+setInterval(renderIndexInfo, 30000);
 showTab((location.hash || '#photos').slice(1));
 </script>
 </body>

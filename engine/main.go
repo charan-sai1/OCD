@@ -78,9 +78,10 @@ func serve(args []string) {
 	pfd := fs.String("photofield-data", "", "photofield data dir")
 	_ = fs.Parse(args)
 
-	s := server.New(server.Config{DataDir: *data, PhotofieldExe: *pf, PhotofieldData: *pfd})
+	s := server.New(server.Config{DataDir: *data, PhotofieldExe: *pf, PhotofieldData: *pfd, AutoScan: true})
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("OCD Manager on http://localhost%s", addr)
+	s.StartBackgroundIndex()
 	log.Fatal(http.ListenAndServe(addr, s.Handler()))
 }
 

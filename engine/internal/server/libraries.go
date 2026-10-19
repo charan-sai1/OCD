@@ -252,6 +252,13 @@ func (s *Server) libsRemove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
+	// Drop the folder's items from the index too, so the grid stops offering
+	// files from a folder the user just removed.
+	go func() {
+		if err := s.index.ForgetLibrary(id); err != nil {
+			s.emitJSON("index-error", 0, 0, err.Error())
+		}
+	}()
 	writeJSON(w, http.StatusOK, map[string]any{"removed": id, "items": s.libs.list()})
 }
 
