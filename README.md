@@ -49,8 +49,24 @@ ocd-app/
 
 ## Quick start
 
+**Just want to run it?** Download the binary for your machine from the
+[latest release](https://github.com/charan-sai1/OCD/releases/latest). There is
+nothing to install — one file, no dependencies:
+
 ```powershell
-# 1. Build (first time only)
+# Windows
+.\ocd-windows-amd64.exe serve --port 8090 --data .\engine-data
+```
+
+The other platforms are the same, with the matching file name. macOS needs
+`xattr -d com.apple.quarantine <file>` once, and Linux/macOS need `chmod +x`.
+There is no Android or iPhone app: the phone opens the same page in its browser
+(the Import view shows a QR code for it).
+
+**Building from source:**
+
+```powershell
+# 1. Build every platform into engine\dist (first time only)
 cd engine; .\build.ps1
 
 # 2. Launch
