@@ -5,9 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -245,19 +243,6 @@ func (s *Server) reveal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shown": true})
-}
-
-func revealFile(path string) error {
-	switch runtime.GOOS {
-	case "windows":
-		// explorer.exe parses its own command line, so the switch and the path
-		// travel as one argument. It always exits non-zero, so start and let go.
-		return exec.Command("explorer.exe", "/select,"+path).Start()
-	case "darwin":
-		return exec.Command("open", "-R", path).Start()
-	default:
-		return exec.Command("xdg-open", filepath.Dir(path)).Start()
-	}
 }
 
 // indexStatus reports whether a scan is running and what the index holds.
