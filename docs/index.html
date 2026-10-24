@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OCD Manager — your photo library, on your own drives</title>
+<meta name="description" content="A photo manager for the drives you already own. Browse tens of thousands of photos instantly, import from your phone over Wi-Fi, and find duplicates without losing anything. Free, open source, no account." />
+<meta property="og:title" content="OCD Manager" />
+<meta property="og:description" content="Your photo library, on your own drives. Fast browsing, phone import over Wi-Fi, safe duplicate cleanup." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231a73e8'/%3E%3Ccircle cx='16' cy='16' r='4' fill='white'/%3E%3Cpath d='M6 16a10 10 0 0 1 20 0' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --blue: #1a73e8;
+    --blue-dark: #1765cc;
+    --ink: #202124;
+    --ink-2: #5f6368;
+    --line: #dadce0;
+    --surface: #f8f9fa;
+    --card: #ffffff;
+    --page: #ffffff;
+    accent-color: var(--blue);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --blue: #8ab4f8;
+      --blue-dark: #aecbfa;
+      --ink: #e8eaed;
+      --ink-2: #9aa0a6;
+      --line: #3c4043;
+      --surface: #202124;
+      --card: #292a2d;
+      --page: #1b1b1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 16px/1.6 Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--page) 92%, transparent);
+    backdrop-filter: saturate(180%) blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 18px; color: var(--ink); }
+  .brand svg { display: block; }
+  .bar nav { margin-left: auto; display: flex; align-items: center; gap: 26px; }
+  .bar nav a { color: var(--ink-2); font-size: 14px; }
+  .bar nav a:hover { color: var(--ink); text-decoration: none; }
+  @media (max-width: 640px) {
+    .bar nav a:first-child { display: none; }
+    .bar nav a:nth-child(2) { display: none; }
+    .bar { gap: 16px; }
+  }
+
+  .hero { padding: 76px 0 40px; }
+  .hero h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    font-weight: 500;
+    margin: 0 0 20px;
+    max-width: 16ch;
+  }
+  .hero p.lede { font-size: clamp(17px, 2vw, 20px); line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0 0 32px; }
+  .cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    height: 48px; padding: 0 22px; border-radius: 999px;
+    font-size: 15px; font-weight: 500; border: 1px solid transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .btn.primary { background: var(--blue); color: #fff; }
+  .btn.primary:hover { background: var(--blue-dark); text-decoration: none; }
+  .btn.ghost { border-color: var(--line); color: var(--ink); }
+  .btn.ghost:hover { background: var(--surface); text-decoration: none; }
+  .btn svg { width: 18px; height: 18px; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #202124; } }
+  .under { margin-top: 18px; font-size: 13.5px; color: var(--ink-2); }
+  .under a { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line); }
+
+  .shot { margin: 44px 0 0; }
+  .shot img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) { .shot img { box-shadow: 0 12px 40px rgba(0,0,0,.5); } }
+  .shot figcaption { margin-top: 12px; font-size: 13.5px; color: var(--ink-2); text-align: center; }
+
+  section { padding: 64px 0; }
+  section + section { border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -0.01em; margin: 0 0 12px; }
+  .sub { color: var(--ink-2); max-width: 64ch; margin: 0 0 34px; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 820px) { .grid3 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 22px 24px;
+  }
+  .card h3 { margin: 14px 0 8px; font-size: 17px; font-weight: 500; }
+  .card p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+  .card .ico { width: 26px; height: 26px; color: var(--blue); }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; counter-reset: s; }
+  @media (max-width: 820px) { .steps { grid-template-columns: 1fr; gap: 22px; } }
+  .step { counter-increment: s; }
+  .step::before {
+    content: counter(s);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--line);
+    font-size: 14px; color: var(--ink-2); margin-bottom: 12px;
+  }
+  .step h3 { margin: 0 0 6px; font-size: 16px; font-weight: 500; }
+  .step p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+  code {
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 2px 6px; border-radius: 6px; color: var(--ink);
+  }
+  pre {
+    margin: 14px 0 0; padding: 14px 16px; overflow-x: auto;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: 13px; }
+
+  .dl { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+  .dl-row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px;
+    padding: 16px 20px; border-top: 1px solid var(--line);
+  }
+  .dl-row:first-child { border-top: 0; }
+  .dl-row .os { font-weight: 500; font-size: 15px; }
+  .dl-row .meta { color: var(--ink-2); font-size: 13.5px; margin-top: 2px; }
+  .dl-row .file { font-size: 12.5px; color: var(--ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .dl-row a.get { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .dl-row a.get svg { width: 16px; height: 16px; }
+  @media (max-width: 640px) {
+    .dl-row { grid-template-columns: 1fr; gap: 8px; }
+    .dl-row a.get { justify-self: start; }
+  }
+
+  .note {
+    margin-top: 22px; padding: 18px 20px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--line);
+    font-size: 14px; color: var(--ink-2);
+  }
+  .note strong { color: var(--ink); font-weight: 500; }
+  .note ul { margin: 8px 0 0; padding-left: 18px; }
+  .note li { margin: 4px 0; }
+
+  footer { border-top: 1px solid var(--line); padding: 34px 0 46px; color: var(--ink-2); font-size: 13.5px; }
+  footer .fbar { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+  footer .sep { margin-left: auto; }
+  @media (max-width: 640px) { footer .sep { margin-left: 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#top">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#1a73e8" />
+        <circle cx="16" cy="16" r="4" fill="#fff" />
+        <path d="M6 16a10 10 0 0 1 20 0" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".55" />
+      </svg>
+      OCD Manager
+    </a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/charan-sai1/OCD">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <h1>Your photos are already on the drive.</h1>
+    <p class="lede">
+      OCD Manager turns a computer with your portable drives plugged in into a private
+      photo library: tens of thousands of photos that open instantly, a phone that sends
+      new ones over Wi-Fi, and a duplicate cleaner that never deletes anything.
+    </p>
+    <div class="cta">
+      <a class="btn primary" id="mainDl" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-windows-amd64.exe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span id="mainDlLabel">Download for Windows</span>
+      </a>
+      <a class="btn ghost" href="#download">All downloads</a>
+    </div>
+    <p class="under">
+      One file, about 8 MB. No installer, no account, no cloud.
+      <!-- platform inline links --> Also for
+      <a href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-darwin-arm64">Mac</a>,
+      <a href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-linux-amd64">Linux</a>.
+    </p>
+
+    <figure class="shot">
+      <img src="import.png" width="2880" height="1800" alt="The Import view of OCD Manager: a folder picker for the phone's incoming files, a destination drive, and a QR code that opens the same page on a phone." />
+      <figcaption>Point it at the folder your phone shares into. The QR code opens the same page on the phone.</figcaption>
+    </figure>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Built for drives, not for uploads</h2>
+      <p class="sub">
+        Most photo apps want your library in their cloud. This one keeps it where it already is —
+        on the disk you own — and makes that pleasant to use.
+      </p>
+      <div class="grid3">
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5L5 20"/></svg>
+          <h3>Fast on slow drives</h3>
+          <p>
+            One scan reads the folders and keeps a small index of what is there.
+            After that the grid comes from memory, not from the USB cable — a 5,000-photo
+            folder opens in about a second.
+          </p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/><path d="M17 7h4"/><path d="m19 5 2 2-2 2"/></svg>
+          <h3>Phone to drive, no cable</h3>
+          <p>
+            Share photos into a folder however you like — Quick Share, the browser, a cable.
+            Press one button and they are copied, verified, and reported. The phone
+            tells you when the folder is safe to clear.
+          </p>
+        </div>
+        <div class="card">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2"/><rect x="9" y="9" width="12" height="12" rx="2"/></svg>
+          <h3>Duplicates, handled</h3>
+          <p>
+            Finds copies by content, not by name, and shows you what it found before
+            touching anything. The extras move into one folder you choose — flat, with
+            their original names. You empty it when you are sure.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <h2>Three steps, then it is just a gallery</h2>
+      <p class="sub">It runs on the computer the drives are plugged into. Every other device is a browser tab.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Download and start it</h3>
+          <p>Run the file in a terminal. It prints an address; open it in the browser.</p>
+          <pre><code>ocd-v0.1.1-windows-amd64.exe serve --port 8090 --data .\engine-data</code></pre>
+        </div>
+        <div class="step">
+          <h3>Add your folders</h3>
+          <p>In <em>Library</em>, add the drives or folders you keep photos in. The first scan takes a few minutes; after that it is instant.</p>
+        </div>
+        <div class="step">
+          <h3>Browse, or point your phone at it</h3>
+          <p>Scan the QR code in <em>Import</em> from the phone on the same Wi-Fi. The phone never touches the drive directly — it just asks the computer.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <h2>Download v0.1.1</h2>
+      <p class="sub">One static binary per platform. Nothing else to install, no runtime, no dependencies. Checksums are published with every release.</p>
+
+      <div class="dl">
+        <div class="dl-row">
+          <div>
+            <div class="os">Windows 10 and 11</div>
+            <div class="meta">Most PCs · 8.2 MB · <span class="file">ocd-v0.1.1-windows-amd64.exe</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-windows-amd64.exe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+        <div class="dl-row">
+          <div>
+            <div class="os">Windows on ARM</div>
+            <div class="meta">Snapdragon laptops · 7.4 MB · <span class="file">ocd-v0.1.1-windows-arm64.exe</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-windows-arm64.exe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+        <div class="dl-row">
+          <div>
+            <div class="os">macOS, Apple Silicon</div>
+            <div class="meta">M1 and later · 7.5 MB · <span class="file">ocd-v0.1.1-darwin-arm64</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-darwin-arm64">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+        <div class="dl-row">
+          <div>
+            <div class="os">macOS, Intel</div>
+            <div class="meta">Check with <code>uname -m</code> · 8.1 MB · <span class="file">ocd-v0.1.1-darwin-amd64</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-darwin-amd64">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+        <div class="dl-row">
+          <div>
+            <div class="os">Linux, x86-64</div>
+            <div class="meta">Most distributions · 7.9 MB · <span class="file">ocd-v0.1.1-linux-amd64</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-linux-amd64">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+        <div class="dl-row">
+          <div>
+            <div class="os">Linux, ARM64</div>
+            <div class="meta">Raspberry Pi, ARM servers · 7.3 MB · <span class="file">ocd-v0.1.1-linux-arm64</span></div>
+          </div>
+          <a class="get" href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/ocd-v0.1.1-linux-arm64">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download
+          </a>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong>Before you run it.</strong>
+        <ul>
+          <li>The binaries are not code-signed. Windows will show “unrecognised app” — choose <em>More info</em>, then <em>Run anyway</em>.</li>
+          <li>On macOS, run <code>xattr -d com.apple.quarantine &lt;file&gt;</code> and <code>chmod +x &lt;file&gt;</code> once after downloading.</li>
+          <li>Only the Windows x64 build has been run on real hardware so far. The macOS and Linux builds come from the same source and their file formats were checked, but they are not battle-tested yet.</li>
+          <li>Verify a download with <a href="https://github.com/charan-sai1/OCD/releases/download/v0.1.1/SHA256SUMS.txt">SHA256SUMS.txt</a>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="limits">
+    <div class="wrap">
+      <h2>What it deliberately does not do</h2>
+      <p class="sub">Worth knowing before you move a library onto it.</p>
+      <div class="grid3">
+        <div class="card">
+          <h3>No cloud, no account</h3>
+          <p>Nothing leaves your network. There is no sign-in, no sync service, and no telemetry. That also means no phone app: the phone uses a browser tab.</p>
+        </div>
+        <div class="card">
+          <h3>No deleting</h3>
+          <p>The app copies and moves. It never hard-deletes a photo. Duplicates go to a folder you pick, and you decide when that folder is emptied.</p>
+        </div>
+        <div class="card">
+          <h3>No password</h3>
+          <p>The page is open to anything on your network. Run it on a network you trust, and keep the port closed when you are away.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap fbar">
+    <span>OCD Manager v0.1.1</span>
+    <a href="https://github.com/charan-sai1/OCD">Source</a>
+    <a href="https://github.com/charan-sai1/OCD/releases">All releases</a>
+    <a href="https://github.com/charan-sai1/OCD/issues">Issues</a>
+    <span class="sep">Built for drives that already exist.</span>
+  </div>
+</footer>
+
+<script>
+  // Pick the most likely file for this machine. The table below is the source of
+  // truth; this only saves a click on the obvious cases.
+  (function () {
+    var ua = navigator.userAgent;
+    var btn = document.getElementById('mainDl');
+    var label = document.getElementById('mainDlLabel');
+    if (!btn || !label) return;
+    var base = 'https://github.com/charan-sai1/OCD/releases/download/v0.1.1/';
+    if (/Mac OS X|Macintosh/.test(ua) && !/iPhone|iPad/.test(ua)) {
+      btn.href = base + 'ocd-v0.1.1-darwin-arm64';
+      label.textContent = 'Download for Mac (Apple Silicon)';
+    } else if (/Linux/.test(ua) && !/Android/.test(ua)) {
+      btn.href = base + 'ocd-v0.1.1-linux-amd64';
+      label.textContent = 'Download for Linux';
+    } else if (/Android|iPhone|iPad/.test(ua)) {
+      label.textContent = 'See the download for your computer';
+      btn.href = '#download';
+    }
+  })();
+</script>
+
+</body>
+</html>
