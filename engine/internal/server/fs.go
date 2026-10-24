@@ -18,8 +18,22 @@ type fsEntry struct {
 	Items int    `json:"items,omitempty"` // hint for folders
 }
 
+// mountPoints names the folders where removable drives appear, per OS. A drive
+// plugged into a Mac lives in /Volumes; on Linux it can be under any of these.
+func mountPoints(goos string) []string {
+	switch goos {
+	case "darwin":
+		return []string{"/Volumes"}
+	case "windows":
+		return nil
+	default:
+		return []string{"/media", "/run/media", "/mnt"}
+	}
+}
+
 // fsRoots lists the starting points a user can pick from: drives on Windows,
-// "/" elsewhere, plus the home folder and common media folders.
+// "/" and mounted volumes elsewhere, plus the home folder and common media
+// folders.
 func (s *Server) fsRoots(w http.ResponseWriter, r *http.Request) {
 	var roots []fsEntry
 
@@ -32,12 +46,22 @@ func (s *Server) fsRoots(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		roots = append(roots, fsEntry{Name: "Computer", Path: "/", IsDir: true})
-		// Common mount points for external drives.
-		if vols, err := os.ReadDir("/media"); err == nil {
+		seen := map[string]bool{"/": true}
+		for _, dir := range mountPoints(runtime.GOOS) {
+			vols, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
 			for _, v := range vols {
-				if v.IsDir() {
-					roots = append(roots, fsEntry{Name: v.Name(), Path: "/media/" + v.Name(), IsDir: true})
+				if !v.IsDir() {
+					continue
 				}
+				p := filepath.Join(dir, v.Name())
+				if seen[p] {
+					continue
+				}
+				seen[p] = true
+				roots = append(roots, fsEntry{Name: v.Name(), Path: p, IsDir: true})
 			}
 		}
 	}
