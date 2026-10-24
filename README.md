@@ -4,6 +4,8 @@ A lightweight, local-first tool for managing a photo library spread across
 portable drives and phones. One small binary, no accounts, no cloud, nothing
 deleted without verification.
 
+**Download and overview:** <https://charan-sai1.github.io/OCD/>
+
 It does three jobs:
 
 | Job | What it does |
