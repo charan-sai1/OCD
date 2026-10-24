@@ -112,10 +112,7 @@ func (st *phoneStore) save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(st.file), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(st.file, b, 0o644)
+	return writeFileAtomic(st.file, b, 0o644)
 }
 
 // inboxWatch is what the arrival folder holds at this moment.

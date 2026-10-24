@@ -55,14 +55,11 @@ func newLibraryStore(file string) (*libraryStore, error) {
 func (st *libraryStore) save() error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(st.file), 0o755); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(libraryFile{Items: st.items}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(st.file, b, 0o644)
+	return writeFileAtomic(st.file, b, 0o644)
 }
 
 // list returns the libraries with availability refreshed.
