@@ -11,6 +11,7 @@ import (
 
 	"ocd/internal/dedupe"
 	"ocd/internal/media"
+	"ocd/internal/update"
 )
 
 // Config holds runtime paths.
@@ -18,8 +19,9 @@ type Config struct {
 	DataDir        string // where indexes/reports live
 	PhotofieldExe  string // optional path to photofield binary
 	PhotofieldData string
-	AutoScan       bool // refresh the media index shortly after start
-	Port           int  // the port being served, for the address a phone should open
+	AutoScan       bool   // refresh the media index shortly after start
+	Port           int    // the port being served, for the address a phone should open
+	Version        string // the build's version, shown in the interface
 }
 
 // Server is the HTTP app.
@@ -36,6 +38,10 @@ type Server struct {
 	index  *media.Index
 	thumbs *media.Thumbs
 
+	upd      *update.Manager
+	updateMu sync.Mutex
+	updating bool
+
 	scanMu   sync.Mutex
 	scanning bool
 	scanProg media.Progress
@@ -43,7 +49,11 @@ type Server struct {
 
 // New creates a server.
 func New(cfg Config) *Server {
+	if cfg.Version == "" {
+		cfg.Version = "dev"
+	}
 	s := &Server{cfg: cfg, clients: map[chan string]struct{}{}}
+	s.upd = update.New(cfg.Version)
 
 	libsFile := filepath.Join(cfg.DataDir, "libraries.json")
 	st, err := newLibraryStore(libsFile)
@@ -111,6 +121,9 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/phone/import", s.phoneImportRun)
 	mux.HandleFunc("/api/net", s.netInfo)
+	mux.HandleFunc("/api/version", s.versionInfo)
+	mux.HandleFunc("/api/update/check", s.updateCheck)
+	mux.HandleFunc("/api/update/apply", s.updateApply)
 	mux.HandleFunc("/", s.static)
 	return mux
 }

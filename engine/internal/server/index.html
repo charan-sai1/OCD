@@ -64,6 +64,32 @@
     margin-top:auto;display:flex;align-items:center;gap:9px;
     padding:12px;font-size:12.5px;color:var(--mut);
   }
+  .sidefoot .ver{margin-left:auto;font-size:11.5px;color:var(--mut2);white-space:nowrap}
+  #updateBar{
+    position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:60;
+    display:flex;align-items:center;gap:14px;max-width:min(720px,calc(100vw - 32px));
+    padding:11px 12px 11px 18px;border-radius:14px;
+    background:#202124;color:#e8eaed;box-shadow:0 8px 30px rgba(0,0,0,.35);
+    font-size:14px;line-height:1.4;
+  }
+  #updateBar[hidden]{display:none}
+  #updateBar .ubtext{flex:1;min-width:0}
+  #updateBar .ubbtn{
+    border:0;border-radius:999px;background:#8ab4f8;color:#202124;
+    font:inherit;font-weight:600;padding:8px 16px;cursor:pointer;flex:none;
+  }
+  #updateBar .ubbtn:disabled{opacity:.6;cursor:default}
+  #updateBar .ubx{
+    background:none;border:0;color:#9aa0a6;font-size:20px;line-height:1;
+    cursor:pointer;padding:4px 6px;flex:none;
+  }
+  body.has-update #activity{bottom:104px}
+  @media (max-width:560px){
+    #updateBar{left:12px;right:12px;bottom:84px;transform:none;max-width:none;font-size:13.5px;flex-wrap:wrap;gap:10px}
+    #updateBar .ubtext{flex:1 1 100%}
+    #updateBar .ubbtn{margin-left:auto}
+    body.has-update #activity{bottom:196px}
+  }
   .dot{width:8px;height:8px;border-radius:50%;background:var(--mut2);flex:none}
   .dot.on{background:var(--ok)}
 
@@ -562,7 +588,7 @@
     </button>
   </nav>
 
-  <div class="sidefoot"><span class="dot" id="dot"></span><span id="statusTxt">checking…</span></div>
+  <div class="sidefoot"><span class="dot" id="dot"></span><span id="statusTxt">checking…</span><span class="ver" id="verTxt"></span></div>
 </aside>
 
 <main class="main">
@@ -869,6 +895,12 @@ Install on this PC with winget:<br><br>
       <button class="btn primary" id="pkUse" title="Select the folder shown above">Use this folder</button>
     </div>
   </div>
+</div>
+
+<div id="updateBar" hidden role="status" aria-live="polite">
+  <span class="ubtext" id="updateText"></span>
+  <button class="ubbtn" id="updateGo">Update</button>
+  <button class="ubx" id="updateClose" title="Not now" aria-label="Not now">×</button>
 </div>
 
 <script>
@@ -2382,6 +2414,96 @@ $('#kindSeg').querySelectorAll('button').forEach(b => {
     loadPhotos(true);
   };
 });
+
+/* ---------- updates ---------- */
+let updateState = null;
+let updateDismissed = null;
+
+async function loadVersion(){
+  try {
+    const v = await get('/api/version');
+    updateState = v;
+    const ver = $('#verTxt');
+    if (ver) ver.textContent = v.current === 'dev' ? 'dev build' : 'v' + v.current;
+    renderUpdate();
+  } catch { /* restarting, or unreachable; the rest of the page still works */ }
+}
+
+function renderUpdate(){
+  const bar = $('#updateBar');
+  if (!bar) return;
+  const st = updateState;
+  if (!st || !st.available || st.latest === updateDismissed){
+    bar.hidden = true;
+    document.body.classList.remove('has-update');
+    return;
+  }
+  const latest = String(st.latest || '').replace(/^v/, '');
+  $('#updateText').textContent = st.canApply
+    ? 'Version ' + latest + ' is available. Updating restarts OCD Manager; your photos, folders and settings stay as they are.'
+    : 'Version ' + latest + ' is available. Update it on the computer that runs OCD Manager.';
+  const go = $('#updateGo');
+  go.hidden = !st.canApply;
+  go.disabled = false;
+  go.textContent = 'Update';
+  bar.hidden = false;
+  document.body.classList.add('has-update');
+}
+
+$('#updateClose').onclick = () => {
+  updateDismissed = updateState && updateState.latest;
+  $('#updateBar').hidden = true;
+  document.body.classList.remove('has-update');
+};
+
+$('#updateGo').onclick = async () => {
+  const go = $('#updateGo');
+  go.disabled = true;
+  go.textContent = 'Updating…';
+  $('#updateText').textContent = 'Downloading the new version and checking it against the published checksum…';
+  let res, body = {};
+  try {
+    res = await fetch('/api/update/apply', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-OCD-Update':'1'},
+      body:'{}'
+    });
+    body = await res.json().catch(() => ({}));
+  } catch (e) {
+    res = { ok:false, status:0 };
+    body = { error:'the app stopped answering' };
+  }
+  if (!res.ok){
+    $('#updateText').textContent = 'Could not update: ' + (body.error || ('error ' + res.status));
+    go.disabled = false;
+    go.textContent = 'Try again';
+    return;
+  }
+  $('#updateText').textContent = 'Restarting… this page will come back by itself.';
+  go.hidden = true;
+  waitForRestart();
+};
+
+// The new process needs a moment to bind the port. Wait for a different version
+// to answer, then reload into it.
+async function waitForRestart(){
+  const before = updateState && updateState.current;
+  const deadline = Date.now() + 120000;
+  let wentDown = false;
+  while (Date.now() < deadline){
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const r = await fetch('/api/version', {cache:'no-store'});
+      if (!r.ok) continue;
+      const v = await r.json();
+      if (v.current !== before || wentDown){ location.reload(); return; }
+    } catch { wentDown = true; }
+  }
+  $('#updateText').textContent = 'The app did not come back on its own. Start it again from the terminal.';
+}
+
+loadVersion();
+setInterval(loadVersion, 10 * 60 * 1000);
 
 /* ---------- boot ---------- */
 syncPick();

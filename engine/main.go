@@ -7,20 +7,28 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ocd/internal/dedupe"
 	"ocd/internal/importer"
 	"ocd/internal/server"
+	"ocd/internal/update"
 )
+
+// version is set at build time: -ldflags "-X main.version=0.1.2". A build made
+// by hand says "dev", which the update check treats as older than any release.
+var version = "dev"
 
 func usage() {
 	fmt.Fprint(os.Stderr, `OCD Manager
 
 Usage:
+  ocd version
   ocd serve    [--port 8090] [--data DIR] [--photofield EXE] [--photofield-data DIR]
   ocd dedupe scan       --dir DIR [--dir DIR2] [--min-size BYTES] [--json OUT]
   ocd dedupe quarantine --report FILE --quarantine DIR [--dry-run] [--keep first|shortest|oldest]
@@ -38,6 +46,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "version":
+		fmt.Printf("ocd %s\n", version)
 	case "serve":
 		serve(os.Args[2:])
 	case "dedupe":
@@ -78,12 +88,35 @@ func serve(args []string) {
 	pfd := fs.String("photofield-data", "", "photofield data dir")
 	_ = fs.Parse(args)
 
-	s := server.New(server.Config{DataDir: *data, PhotofieldExe: *pf, PhotofieldData: *pfd, AutoScan: true, Port: *port})
+	// An update leaves the previous binary beside this one; at start it is
+	// certainly not running, so it can go.
+	update.CleanupOld()
+
+	s := server.New(server.Config{
+		DataDir: *data, PhotofieldExe: *pf, PhotofieldData: *pfd,
+		AutoScan: true, Port: *port, Version: version,
+	})
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("OCD Manager on http://localhost%s", addr)
+	log.Printf("OCD Manager %s on http://localhost%s", version, addr)
 	s.StartBackgroundIndex()
 	s.StartPhoneWatch()
-	log.Fatal(http.ListenAndServe(addr, s.Handler()))
+	s.StartUpdateCheck()
+	log.Fatal(listenAndServe(addr, s.Handler()))
+}
+
+// listenAndServe retries for a few seconds. An update starts the new process
+// while the old one is still releasing the port, and a manual restart can race
+// the same way; without this the replacement would exit immediately.
+func listenAndServe(addr string, h http.Handler) error {
+	var err error
+	for i := 0; i < 24; i++ {
+		var ln net.Listener
+		if ln, err = net.Listen("tcp", addr); err == nil {
+			return http.Serve(ln, h)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return err
 }
 
 func dedupeScan(args []string) {

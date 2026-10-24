@@ -1,5 +1,6 @@
 # Builds OCD Manager for every supported platform into ./dist
-# Usage:  powershell -ExecutionPolicy Bypass -File build.ps1
+# Usage:  powershell -ExecutionPolicy Bypass -File build.ps1 [-Version 0.1.2]
+param([string]$Version = "dev")
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -22,8 +23,8 @@ foreach ($t in $targets) {
     $env:GOOS = $t.os
     $env:GOARCH = $t.arch
     $name = "ocd-$($t.os)-$($t.arch)$($t.ext)"
-    Write-Host "building $name"
-    go build -trimpath -ldflags "-s -w" -o (Join-Path $out $name) .
+    Write-Host "building $name ($Version)"
+    go build -trimpath -ldflags "-s -w -X main.version=$Version" -o (Join-Path $out $name) .
 }
 
 Write-Host "`nDone. Binaries in ${out}:"
