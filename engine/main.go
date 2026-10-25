@@ -32,7 +32,7 @@ func usage() {
 Usage:
   ocd version
   ocd                    serve with defaults (port 8090) and open the page
-  ocd serve    [--port 8090] [--data DIR] [--photofield EXE] [--photofield-data DIR]
+  ocd serve    [--port 8090] [--data DIR] [--photofield EXE] [--photofield-data DIR] [--open]
   ocd dedupe scan       --dir DIR [--dir DIR2] [--min-size BYTES] [--json OUT]
   ocd dedupe quarantine --report FILE --quarantine DIR [--dry-run] [--keep first|shortest|oldest]
   ocd import --source DIR|SERIAL|/PATH --dest DIR [--adb] [--dry-run] [--delete]
@@ -91,7 +91,9 @@ func serve(args []string, openUI bool) {
 	data := fs.String("data", defaultDataDir(), "data directory (indexes, quarantine)")
 	pf := fs.String("photofield", "", "path to photofield executable")
 	pfd := fs.String("photofield-data", "", "photofield data dir")
+	open := fs.Bool("open", false, "open the page in a window after starting")
 	_ = fs.Parse(args)
+	openUI = openUI || *open
 
 	// An update leaves the previous binary beside this one; at start it is
 	// certainly not running, so it can go.
@@ -104,14 +106,14 @@ func serve(args []string, openUI bool) {
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("OCD Manager %s on http://localhost%s", version, addr)
 	if openUI {
-		log.Printf("Opening it in your browser. Keep this window open while you use the app.")
+		log.Printf("Opening it in a window. Keep this console open while you use the app.")
 	}
 	s.StartBackgroundIndex()
 	s.StartPhoneWatch()
 	s.StartUpdateCheck()
 	err := listenAndServe(addr, s.Handler(), func() {
 		if openUI {
-			openBrowser("http://localhost" + addr)
+			openWindow("http://localhost" + addr)
 		}
 	})
 	if err != nil {
@@ -132,7 +134,7 @@ func launch() {
 	const url = "http://localhost:8090/"
 	if alreadyRunning(url + "api/version") {
 		fmt.Println("OCD Manager is already running at " + url)
-		openBrowser(url)
+		openWindow(url)
 		return
 	}
 	serve(nil, true)
@@ -148,8 +150,66 @@ func alreadyRunning(u string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// openBrowser hands a URL to the desktop. A failure is silent: the address is
-// printed to the window either way.
+// openWindow opens the page as a window rather than a tab. Chromium browsers
+// can run without tabs or an address bar, which is what makes a local web page
+// feel like the program it belongs to. Anything else gets a normal tab.
+func openWindow(url string) {
+	if exe := chromiumBrowser(); exe != "" {
+		cmd := exec.Command(exe, "--app="+url, "--window-size=1100,700")
+		if err := cmd.Start(); err == nil {
+			return
+		}
+	}
+	openBrowser(url)
+}
+
+// chromiumBrowser looks in the usual install places rather than PATH: neither
+// Edge nor Chrome puts itself on PATH on Windows or macOS.
+func chromiumBrowser() string {
+	switch runtime.GOOS {
+	case "windows":
+		for _, base := range []string{
+			os.Getenv("ProgramFiles(x86)"),
+			os.Getenv("ProgramFiles"),
+			os.Getenv("LOCALAPPDATA"),
+		} {
+			if base == "" {
+				continue
+			}
+			for _, rel := range []string{
+				`Microsoft\Edge\Application\msedge.exe`,
+				`Google\Chrome\Application\chrome.exe`,
+			} {
+				if p := filepath.Join(base, rel); fileExists(p) {
+					return p
+				}
+			}
+		}
+	case "darwin":
+		for _, p := range []string{
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		} {
+			if fileExists(p) {
+				return p
+			}
+		}
+	default:
+		for _, name := range []string{"microsoft-edge", "google-chrome", "chromium", "chromium-browser"} {
+			if p, err := exec.LookPath(name); err == nil {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}
+
+// openBrowser hands a URL to the desktop's default browser.
 func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
