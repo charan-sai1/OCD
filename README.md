@@ -53,15 +53,23 @@ ocd-app/
 
 **Just want to run it?** Download the binary for your machine from the
 [latest release](https://github.com/charan-sai1/OCD/releases/latest). There is
-nothing to install — one file, no dependencies:
+nothing to install — one file, no dependencies. The
+[download page](https://charan-sai1.github.io/OCD/) lists the exact file names,
+sizes, and checksums.
 
 ```powershell
-# Windows
-.\ocd-windows-amd64.exe serve --port 8090 --data .\engine-data
+# Windows: rename the downloaded file to ocd.exe, then
+Unblock-File .\ocd.exe            # only if Windows warned it was "unrecognised"
+.\ocd.exe serve --port 8090 --data .\engine-data
 ```
 
-The other platforms are the same, with the matching file name. macOS needs
-`xattr -d com.apple.quarantine <file>` once, and Linux/macOS need `chmod +x`.
+The release is not code-signed, so Windows and macOS warn the first time. That
+is a missing certificate, not a detection; the download page explains the
+one-line fix and how to check the hash. From v0.1.2 onward the app also updates
+itself, so this is a one-time step.
+
+The other platforms are the same, with the matching file name: `chmod +x` once,
+and on macOS also `xattr -d com.apple.quarantine <file>`.
 There is no Android or iPhone app: the phone opens the same page in its browser
 (the Import view shows a QR code for it).
 

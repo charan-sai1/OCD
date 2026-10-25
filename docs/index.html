@@ -161,6 +161,10 @@
   .note strong { color: var(--ink); font-weight: 500; }
   .note ul { margin: 8px 0 0; padding-left: 18px; }
   .note li { margin: 4px 0; }
+  .note p { margin: 8px 0 0; }
+  @media (max-width: 640px) {
+    .note pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  }
 
   footer { border-top: 1px solid var(--line); padding: 34px 0 46px; color: var(--ink-2); font-size: 13.5px; }
   footer .fbar { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
@@ -347,12 +351,24 @@
       </div>
 
       <div class="note">
-        <strong>Before you run it.</strong>
+        <strong>If Windows says “unrecognised app”.</strong>
+        <p>Windows says that about any unsigned program that arrived through a browser. It is not a virus report; it is a missing certificate, and a certificate costs money and an identity check. The download is marked as “from the internet”, and that mark is what makes Windows stop and ask. Remove it once, then start the program from PowerShell:</p>
+        <pre><code>Unblock-File .\ocd-v0.1.2-windows-amd64.exe
+.\ocd-v0.1.2-windows-amd64.exe serve --port 8090 --data .\engine-data</code></pre>
+        <p>Downloading with <code>curl.exe</code> skips the browser and never adds the mark. Check the hash before running it — it must match the published value:</p>
+        <pre><code>curl.exe -L -o ocd.exe https://github.com/charan-sai1/OCD/releases/download/v0.1.2/ocd-v0.1.2-windows-amd64.exe
+(Get-FileHash .\ocd.exe -Algorithm SHA256).Hash
+# F28941B3D361583BBD1363BD68B80DCD8758C759E70DE05D611BF2A8FE86E0E6
+.\ocd.exe serve --port 8090 --data .\engine-data</code></pre>
+        <p>If Windows 11 says the app is blocked by <em>Smart App Control</em>, there is no workaround: that setting refuses every unsigned program. Turn it off in Windows Security, or wait for a signed release.</p>
+      </div>
+
+      <div class="note">
+        <strong>Also worth knowing.</strong>
         <ul>
-          <li>The binaries are not code-signed. Windows will show “unrecognised app” — choose <em>More info</em>, then <em>Run anyway</em>.</li>
           <li>On macOS, run <code>xattr -d com.apple.quarantine &lt;file&gt;</code> and <code>chmod +x &lt;file&gt;</code> once after downloading.</li>
           <li>Only the Windows x64 build has been run on real hardware so far. The macOS and Linux builds come from the same source and their file formats were checked, but they are not battle-tested yet.</li>
-          <li>Verify a download with <a href="https://github.com/charan-sai1/OCD/releases/download/v0.1.2/SHA256SUMS.txt">SHA256SUMS.txt</a>.</li>
+          <li>Every release ships <a href="https://github.com/charan-sai1/OCD/releases/download/v0.1.2/SHA256SUMS.txt">SHA256SUMS.txt</a>. The hash above is the Windows x64 file this page links to.</li>
         </ul>
       </div>
     </div>
