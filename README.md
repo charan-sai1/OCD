@@ -59,9 +59,14 @@ sizes, and checksums.
 
 ```powershell
 # Windows: rename the downloaded file to ocd.exe, then
-Unblock-File .\ocd.exe            # only if Windows warned it was "unrecognised"
-.\ocd.exe serve --port 8090 --data .\engine-data
+Unblock-File .\ocd.exe   # only if Windows warned it was "unrecognised"
+.\ocd.exe                # opens its own window on http://localhost:8090
 ```
+
+Double-clicking the file does the same: it starts the server, prints the address,
+and opens the page in a window without tabs or an address bar. Keep the console
+window open while you use the app; closing it stops it. `ocd serve --port 8090
+--data DIR --open` is the explicit form.
 
 The release is not code-signed, so Windows and macOS warn the first time. That
 is a missing certificate, not a detection; the download page explains the
