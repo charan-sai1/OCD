@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,6 +31,7 @@ func usage() {
 
 Usage:
   ocd version
+  ocd                    serve with defaults (port 8090) and open the page
   ocd serve    [--port 8090] [--data DIR] [--photofield EXE] [--photofield-data DIR]
   ocd dedupe scan       --dir DIR [--dir DIR2] [--min-size BYTES] [--json OUT]
   ocd dedupe quarantine --report FILE --quarantine DIR [--dry-run] [--keep first|shortest|oldest]
@@ -42,14 +45,16 @@ Serve runs the web UI (Import / Duplicates / Browse / Setup).
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+		// Double-clicked from a file manager: there is nothing to parse, so do
+		// what the person expects - serve on the default port and open the page.
+		launch()
+		return
 	}
 	switch os.Args[1] {
 	case "version":
 		fmt.Printf("ocd %s\n", version)
 	case "serve":
-		serve(os.Args[2:])
+		serve(os.Args[2:], false)
 	case "dedupe":
 		if len(os.Args) < 3 {
 			usage()
@@ -80,7 +85,7 @@ func (m *multiFlag) Set(v string) error {
 	return nil
 }
 
-func serve(args []string) {
+func serve(args []string, openUI bool) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 8090, "HTTP port")
 	data := fs.String("data", defaultDataDir(), "data directory (indexes, quarantine)")
@@ -98,20 +103,78 @@ func serve(args []string) {
 	})
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("OCD Manager %s on http://localhost%s", version, addr)
+	if openUI {
+		log.Printf("Opening it in your browser. Keep this window open while you use the app.")
+	}
 	s.StartBackgroundIndex()
 	s.StartPhoneWatch()
 	s.StartUpdateCheck()
-	log.Fatal(listenAndServe(addr, s.Handler()))
+	err := listenAndServe(addr, s.Handler(), func() {
+		if openUI {
+			openBrowser("http://localhost" + addr)
+		}
+	})
+	if err != nil {
+		// A double-click closes the console the moment the program exits, which
+		// would make the reason invisible. Hold it open.
+		if openUI {
+			fmt.Fprintf(os.Stderr, "\nOCD Manager could not start: %v\n", err)
+			fmt.Fprint(os.Stderr, "Press Enter to close this window.")
+			_, _ = fmt.Scanln()
+		}
+		log.Fatal(err)
+	}
+}
+
+// launch is the double-click path. If an instance is already answering, the
+// page is opened again rather than a second copy fighting for the port.
+func launch() {
+	const url = "http://localhost:8090/"
+	if alreadyRunning(url + "api/version") {
+		fmt.Println("OCD Manager is already running at " + url)
+		openBrowser(url)
+		return
+	}
+	serve(nil, true)
+}
+
+func alreadyRunning(u string) bool {
+	c := &http.Client{Timeout: 700 * time.Millisecond}
+	resp, err := c.Get(u)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// openBrowser hands a URL to the desktop. A failure is silent: the address is
+// printed to the window either way.
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	_ = cmd.Start()
 }
 
 // listenAndServe retries for a few seconds. An update starts the new process
 // while the old one is still releasing the port, and a manual restart can race
-// the same way; without this the replacement would exit immediately.
-func listenAndServe(addr string, h http.Handler) error {
+// the same way; without this the replacement would exit immediately. ready runs
+// once the socket is actually open.
+func listenAndServe(addr string, h http.Handler, ready func()) error {
 	var err error
 	for i := 0; i < 24; i++ {
 		var ln net.Listener
 		if ln, err = net.Listen("tcp", addr); err == nil {
+			if ready != nil {
+				go ready()
+			}
 			return http.Serve(ln, h)
 		}
 		time.Sleep(250 * time.Millisecond)
