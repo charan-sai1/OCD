@@ -350,6 +350,10 @@ func (s *Server) startScan(reason string) bool {
 				s.libs.setCount(l.ID, 0, 0)
 			}
 		}
+		// Put the fresh snapshot back on each drive so the next machine can
+		// start from it instead of walking the disk.
+		s.writeCatalogs(libs)
+		s.drives.refresh(s.libs.list())
 		s.emitJSON("indexed", s.index.Len(), 0, "")
 	}()
 	return true

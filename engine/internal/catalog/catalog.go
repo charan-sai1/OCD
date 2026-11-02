@@ -76,6 +76,9 @@ func Dir(root string) string { return filepath.Join(root, dirName) }
 // Path is the current catalog file for a volume root.
 func Path(root string) string { return filepath.Join(Dir(root), fileName) }
 
+// BackupPath is the previous catalog, kept in case the current one is damaged.
+func BackupPath(root string) string { return filepath.Join(Dir(root), bakName) }
+
 // Write saves a snapshot atomically. The previous file is kept as catalog.bak,
 // so a yanked drive or a full disk leaves the last good catalog readable.
 func Write(root string, snap Snapshot) error {
@@ -169,6 +172,57 @@ func Read(root string) (Snapshot, Source, error) {
 	return Snapshot{}, "", fmt.Errorf("catalog: primary: %v; backup: %v", err, bakErr)
 }
 
+// HeaderOf reads only the first line of the catalog. Listing drives should not
+// pay for decompressing tens of thousands of entries.
+func HeaderOf(root string) (Header, Source, error) {
+	h, err := readHeader(filepath.Join(Dir(root), fileName))
+	if err == nil {
+		return h, SourceCurrent, nil
+	}
+	backup, bakErr := readHeader(filepath.Join(Dir(root), bakName))
+	if bakErr == nil {
+		return backup, SourceBackup, nil
+	}
+	return Header{}, "", fmt.Errorf("catalog: primary: %v; backup: %v", err, bakErr)
+}
+
+func readHeader(p string) (Header, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return Header{}, err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return Header{}, err
+	}
+	defer gz.Close()
+	var h Header
+	if err := json.NewDecoder(gz).Decode(&h); err != nil {
+		return Header{}, err
+	}
+	if err := validHeader(h); err != nil {
+		return Header{}, err
+	}
+	return h, nil
+}
+
+func validHeader(h Header) error {
+	if h.Format != Format {
+		return fmt.Errorf("not an OCD catalog (format %q)", h.Format)
+	}
+	if h.Version < 1 {
+		return fmt.Errorf("invalid catalog version %d", h.Version)
+	}
+	if h.Version > Version {
+		return fmt.Errorf("catalog version %d is newer than this build (%d)", h.Version, Version)
+	}
+	if strings.TrimSpace(h.VolumeID) == "" {
+		return errors.New("catalog has no volume id")
+	}
+	return nil
+}
+
 func readFile(p string) (Snapshot, error) {
 	f, err := os.Open(p)
 	if err != nil {
@@ -186,14 +240,8 @@ func readFile(p string) (Snapshot, error) {
 	if err := dec.Decode(&h); err != nil {
 		return Snapshot{}, err
 	}
-	if h.Format != Format {
-		return Snapshot{}, fmt.Errorf("not an OCD catalog (format %q)", h.Format)
-	}
-	if h.Version < 1 {
-		return Snapshot{}, fmt.Errorf("invalid catalog version %d", h.Version)
-	}
-	if h.Version > Version {
-		return Snapshot{}, fmt.Errorf("catalog version %d is newer than this build (%d)", h.Version, Version)
+	if err := validHeader(h); err != nil {
+		return Snapshot{}, err
 	}
 
 	entries := make([]Entry, 0, h.Count)

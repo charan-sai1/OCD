@@ -12,6 +12,7 @@ import (
 	"ocd/internal/dedupe"
 	"ocd/internal/media"
 	"ocd/internal/update"
+	"ocd/internal/volume"
 )
 
 // Config holds runtime paths.
@@ -32,6 +33,8 @@ type Server struct {
 
 	libs       *libraryStore
 	phone      *phoneStore
+	drives     *catalogStore
+	sysRoot    string
 	lastDedupe []dedupe.Group
 	pfCmd      *exec.Cmd
 
@@ -70,6 +73,8 @@ func New(cfg Config) *Server {
 	s.index = media.New(cfg.DataDir)
 	s.thumbs = media.NewThumbs(filepath.Join(cfg.DataDir, "thumbs"), ffmpegPath)
 	s.phone = newPhoneStore(filepath.Join(cfg.DataDir, "phone.json"))
+	s.drives = newCatalogStore()
+	s.sysRoot = volume.RootOf(cfg.DataDir)
 	return s
 }
 
@@ -92,6 +97,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/libraries", s.libsRouter)
 	mux.HandleFunc("/api/libraries/scan", s.libsScan)
 	mux.HandleFunc("/api/photos", s.gallery)
+	mux.HandleFunc("/api/drives", s.drivesList)
+	mux.HandleFunc("/api/drives/refresh", s.drivesRefresh)
+	mux.HandleFunc("/api/catalog", s.catalogDownload)
 	mux.HandleFunc("/api/item", s.itemInfo)
 	mux.HandleFunc("/api/fav", s.favToggle)
 	mux.HandleFunc("/api/orig", s.orig)

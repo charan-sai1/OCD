@@ -96,6 +96,35 @@ func TestReadMissing(t *testing.T) {
 	}
 }
 
+func TestHeaderOf(t *testing.T) {
+	dir := t.TempDir()
+	if err := Write(dir, sample()); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	h, src, err := HeaderOf(dir)
+	if err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	if src != SourceCurrent || h.Count != 3 || h.VolumeID != "win:1A2B3C4D" {
+		t.Fatalf("header = %+v from %q", h, src)
+	}
+
+	// A damaged primary should still yield the backup's header.
+	if err := Write(dir, sample()); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if err := os.WriteFile(Path(dir), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, src, err = HeaderOf(dir)
+	if err != nil {
+		t.Fatalf("header from backup: %v", err)
+	}
+	if src != SourceBackup || h.Count != 3 {
+		t.Fatalf("backup header = %+v from %q", h, src)
+	}
+}
+
 func TestRejectNewerVersion(t *testing.T) {
 	dir := t.TempDir()
 	writeRaw(t, Path(dir), Header{

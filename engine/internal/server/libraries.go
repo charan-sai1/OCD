@@ -237,6 +237,7 @@ func (s *Server) libsAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, lib)
 	go s.countLibrary(lib.ID)
+	go s.drives.refresh(s.libs.list())
 }
 
 func (s *Server) libsRemove(w http.ResponseWriter, r *http.Request) {
@@ -256,6 +257,7 @@ func (s *Server) libsRemove(w http.ResponseWriter, r *http.Request) {
 			s.emitJSON("index-error", 0, 0, err.Error())
 		}
 	}()
+	go s.drives.refresh(s.libs.list())
 	writeJSON(w, http.StatusOK, map[string]any{"removed": id, "items": s.libs.list()})
 }
 
