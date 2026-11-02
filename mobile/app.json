@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "OCD Manager",
+    "slug": "ocd-manager",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "scheme": "ocd",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#ffffff",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.charansai.ocd"
+    },
+    "android": {
+      "package": "com.charansai.ocd",
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
