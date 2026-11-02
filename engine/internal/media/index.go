@@ -374,6 +374,24 @@ func (ix *Index) Len() int {
 	return len(ix.items)
 }
 
+// ItemsFor returns a copy of every indexed item in one library. The drive
+// catalog is written from this, so it never has to walk the disk again.
+func (ix *Index) ItemsFor(libID string) []Item {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	out := make([]Item, 0, len(ix.items))
+	for _, it := range ix.items {
+		if it.Lib == libID {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// FormatVersion is the version of the local index format. It is copied into the
+// drive catalog so a reader can tell whether the metadata is compatible.
+func FormatVersion() int { return indexVersion }
+
 // ScannedAt is when the index was last written.
 func (ix *Index) ScannedAt() time.Time {
 	ix.mu.RLock()

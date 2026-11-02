@@ -13,13 +13,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
+	"ocd/internal/catalog"
 	"ocd/internal/dedupe"
 	"ocd/internal/importer"
+	"ocd/internal/media"
 	"ocd/internal/server"
 	"ocd/internal/update"
+	"ocd/internal/volume"
 )
 
 // version is set at build time: -ldflags "-X main.version=0.1.2". A build made
@@ -38,6 +42,8 @@ Usage:
   ocd import --source DIR|SERIAL|/PATH --dest DIR [--adb] [--dry-run] [--delete]
              [--dup-check content|name] [--dup-action skip|copy]
              (copy+verify is the default; --delete wipes verified originals from the phone)
+  ocd catalog [--data DIR] [--library PATH] [--dry-run]
+             (write .ocd/catalog.gz on each connected drive from the stored index)
 
 Serve runs the web UI (Import / Duplicates / Browse / Setup).
 `)
@@ -71,6 +77,8 @@ func main() {
 		}
 	case "import":
 		importCmd(os.Args[2:])
+	case "catalog":
+		catalogCmd(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -396,4 +404,139 @@ func defaultDataDir() string {
 		return "ocd-data"
 	}
 	return filepath.Join(home, "ocd-app", "engine-data")
+}
+
+// catalogCmd writes the portable index that lives on each drive. It reads the
+// machine's existing index, so no disk is walked: the catalog is a copy of what
+// this machine already knows, keyed by volume and relative path.
+func catalogCmd(args []string) {
+	fs := flag.NewFlagSet("catalog", flag.ExitOnError)
+	data := fs.String("data", defaultDataDir(), "data directory")
+	only := fs.String("library", "", "only this library path")
+	dry := fs.Bool("dry-run", false, "report what would be written")
+	fs.Parse(args)
+
+	libs, err := readLibraries(filepath.Join(*data, "libraries.json"))
+	if err != nil {
+		log.Fatalf("read libraries: %v", err)
+	}
+	ix := media.New(*data)
+	if ix.Len() == 0 {
+		log.Fatalf("no index in %s", *data)
+	}
+
+	type group struct {
+		info    volume.Info
+		entries map[string]catalog.Entry
+	}
+	groups := map[string]*group{}
+
+	for _, l := range libs {
+		if *only != "" && !strings.EqualFold(filepath.Clean(l.Path), filepath.Clean(*only)) {
+			continue
+		}
+		if !*dry && !pathIsDir(l.Path) {
+			log.Printf("skip %s: not connected", l.Path)
+			continue
+		}
+		info, err := volume.Of(l.Path)
+		if err != nil {
+			log.Printf("skip %s: %v", l.Path, err)
+			continue
+		}
+		items := ix.ItemsFor(l.ID)
+		if len(items) == 0 {
+			log.Printf("skip %s: nothing indexed", l.Path)
+			continue
+		}
+		g := groups[info.Root]
+		if g == nil {
+			g = &group{info: info, entries: map[string]catalog.Entry{}}
+			groups[info.Root] = g
+		}
+		added := 0
+		for _, it := range items {
+			abs := filepath.Join(l.Path, filepath.FromSlash(it.Rel))
+			rel, err := filepath.Rel(info.Root, abs)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			p := filepath.ToSlash(rel)
+			if _, seen := g.entries[p]; seen {
+				continue
+			}
+			g.entries[p] = catalog.Entry{
+				Path:     p,
+				Size:     it.Size,
+				MTime:    it.ModTime,
+				ShotAt:   it.ShotAt,
+				Kind:     string(it.Kind),
+				Width:    it.W,
+				Height:   it.H,
+				Duration: it.Duration,
+			}
+			added++
+		}
+		log.Printf("%s: %d indexed, %d added under %s (%s)", l.Path, len(items), added, info.Root, info.ID)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("nothing to write")
+		return
+	}
+	roots := make([]string, 0, len(groups))
+	for root := range groups {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	for _, root := range roots {
+		g := groups[root]
+		entries := make([]catalog.Entry, 0, len(g.entries))
+		for _, e := range g.entries {
+			entries = append(entries, e)
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+		snap := catalog.Snapshot{
+			Header: catalog.Header{
+				VolumeID:     g.info.ID,
+				Label:        g.info.Label,
+				IndexVersion: media.FormatVersion(),
+			},
+			Entries: entries,
+		}
+		dir := catalog.Dir(g.info.Root)
+		if *dry {
+			log.Printf("would write %s (%d items, %s)", catalog.Path(g.info.Root), len(entries), g.info.ID)
+			continue
+		}
+		if err := catalog.Write(g.info.Root, snap); err != nil {
+			log.Printf("write %s: %v", dir, err)
+			continue
+		}
+		log.Printf("wrote %s (%d items, %s)", catalog.Path(g.info.Root), len(entries), g.info.ID)
+	}
+}
+
+type catalogLibrary struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+}
+
+func readLibraries(file string) ([]catalogLibrary, error) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	var v struct {
+		Items []catalogLibrary `json:"items"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+	return v.Items, nil
+}
+
+func pathIsDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
