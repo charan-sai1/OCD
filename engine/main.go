@@ -513,7 +513,17 @@ func catalogCmd(args []string) {
 			log.Printf("write %s: %v", dir, err)
 			continue
 		}
-		log.Printf("wrote %s (%d items, %s)", catalog.Path(g.info.Root), len(entries), g.info.ID)
+		got, src, err := catalog.Read(g.info.Root)
+		if err != nil {
+			log.Printf("verify %s: %v", catalog.Path(g.info.Root), err)
+			continue
+		}
+		if got.Header.VolumeID != g.info.ID || len(got.Entries) != len(entries) {
+			log.Printf("verify %s: got %s with %d items, want %s with %d",
+				catalog.Path(g.info.Root), got.Header.VolumeID, len(got.Entries), g.info.ID, len(entries))
+			continue
+		}
+		log.Printf("wrote %s (%d items, %s, verified from %s)", catalog.Path(g.info.Root), len(entries), g.info.ID, src)
 	}
 }
 
