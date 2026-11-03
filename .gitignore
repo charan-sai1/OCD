@@ -23,3 +23,7 @@ Desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# ---- bundled tools: the binary is downloaded, not committed ----
+tools/ffmpeg/
+engine/tools/ffmpeg/

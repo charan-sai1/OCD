@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -92,8 +94,25 @@ func New(cfg Config) *Server {
 }
 
 // ffmpegPath is looked up fresh each time so installing ffmpeg while the app is
-// running starts producing video thumbnails without a restart.
+// running starts producing video thumbnails without a restart. The copy that
+// ships in tools/ffmpeg comes first, so a phone does not have to depend on the
+// user's PATH being set up for the app.
 func ffmpegPath() string {
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		name := "ffmpeg"
+		if runtime.GOOS == "windows" {
+			name = "ffmpeg.exe"
+		}
+		for _, p := range []string{
+			filepath.Join(dir, "tools", "ffmpeg", name),
+			filepath.Join(dir, "ffmpeg", name),
+		} {
+			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+				return p
+			}
+		}
+	}
 	if p, err := exec.LookPath("ffmpeg"); err == nil {
 		return p
 	}

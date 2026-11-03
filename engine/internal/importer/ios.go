@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -72,5 +73,21 @@ func ToolsAvailable() map[string]bool {
 		_, err := exec.LookPath(n)
 		out[n] = err == nil
 	}
+	// The app ships a copy of ffmpeg next to itself, and the thumbnailer uses
+	// it; the phone should hear the same answer as the previewer gives.
+	if !out["ffmpeg"] && bundledTool("tools/ffmpeg/ffmpeg.exe") {
+		out["ffmpeg"] = true
+	}
 	return out
+}
+
+// bundledTool reports whether an optional binary travels with the app. It
+// lives beside the executable so the app works on a PC that never set up PATH.
+func bundledTool(rel string) bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(filepath.Dir(exe), filepath.FromSlash(rel)))
+	return err == nil && !fi.IsDir()
 }

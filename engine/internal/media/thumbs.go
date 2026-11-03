@@ -26,13 +26,23 @@ type Thumbs struct {
 	dir    string
 	ffmpeg func() string
 
+	// runFFmpeg exists so tests can inspect the command without a decoder.
+	runFFmpeg func(bin string, args ...string) ([]byte, error)
+
 	mu   sync.Mutex
 	busy map[string]chan struct{}
 }
 
 // NewThumbs prepares a cache rooted at dir.
 func NewThumbs(dir string, ffmpeg func() string) *Thumbs {
-	return &Thumbs{dir: dir, ffmpeg: ffmpeg, busy: map[string]chan struct{}{}}
+	return &Thumbs{
+		dir:    dir,
+		ffmpeg: ffmpeg,
+		busy:   map[string]chan struct{}{},
+		runFFmpeg: func(bin string, args ...string) ([]byte, error) {
+			return exec.Command(bin, args...).CombinedOutput()
+		},
+	}
 }
 
 func thumbKey(src string, size, mtime int64, maxDim int) string {
@@ -312,10 +322,11 @@ func (t *Thumbs) ffmpegPreview(src, out string, maxDim int, video bool) error {
 			"-ss", ss, "-i", src,
 			"-frames:v", "1",
 			"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease", maxDim, maxDim),
-			"-q:v", "4", "-y", out,
+			// The output is a temporary file with a .tmp suffix, which ffmpeg
+			// cannot use to guess a format, so name it explicitly.
+			"-c:v", "mjpeg", "-q:v", "4", "-f", "image2", "-y", out,
 		}
-		cmd := exec.Command(bin, args...)
-		combined, err := cmd.CombinedOutput()
+		combined, err := t.runFFmpeg(bin, args...)
 		if err != nil {
 			last = string(combined)
 			continue
