@@ -53,6 +53,9 @@ export type ImportMatch = {
   volumeId?: string;
   label?: string;
   how?: string;
+  // verified is true only when this session uploaded the bytes and the server
+  // hashed them. Catalog matches are metadata-only, so they are not deletable.
+  verified?: boolean;
 };
 
 export type ImportCheck = {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Linking,
@@ -70,6 +71,7 @@ export function Phone({ server, onChangeServer }: Props) {
   const [sendProgress, setSendProgress] = useState(0);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentNote, setSentNote] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
@@ -216,6 +218,9 @@ export function Phone({ server, onChangeServer }: Props) {
   const newCount = assets.length - onDrive;
   const visible = filter === 'new' ? assets.filter((a) => !badges[a.id]?.onDrive) : assets;
   const dest = libs.find((l) => l.id === destId);
+  const selectedItems = assets.filter((a) => selected.has(a.id));
+  const selectedNew = selectedItems.filter((a) => !badges[a.id]?.onDrive).length;
+  const selectedVerified = selectedItems.filter((a) => badges[a.id]?.verified).length;
 
   const enterSelection = () => {
     if (sending) return;
@@ -265,6 +270,7 @@ export function Phone({ server, onChangeServer }: Props) {
   const markOnDrive = (
     a: PhoneAsset,
     res: { path?: string; existingPath?: string; volumeId?: string; label?: string },
+    verified: boolean,
   ) => {
     setBadges((prev) => ({
       ...prev,
@@ -273,22 +279,14 @@ export function Phone({ server, onChangeServer }: Props) {
         path: res.path ?? res.existingPath,
         volumeId: res.volumeId,
         label: res.label,
+        verified,
       },
     }));
   };
 
-  const dropSelected = (id: string) => {
-    setSelected((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  };
-
   const send = async () => {
-    if (!dest || sending || selected.size === 0) return;
-    const list = assets.filter((a) => selected.has(a.id));
+    if (!dest || sending || deleting) return;
+    const list = assets.filter((a) => selected.has(a.id) && !badges[a.id]?.onDrive);
     if (list.length === 0) return;
     setSending(true);
     setSendError(null);
@@ -297,6 +295,7 @@ export function Phone({ server, onChangeServer }: Props) {
     setSentCount(0);
     setSendProgress(0);
     let done = 0;
+    let verified = 0;
     let failed = 0;
 
     for (const a of list) {
@@ -315,8 +314,7 @@ export function Phone({ server, onChangeServer }: Props) {
           kind: a.kind,
         });
         if (start.existingPath) {
-          markOnDrive(a, start);
-          dropSelected(a.id);
+          markOnDrive(a, start, false);
           done++;
           setSentCount(done);
           continue;
@@ -327,9 +325,9 @@ export function Phone({ server, onChangeServer }: Props) {
             setSendProgress(totalBytes > 0 ? sentBytes / totalBytes : 0);
           });
           const fin = await api.uploadFinish(server, start.uploadId);
-          markOnDrive(a, fin);
-          dropSelected(a.id);
+          markOnDrive(a, fin, true);
           done++;
+          verified++;
           setSentCount(done);
         } catch (e) {
           // Never leave a half-written file among the real ones.
@@ -349,13 +347,69 @@ export function Phone({ server, onChangeServer }: Props) {
     setSending(false);
     setSendName(null);
     if (failed === 0) {
+      // Show the tiles that just became backed up, so the verify-then-delete
+      // step is right in front of the user.
+      setFilter('all');
       setSentNote(
-        `Sent ${done} ${done === 1 ? 'item' : 'items'} to ${dest.name}.`,
+        verified > 0
+          ? `Sent ${done} ${done === 1 ? 'item' : 'items'} to ${dest.name}. Delete from the phone when you are ready.`
+          : done === 1
+            ? 'That item was already on the drive.'
+            : 'Those items were already on the drive.',
       );
-      setSelected(new Set());
-      setSelecting(false);
     } else {
       setSentNote(`Sent ${done} of ${list.length}. ${failed} could not be sent.`);
+    }
+  };
+
+  const deleteSelected = () => {
+    if (sending || deleting) return;
+    const items = assets.filter((a) => selected.has(a.id) && badges[a.id]?.verified);
+    if (items.length === 0) return;
+    Alert.alert(
+      `Delete ${items.length} ${items.length === 1 ? 'item' : 'items'} from this phone?`,
+      'A verified copy is already on the drive. This frees space on the phone and cannot be undone.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void deleteItems(items);
+          },
+        },
+      ],
+    );
+  };
+
+  const deleteItems = async (items: PhoneAsset[]) => {
+    const ids = items.map((a) => a.id);
+    setDeleting(true);
+    setSendError(null);
+    setSentNote(null);
+    try {
+      const ok = await MediaLibrary.deleteAssetsAsync(ids);
+      if (!ok) throw new Error('The phone did not delete those items.');
+      const idSet = new Set(ids);
+      setAssets((prev) => prev.filter((a) => !idSet.has(a.id)));
+      setBadges((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => delete next[id]);
+        return next;
+      });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setSentNote(
+        `Deleted ${ids.length} ${ids.length === 1 ? 'item' : 'items'} from the phone. The drive copy is still there.`,
+      );
+    } catch (e) {
+      const text = e instanceof Error ? e.message : String(e);
+      setSendError(text);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -572,28 +626,53 @@ export function Phone({ server, onChangeServer }: Props) {
                   ? `${sendName ?? 'Sending'} · ${Math.round(sendProgress * 100)}%${
                       sendTotal ? ` — ${sentCount}/${sendTotal}` : ''
                     }`
-                  : dest
-                    ? `To ${dest.name}`
-                    : 'Choose a drive above'}
+                  : selectedNew > 0
+                    ? dest
+                      ? `To ${dest.name}`
+                      : 'Choose a drive above'
+                    : selected.size > 0
+                      ? 'Already on the drive'
+                      : 'Tap photos to select them'}
               </Text>
             </View>
-            <Pressable
-              onPress={send}
-              disabled={!dest || selected.size === 0 || sending}
-              accessibilityRole="button"
-              accessibilityLabel="Send selected photos to the drive"
-              style={({ pressed }) => [
-                styles.sendButton,
-                (!dest || selected.size === 0 || sending) && styles.dim,
-                pressed && styles.sendButtonPressed,
-              ]}
-            >
-              {sending ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.sendButtonText}>Send</Text>
-              )}
-            </Pressable>
+            {selectedVerified > 0 ? (
+              <Pressable
+                onPress={deleteSelected}
+                disabled={sending || deleting}
+                accessibilityRole="button"
+                accessibilityLabel="Delete the verified copies from this phone"
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  (sending || deleting) && styles.dim,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                {deleting ? (
+                  <ActivityIndicator color={colors.danger} />
+                ) : (
+                  <Text style={styles.deleteText}>Delete {selectedVerified}</Text>
+                )}
+              </Pressable>
+            ) : null}
+            {selectedNew > 0 ? (
+              <Pressable
+                onPress={send}
+                disabled={!dest || sending || deleting}
+                accessibilityRole="button"
+                accessibilityLabel="Send selected photos to the drive"
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  (!dest || sending || deleting) && styles.dim,
+                  pressed && styles.sendButtonPressed,
+                ]}
+              >
+                {sending ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.sendButtonText}>Send {selectedNew}</Text>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -971,6 +1050,17 @@ const styles = StyleSheet.create({
   },
   sendButtonPressed: { opacity: 0.8 },
   sendButtonText: { color: colors.white, fontSize: 15, fontWeight: '700' },
+  deleteButton: {
+    height: 42,
+    minWidth: 88,
+    paddingHorizontal: space(4),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
   viewer: { flex: 1, backgroundColor: colors.black },
   viewerImage: { width: '100%', height: '100%' },
   viewerDone: {
