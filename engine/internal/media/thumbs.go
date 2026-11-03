@@ -122,16 +122,35 @@ func (t *Thumbs) generate(src, dst string, maxDim int) error {
 	return os.Rename(tmp, dst)
 }
 
-// render tries the built-in decoder first and falls back to ffmpeg. That keeps
-// the common case (JPEG from a camera or phone) dependency-free while still
-// giving videos and HEIC files a real picture when ffmpeg is present.
+// render tries the built-in decoder first, then ffmpeg, then the operating
+// system's. That keeps the common case (JPEG from a camera or phone)
+// dependency-free, covers videos and HEIC with ffmpeg, and still finds a
+// picture for formats only Windows can decode.
 func (t *Thumbs) render(src, out string, maxDim int, video bool) error {
 	if !video {
 		if err := decodeAndWrite(src, out, maxDim); err == nil {
 			return nil
 		}
 	}
-	return t.ffmpegPreview(src, out, maxDim, video)
+	ffmpegErr := t.ffmpegPreview(src, out, maxDim, video)
+	if ffmpegErr == nil {
+		return nil
+	}
+	if video {
+		return ffmpegErr
+	}
+	raw, w, h, shellErr := shellPreview(src, maxDim*2)
+	if shellErr != nil {
+		return describePreviewFailure(src, ffmpegErr, shellErr)
+	}
+	img, convErr := rawToImage(raw, w, h)
+	if convErr != nil {
+		return describePreviewFailure(src, ffmpegErr, convErr)
+	}
+	if err := writeJPEG(out, resizeOriented(img, 1, maxDim)); err != nil {
+		return describePreviewFailure(src, ffmpegErr, err)
+	}
+	return nil
 }
 
 func decodeAndWrite(src, out string, maxDim int) error {
@@ -317,15 +336,25 @@ func (t *Thumbs) ffmpegPreview(src, out string, maxDim int, video bool) error {
 	}
 	var last string
 	for _, ss := range seeks {
-		args := []string{
-			"-v", "error", "-nostdin",
-			"-ss", ss, "-i", src,
+		// HEIC files are not videos and have no duration; seeking into one
+		// makes ffmpeg fail before it decodes anything, so only seek when the
+		// caller asked for a frame from a moving picture.
+		args := []string{"-v", "error", "-nostdin"}
+		if ss != "0" || video {
+			args = append(args, "-ss", ss)
+		}
+		args = append(args,
+			"-i", src,
 			"-frames:v", "1",
-			"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease", maxDim, maxDim),
+			// A complex filtergraph is used because some decoders (HEIC tile
+			// grids among them) cannot take a simple -vf next to it, and the
+			// select keeps a single frame.
+			"-filter_complex", fmt.Sprintf("select=eq(n\\,0),scale=%d:%d:force_original_aspect_ratio=decrease[v]", maxDim, maxDim),
+			"-map", "[v]",
 			// The output is a temporary file with a .tmp suffix, which ffmpeg
 			// cannot use to guess a format, so name it explicitly.
-			"-c:v", "mjpeg", "-q:v", "4", "-f", "image2", "-y", out,
-		}
+			"-c:v", "mjpeg", "-q:v", "4", "-f", "image2", "-update", "1", "-y", out,
+		)
 		combined, err := t.runFFmpeg(bin, args...)
 		if err != nil {
 			last = string(combined)
