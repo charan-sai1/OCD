@@ -111,6 +111,7 @@ func (s *Server) uploadStart(w http.ResponseWriter, r *http.Request) {
 
 	lib, info, err := s.pickUploadLibrary(req.LibraryID, req.VolumeID)
 	if err != nil {
+		log.Printf("upload start refused name=%q size=%d: %v", name, req.Size, err)
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
 	}
@@ -193,6 +194,7 @@ func (s *Server) uploadStart(w http.ResponseWriter, r *http.Request) {
 	s.uploadMu.Lock()
 	s.uploads[id] = sess
 	s.uploadMu.Unlock()
+	log.Printf("upload start id=%s name=%q size=%d dest=%q", id, name, req.Size, sess.rel)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"uploadId":  id,
@@ -207,6 +209,7 @@ func (s *Server) uploadStart(w http.ResponseWriter, r *http.Request) {
 
 // uploadItem routes /api/upload/{id}, /{id}/finish, and /{id}/abort.
 func (s *Server) uploadItem(w http.ResponseWriter, r *http.Request) {
+	log.Printf("upload request method=%s path=%s contentLength=%d", r.Method, r.URL.String(), r.ContentLength)
 	rest := strings.TrimPrefix(r.URL.Path, "/api/upload/")
 	id, action := rest, ""
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
@@ -253,6 +256,7 @@ func (s *Server) uploadPut(w http.ResponseWriter, r *http.Request, sess *uploadS
 		return
 	}
 	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	log.Printf("upload put begin id=%s offset=%d received=%d declared=%d contentLength=%d", sess.id, offset, sess.received, sess.size, r.ContentLength)
 	if offset != sess.received {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error":  "the upload is at a different offset",
@@ -263,6 +267,7 @@ func (s *Server) uploadPut(w http.ResponseWriter, r *http.Request, sess *uploadS
 
 	f, err := os.OpenFile(sess.temp, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
+		log.Printf("upload put id=%s open temp: %v", sess.id, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "cannot write to the drive"})
 		return
 	}
@@ -275,12 +280,14 @@ func (s *Server) uploadPut(w http.ResponseWriter, r *http.Request, sess *uploadS
 	sess.received += n
 
 	if sess.received > sess.size {
+		log.Printf("upload put id=%s received=%d exceeds declared=%d; refusing", sess.id, sess.received, sess.size)
 		os.Remove(sess.temp)
 		sess.received = 0
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "more bytes arrived than the file size"})
 		return
 	}
 	if copyErr != nil || syncErr != nil || closeErr != nil {
+		log.Printf("upload put id=%s interrupted received=%d declared=%d copyErr=%v syncErr=%v closeErr=%v", sess.id, sess.received, sess.size, copyErr, syncErr, closeErr)
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":    "the upload was interrupted",
 			"received": sess.received,
@@ -299,6 +306,7 @@ func (s *Server) uploadFinish(w http.ResponseWriter, r *http.Request, sess *uplo
 	defer sess.mu.Unlock()
 
 	if sess.received != sess.size {
+		log.Printf("upload finish id=%s incomplete received=%d declared=%d", sess.id, sess.received, sess.size)
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error":   "the upload is incomplete",
 			"offset":  sess.received,
@@ -353,9 +361,11 @@ func (s *Server) uploadFinish(w http.ResponseWriter, r *http.Request, sess *uplo
 
 	fi, err := os.Stat(dest)
 	if err != nil || fi.Size() != sess.size {
+		log.Printf("upload finish id=%s stat dest=%q err=%v", sess.id, dest, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "the file on the drive does not match what was sent"})
 		return
 	}
+	log.Printf("upload finish id=%s verified=true size=%d sha=%s dest=%q existing=%v", sess.id, fi.Size(), sum[:12], dest, existing)
 
 	rel, err := volumeRel(sess.volumeRoot, dest)
 	if err != nil {
@@ -407,6 +417,7 @@ func (s *Server) uploadAbort(w http.ResponseWriter, sess *uploadSession) {
 	sess.mu.Lock()
 	os.Remove(sess.temp)
 	sess.mu.Unlock()
+	log.Printf("upload abort id=%s name=%q received=%d declared=%d", sess.id, sess.name, sess.received, sess.size)
 	s.deleteUpload(sess.id)
 	writeJSON(w, http.StatusOK, map[string]any{"aborted": true})
 }

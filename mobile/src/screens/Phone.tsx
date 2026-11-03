@@ -36,6 +36,39 @@ type PhoneAsset = {
   duration: number;
 };
 
+/**
+ * `stageForUpload` copies an image or video from the camera-roll container
+ * into the app sandbox. NSURLSession upload tasks cannot open Photos
+ * resources directly: the upload is aborted before any byte hits the server.
+ */
+async function stageForUpload(
+  ready: { uri: string; size: number },
+  ext: string,
+): Promise<{ uri: string; size: number }> {
+  const scratch = `${FileSystem.cacheDirectory}ocd-send/`;
+  if (!scratch) throw new Error('The app cache is not available on this phone.');
+  await FileSystem.makeDirectoryAsync(scratch, { intermediates: true });
+  const suffix = ext && ext.startsWith('.') ? ext : '';
+  const target = `${scratch}${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`;
+  try {
+    await FileSystem.copyAsync({ from: ready.uri, to: target });
+  } catch (e) {
+    throw new Error(`Could not copy the file into the app: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const info = await FileSystem.getInfoAsync(target);
+  if (!info.exists || info.isDirectory) {
+    await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+    throw new Error('Could not copy the file into the app.');
+  }
+  return { uri: target, size: info.size ?? ready.size };
+}
+
+async function discardStagedUpload(uri: string): Promise<void> {
+  if (uri.startsWith(FileSystem.cacheDirectory ?? '') && uri.includes('/ocd-send/')) {
+    await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
+  }
+}
+
 type Props = {
   server: string;
   onChangeServer: () => void;
@@ -307,15 +340,20 @@ export function Phone({ server, onChangeServer }: Props) {
     for (const a of list) {
       setSendName(a.filename);
       setSendProgress(0);
+      let sendable: { uri: string; size: number } | null = null;
       try {
         const ready = await ensureUploadable(a);
         if (!ready) {
           throw new Error('This item is only in iCloud and could not be downloaded.');
         }
+        sendable = await stageForUpload(ready, a.filename.match(/\.[^.]+$/)?.[0] ?? '');
         const start = await api.uploadStart(server, {
           libraryId: dest.id,
+          // The server needs the real name, extension and byte count. An Expo
+          // upload task reading the app cache is far more reliable than a
+          // task pointed at a Photos resource file.
           name: a.filename,
-          size: ready.size,
+          size: sendable.size,
           takenAt: a.takenAt,
           kind: a.kind,
         });
@@ -327,7 +365,7 @@ export function Phone({ server, onChangeServer }: Props) {
         }
         if (!start.uploadId) throw new Error('The desktop did not start the upload.');
         try {
-          await uploadFile(server, start.uploadId, ready.uri, (sentBytes, totalBytes) => {
+          await uploadFile(server, start.uploadId, sendable.uri, (sentBytes, totalBytes) => {
             setSendProgress(totalBytes > 0 ? sentBytes / totalBytes : 0);
           });
           const fin = await api.uploadFinish(server, start.uploadId);
@@ -347,6 +385,8 @@ export function Phone({ server, onChangeServer }: Props) {
       } catch (e) {
         failed++;
         setSendError(`${a.filename}: ${messageFor(e)}`);
+      } finally {
+        if (sendable) await discardStagedUpload(sendable.uri);
       }
     }
 

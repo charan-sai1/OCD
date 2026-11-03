@@ -218,6 +218,12 @@ export async function uploadFile(
     }
     throw new ApiError(res.status, message);
   }
+  // A 2xx with an empty body means the server answered something other than
+  // the upload endpoint; the caller's finish step would then fail with a
+  // confusing "expired" message.
+  if (!res.body || res.body.trim() === '') {
+    throw new ApiError(res.status, 'The desktop accepted the upload but sent nothing back.');
+  }
 }
 
 export const api = {
@@ -296,5 +302,8 @@ export function messageFor(e: unknown): string {
   if (e instanceof Error && e.name === 'AbortError') {
     return 'The desktop did not answer. Is OCD Manager still running?';
   }
-  return 'Cannot reach the desktop. Check that both devices are on the same Wi-Fi and that OCD Manager is running.';
+  // Show the actual reason to the user; a generic "cannot reach" hides file
+  // permission and iCloud mistakes they can actually fix.
+  if (e instanceof Error && e.message) return e.message;
+  return 'The upload failed. Check that both devices are on the same Wi-Fi and that OCD Manager is running.';
 }
