@@ -38,6 +38,9 @@ type Server struct {
 	lastDedupe []dedupe.Group
 	pfCmd      *exec.Cmd
 
+	importMu    sync.Mutex
+	importCache map[string]*catalogLookup
+
 	index  *media.Index
 	thumbs *media.Thumbs
 
@@ -75,6 +78,7 @@ func New(cfg Config) *Server {
 	s.phone = newPhoneStore(filepath.Join(cfg.DataDir, "phone.json"))
 	s.drives = newCatalogStore()
 	s.sysRoot = volume.RootOf(cfg.DataDir)
+	s.importCache = map[string]*catalogLookup{}
 	return s
 }
 
@@ -100,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/drives", s.drivesList)
 	mux.HandleFunc("/api/drives/refresh", s.drivesRefresh)
 	mux.HandleFunc("/api/catalog", s.catalogDownload)
+	mux.HandleFunc("/api/import/check", s.importCheck)
 	mux.HandleFunc("/api/item", s.itemInfo)
 	mux.HandleFunc("/api/fav", s.favToggle)
 	mux.HandleFunc("/api/orig", s.orig)
