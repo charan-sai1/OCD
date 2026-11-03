@@ -156,11 +156,67 @@ func TestUploadReportsExistingFile(t *testing.T) {
 	}
 
 	res := startUpload(t, s, uploadStartRequest{Name: "IMG_0002.JPG", Size: int64(len(content)), TakenAt: 1800000000})
-	if _, ok := res["existingPath"]; !ok {
-		t.Fatalf("expected existingPath, got %+v", res)
+	id, _ := res["uploadId"].(string)
+	if id == "" {
+		t.Fatalf("identical file should still upload so it can be hashed: %+v", res)
 	}
-	if _, ok := res["uploadId"]; ok {
-		t.Fatalf("existing file still opened an upload: %+v", res)
+	doUpload(t, s, http.MethodPut, "/api/upload/"+id, content)
+	rec := doUpload(t, s, http.MethodPost, "/api/upload/"+id+"/finish", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("finish = %d: %s", rec.Code, rec.Body.String())
+	}
+	var fin map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &fin); err != nil {
+		t.Fatal(err)
+	}
+	if fin["existing"] != true || fin["verified"] != true {
+		t.Fatalf("finish = %+v", fin)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("existing file changed: %q, %v", got, err)
+	}
+	leftovers, _ := os.ReadDir(filepath.Join(root, "Photos", ".ocd-incoming"))
+	if len(leftovers) != 0 {
+		t.Fatalf("temporary files left behind: %d", len(leftovers))
+	}
+}
+
+func TestUploadSameSizeDifferentBytesGetsItsOwnName(t *testing.T) {
+	s, root, _ := newUploadTestServer(t)
+	old := []byte("aaaa")
+	newer := []byte("bbbb")
+	local := time.Unix(1800000000, 0).Local()
+	dest := filepath.Join(root, "Photos", "Phone", local.Format("2006"), local.Format("01"), "IMG_0005.JPG")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := startUpload(t, s, uploadStartRequest{Name: "IMG_0005.JPG", Size: int64(len(newer)), TakenAt: 1800000000})
+	id := res["uploadId"].(string)
+	doUpload(t, s, http.MethodPut, "/api/upload/"+id, newer)
+	rec := doUpload(t, s, http.MethodPost, "/api/upload/"+id+"/finish", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("finish = %d: %s", rec.Code, rec.Body.String())
+	}
+	var fin map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &fin); err != nil {
+		t.Fatal(err)
+	}
+	if fin["existing"] == true {
+		t.Fatalf("different bytes were treated as the same file: %+v", fin)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || !bytes.Equal(got, old) {
+		t.Fatalf("original file was overwritten: %q, %v", got, err)
+	}
+	other := filepath.Join(filepath.Dir(dest), "IMG_0005 (1).JPG")
+	got, err = os.ReadFile(other)
+	if err != nil || !bytes.Equal(got, newer) {
+		t.Fatalf("new file = %q, %v", got, err)
 	}
 }
 

@@ -127,22 +127,13 @@ func (s *Server) uploadStart(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Join(lib.Path, "Phone", stamp.Format("2006"), stamp.Format("01"))
 	dest := filepath.Join(dir, name)
 
+	// A name that is already there with a different size cannot be the same
+	// file. A name with the same size might be: keep the path and let finish
+	// compare the hashes, so a retry after a lost response still dedupes.
 	if fi, statErr := os.Stat(dest); statErr == nil {
-		if fi.Size() == req.Size {
-			rel, relErr := volumeRel(info.Root, dest)
-			if relErr != nil {
-				rel = name
-			}
-			writeJSON(w, http.StatusOK, map[string]any{
-				"existingPath": rel,
-				"size":         fi.Size(),
-				"libraryId":    lib.ID,
-				"volumeId":     info.ID,
-				"label":        info.Label,
-			})
-			return
+		if fi.Size() != req.Size {
+			dest = uniqueUploadPath(dest)
 		}
-		dest = uniqueUploadPath(dest)
 	} else if !os.IsNotExist(statErr) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "cannot read the destination folder"})
 		return
@@ -331,12 +322,18 @@ func (s *Server) uploadFinish(w http.ResponseWriter, r *http.Request, sess *uplo
 		return
 	}
 
-	// Someone may have written the same name while we were uploading.
+	// Someone may have written the same name while we were uploading. Only a
+	// matching hash means the file already on the drive is this file; a
+	// same-size impostor gets its own name rather than silently replacing it.
 	dest := sess.dest
 	existing := false
 	if fi, statErr := os.Stat(dest); statErr == nil {
 		if fi.Size() == sess.size {
-			existing = true
+			if oldSum, hashErr := hashx.File(dest); hashErr == nil && oldSum == sum {
+				existing = true
+			} else {
+				dest = uniqueUploadPath(dest)
+			}
 		} else {
 			dest = uniqueUploadPath(dest)
 		}
