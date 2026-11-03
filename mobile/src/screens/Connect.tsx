@@ -3,14 +3,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, space } from '../theme';
+import { TOUCH } from '../layout';
 import { PrimaryButton, Wordmark } from '../ui';
 
 type Props = {
@@ -22,14 +22,15 @@ type Props = {
 
 export function Connect({ initial, busy, problem, onConnect }: Props) {
   const [value, setValue] = useState(initial);
+  const insets = useSafeAreaInsets();
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.safe}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
       >
-        <View style={[styles.wrap, { paddingTop: (Constants.statusBarHeight ?? 0) + space(16) }]}>
+        <View style={[styles.wrap, { paddingTop: insets.top + space(16) }]}>
           <View style={styles.mark}>
             <Text style={styles.markText}>OCD</Text>
           </View>
@@ -75,19 +76,19 @@ export function Connect({ initial, busy, problem, onConnect }: Props) {
 
           <Pressable
             onPress={() => setValue('http://localhost:8090')}
-            hitSlop={8}
             style={styles.debug}
             accessibilityRole="button"
+            accessibilityLabel="Simulator? Use localhost:8090"
           >
             <Text style={styles.debugText}>Simulator? Use localhost:8090</Text>
           </Pressable>
         </View>
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + space(4) }]}>
           <Wordmark />
           <Text style={styles.footerText}>Local-first. Nothing leaves your network.</Text>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -162,11 +163,15 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   hintStrong: { fontWeight: '700', color: colors.text },
-  debug: { marginTop: space(4), alignSelf: 'flex-start' },
+  debug: {
+    marginTop: space(4),
+    alignSelf: 'flex-start',
+    minHeight: TOUCH,
+    justifyContent: 'center',
+  },
   debugText: { fontSize: 12, color: colors.faint },
   footer: {
     paddingHorizontal: space(6),
-    paddingBottom: space(6),
     gap: 2,
   },
   footerText: { fontSize: 12, color: colors.faint },

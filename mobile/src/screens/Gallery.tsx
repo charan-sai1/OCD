@@ -14,9 +14,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
 import { api, Cursor, GridItem, Library, messageFor } from '../api';
-import { colors, radius, space } from '../theme';
+import { ScreenHeader, TextAction } from '../layout';
+import { colors, radius, space, takenOn } from '../theme';
 import { Chip, ErrorBanner, Wordmark } from '../ui';
 import { Viewer } from './Viewer';
 
@@ -148,12 +148,14 @@ export function Gallery({ server, onChangeServer }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: (Constants.statusBarHeight ?? 0) + space(2) }]}>
+      <ScreenHeader style={styles.header}>
         <View style={styles.brandRow}>
           <Wordmark />
-          <Pressable onPress={onChangeServer} hitSlop={10} accessibilityRole="button">
-            <Text style={styles.change}>Change server</Text>
-          </Pressable>
+          <TextAction
+            label="Change server"
+            onPress={onChangeServer}
+            accessibilityHint="Enter a different computer address"
+          />
         </View>
 
         <Text style={styles.title}>Photos</Text>
@@ -175,7 +177,12 @@ export function Gallery({ server, onChangeServer }: Props) {
             accessibilityLabel="Search photos"
           />
           {query ? (
-            <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityRole="button">
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              style={styles.clearHit}
+            >
               <Text style={styles.clear}>✕</Text>
             </Pressable>
           ) : null}
@@ -203,7 +210,7 @@ export function Gallery({ server, onChangeServer }: Props) {
           <Text style={styles.stats}>{subtitle}</Text>
           {building ? <Text style={styles.scanning}>Scanning drive…</Text> : null}
         </View>
-      </View>
+      </ScreenHeader>
 
       {offline.length > 0 ? (
         <View style={styles.offline} accessibilityRole="alert">
@@ -303,12 +310,22 @@ const Tile = memo(function Tile({
   onPress: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const label = [
+    item.kind === 'video' ? 'Video' : 'Photo',
+    item.name,
+    item.kind === 'video' && item.dur ? formatDur(item.dur) : '',
+    takenOn(item.shot),
+    item.dir || 'Drive root',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="imagebutton"
-      accessibilityLabel={item.name}
+      accessibilityLabel={label}
+      accessibilityHint="Opens the full view"
       style={({ pressed }) => [
         { width: size, height: size, backgroundColor: colors.surface },
         pressed && { opacity: 0.72 },
@@ -367,9 +384,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 34,
+    minHeight: 44,
   },
   change: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  clearHit: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontSize: 32,
     lineHeight: 38,
@@ -415,7 +438,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     padding: 0,
   },
-  clear: { fontSize: 13, color: colors.muted, paddingLeft: space(2) },
+  clear: { fontSize: 13, color: colors.muted },
   chips: { paddingTop: space(3), paddingBottom: 2 },
   statsRow: {
     flexDirection: 'row',

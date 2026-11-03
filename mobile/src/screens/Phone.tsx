@@ -17,10 +17,12 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api, ImportMatch, Library, messageFor, uploadFile } from '../api';
-import { colors, duration, radius, space } from '../theme';
+import { BottomBar, ScreenHeader, TextAction } from '../layout';
+import { colors, duration, radius, space, takenOn } from '../theme';
 import { Chip, PrimaryButton, Wordmark } from '../ui';
 
 type PhoneAsset = {
@@ -45,6 +47,7 @@ const PAGE = 60;
 
 export function Phone({ server, onChangeServer }: Props) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
 
   const [perm, setPerm] = useState<MediaLibrary.PermissionResponse | null>(null);
@@ -417,31 +420,26 @@ export function Phone({ server, onChangeServer }: Props) {
   };
 
   const header = (
-    <View
-      style={[
-        styles.header,
-        { paddingTop: (Constants.statusBarHeight ?? 0) + space(2) },
-      ]}
-    >
+    <ScreenHeader style={styles.header}>
       <View style={styles.brandRow}>
         <Wordmark />
-        <Pressable onPress={onChangeServer} hitSlop={10} accessibilityRole="button">
-          <Text style={styles.change}>Change server</Text>
-        </Pressable>
+        <TextAction
+          label="Change server"
+          onPress={onChangeServer}
+          accessibilityHint="Enter a different computer address"
+        />
       </View>
       <View style={styles.titleRow}>
-        <Text style={styles.title}>{selecting ? 'Select photos' : 'Camera roll'}</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          {selecting ? 'Select photos' : 'Camera roll'}
+        </Text>
         {assets.length > 0 ? (
-          <Pressable
+          <TextAction
+            label={selecting ? 'Cancel' : 'Select'}
             onPress={selecting ? cancelSelection : enterSelection}
-            hitSlop={10}
             disabled={sending}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.change, sending && styles.dim]}>
-              {selecting ? 'Cancel' : 'Select'}
-            </Text>
-          </Pressable>
+            accessibilityHint={selecting ? 'Stops selecting' : 'Pick photos to send'}
+          />
         ) : null}
       </View>
       <Text style={styles.stats}>
@@ -455,9 +453,11 @@ export function Phone({ server, onChangeServer }: Props) {
       {selecting ? (
         <View style={styles.selectRow}>
           <Text style={styles.selectCount}>{selected.size} selected</Text>
-          <Pressable onPress={selectAllNew} hitSlop={8} accessibilityRole="button">
-            <Text style={styles.selectAction}>Select all new</Text>
-          </Pressable>
+          <TextAction
+            label="Select all new"
+            onPress={selectAllNew}
+            accessibilityHint="Selects every photo that is not on the drive yet"
+          />
         </View>
       ) : null}
       {assets.length > 0 ? (
@@ -470,7 +470,7 @@ export function Phone({ server, onChangeServer }: Props) {
           />
         </View>
       ) : null}
-    </View>
+    </ScreenHeader>
   );
 
   if (booting) {
@@ -509,9 +509,7 @@ export function Phone({ server, onChangeServer }: Props) {
                 />
               </View>
               {perm?.canAskAgain ? (
-                <Pressable onPress={() => Linking.openSettings()} hitSlop={8}>
-                  <Text style={styles.settingsLink}>Open Settings</Text>
-                </Pressable>
+                <TextAction label="Open Settings" onPress={() => Linking.openSettings()} />
               ) : null}
             </>
           )}
@@ -603,7 +601,7 @@ export function Phone({ server, onChangeServer }: Props) {
       />
 
       {selecting ? (
-        <View style={styles.sendBar}>
+        <BottomBar style={styles.sendBar}>
           <View style={styles.destRow}>
             <Text style={styles.sendLabel}>Send to</Text>
             {libs.length > 0 ? (
@@ -688,7 +686,7 @@ export function Phone({ server, onChangeServer }: Props) {
               </Pressable>
             ) : null}
           </View>
-        </View>
+        </BottomBar>
       ) : null}
 
       <Modal
@@ -717,14 +715,14 @@ export function Phone({ server, onChangeServer }: Props) {
           ) : null}
           <Pressable
             onPress={() => setPreview(null)}
-            hitSlop={14}
-            style={[styles.viewerDone, { top: (Constants.statusBarHeight ?? 0) + space(2) }]}
+            style={[styles.viewerDone, { top: insets.top + space(2) }]}
             accessibilityRole="button"
+            accessibilityLabel="Close preview"
           >
             <Text style={styles.viewerDoneText}>Done</Text>
           </Pressable>
           {preview ? (
-            <View style={styles.viewerMeta}>
+            <View style={[styles.viewerMeta, { paddingBottom: insets.bottom + space(4) }]}>
               <Text style={styles.viewerName} numberOfLines={1}>
                 {preview.filename}
               </Text>
@@ -760,6 +758,15 @@ const Tile = React.memo(function Tile({
 }) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(item.uri) && !failed;
+  const label = [
+    item.kind === 'video' ? 'Video' : 'Photo',
+    takenOn(item.takenAt),
+    item.cloud ? 'in iCloud' : '',
+    badge?.onDrive ? `already on ${badge.label || 'the drive'}` : 'not on the drive',
+    selecting ? (selected ? 'selected' : 'not selected') : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <Pressable
@@ -767,8 +774,9 @@ const Tile = React.memo(function Tile({
       onLongPress={onLongPress}
       delayLongPress={260}
       accessibilityRole="imagebutton"
-      accessibilityLabel={item.filename}
+      accessibilityLabel={label}
       accessibilityState={selecting ? { selected } : undefined}
+      accessibilityHint={selecting ? 'Toggles selection' : 'Opens a preview'}
       style={({ pressed }) => [
         { width: cell, height: cell, backgroundColor: colors.surface },
         pressed && { opacity: 0.72 },
@@ -1061,12 +1069,9 @@ const styles = StyleSheet.create({
     borderColor: colors.text,
   },
   sendBar: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
     backgroundColor: colors.bg,
     paddingHorizontal: space(4),
     paddingTop: space(2.5),
-    paddingBottom: space(3),
   },
   destRow: {
     flexDirection: 'row',

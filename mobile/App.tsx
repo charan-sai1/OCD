@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
   api,
@@ -24,6 +24,17 @@ import { colors, space } from './src/theme';
 type Tab = 'drive' | 'phone';
 
 export default function App() {
+  // Every screen reads its insets from here, so the provider has to sit above
+  // them; without it useSafeAreaInsets falls back to zero and headers collide
+  // with the notch again.
+  return (
+    <SafeAreaProvider>
+      <Root />
+    </SafeAreaProvider>
+  );
+}
+
+function Root() {
   const [booting, setBooting] = useState(true);
   const [server, setServer] = useState<string | null>(null);
   const [initial, setInitial] = useState('');
@@ -118,8 +129,15 @@ export default function App() {
 }
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.tabs}>
+    <View
+      style={[
+        styles.tabs,
+        // The bar owns the home indicator / gesture bar so nothing sits under it.
+        { paddingBottom: Math.max(insets.bottom, space(2)) },
+      ]}
+    >
       {(['drive', 'phone'] as const).map((t) => {
         const active = tab === t;
         return (
@@ -149,9 +167,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     backgroundColor: colors.bg,
     paddingTop: space(2),
-    paddingBottom: Platform.OS === 'ios' ? space(6) : space(2),
   },
-  tab: { flex: 1, alignItems: 'center', gap: space(1), paddingVertical: space(0.5) },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space(1),
+    minHeight: 44,
+    paddingVertical: space(0.5),
+  },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
   dotActive: { backgroundColor: colors.text },
   tabLabel: { fontSize: 12, fontWeight: '600', color: colors.faint },

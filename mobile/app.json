@@ -16,7 +16,8 @@
           "savePhotosPermission": "OCD can save photos you copy back from your drive.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-video"
     ],
     "ios": {
       "supportsTablet": true,

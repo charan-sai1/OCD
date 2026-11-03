@@ -87,7 +87,12 @@ export function ErrorBanner({
       <Text style={styles.bannerText} numberOfLines={3}>
         {message}
       </Text>
-      <Pressable onPress={onRetry} hitSlop={8} accessibilityRole="button">
+      <Pressable
+        onPress={onRetry}
+        accessibilityRole="button"
+        accessibilityLabel="Retry"
+        style={styles.bannerActionHit}
+      >
         <Text style={styles.bannerAction}>Retry</Text>
       </Pressable>
     </View>
@@ -119,7 +124,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   chip: {
-    height: 34,
+    height: 44,
     paddingHorizontal: space(3.5),
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
@@ -157,6 +162,13 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 13,
     fontWeight: '700',
+  },
+  bannerActionHit: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space(1),
   },
   wordmark: {
     fontWeight: '800',
