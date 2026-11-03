@@ -25,6 +25,7 @@ export type PhotoPage = {
   scanned: number;
   building: boolean;
   cursor?: Cursor;
+  stats?: { total?: number };
 };
 
 export type Library = {
@@ -234,12 +235,13 @@ export const api = {
 
   photos: (
     server: string,
-    opts: { limit?: number; q?: string; lib?: string; before?: Cursor },
+    opts: { limit?: number; q?: string; lib?: string; before?: Cursor; stats?: boolean },
   ): Promise<PhotoPage> => {
     const p = new URLSearchParams();
     p.set('limit', String(opts.limit ?? 200));
     if (opts.q) p.set('q', opts.q);
     if (opts.lib) p.set('lib', opts.lib);
+    if (opts.stats) p.set('stats', '1');
     if (opts.before) {
       p.set('before', String(opts.before.before));
       p.set('befname', opts.before.name);

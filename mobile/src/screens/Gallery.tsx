@@ -38,6 +38,7 @@ export function Gallery({ server, onChangeServer }: Props) {
   const [query, setQuery] = useState('');
   const [term, setTerm] = useState('');
   const [rows, setRows] = useState<GridItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -86,11 +87,15 @@ export function Gallery({ server, onChangeServer }: Props) {
           q: term || undefined,
           lib: lib || undefined,
           before: reset ? undefined : cursor.current,
+          stats: reset,
         });
         if (id !== run.current) return;
         setRows((prev) => (reset ? page.items : [...prev, ...page.items]));
         cursor.current = page.cursor;
         setHasMore(Boolean(page.hasMore && page.cursor));
+        // The header shows how big the library really is, not just how much of
+        // it has scrolled past so far.
+        if (reset) setTotal(page.stats?.total ?? page.indexed ?? 0);
         setBuilding(page.building);
         setProblem(null);
       } catch (e) {
@@ -137,7 +142,9 @@ export function Gallery({ server, onChangeServer }: Props) {
     ? 'Loading photos…'
     : shown === 0
       ? 'No photos'
-      : `${shown.toLocaleString()}${hasMore ? '+' : ''} items`;
+      : total > shown
+        ? `${shown.toLocaleString()} of ${total.toLocaleString()} items`
+        : `${(total || shown).toLocaleString()} items`;
 
   return (
     <View style={styles.root}>
@@ -249,6 +256,15 @@ export function Gallery({ server, onChangeServer }: Props) {
               <View style={styles.more}>
                 <ActivityIndicator color={colors.muted} />
               </View>
+            ) : hasMore ? (
+              <Pressable
+                onPress={() => load(false)}
+                style={styles.more}
+                accessibilityRole="button"
+                accessibilityLabel="Load more photos"
+              >
+                <Text style={styles.moreText}>Load more</Text>
+              </Pressable>
             ) : undefined
           }
           ListEmptyComponent={
@@ -424,6 +440,7 @@ const styles = StyleSheet.create({
     gap: GAP,
   },
   more: { paddingVertical: space(7), alignItems: 'center' },
+  moreText: { color: colors.muted, fontSize: 14, fontWeight: '600' },
   empty: {
     paddingHorizontal: space(10),
     paddingTop: space(16),
