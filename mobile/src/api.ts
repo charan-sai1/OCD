@@ -47,6 +47,20 @@ export type Drive = {
   libraries?: string[];
 };
 
+export type ImportMatch = {
+  onDrive: boolean;
+  path?: string;
+  volumeId?: string;
+  label?: string;
+  how?: string;
+};
+
+export type ImportCheck = {
+  matches: ImportMatch[];
+  scanned: number;
+  drives?: string[];
+};
+
 const PORT = 8090;
 const CONFIG = (FileSystem.documentDirectory ?? '') + 'ocd-server.txt';
 
@@ -147,6 +161,19 @@ export const api = {
     }
     return request<PhotoPage>(server, '/api/photos?' + p.toString());
   },
+
+  // Metadata-only: name + size, with capture time as the fallback for renamed
+  // files. Nothing is uploaded or deleted here.
+  importCheck: (
+    server: string,
+    items: { name: string; size: number; takenAt?: number }[],
+    volumeId?: string,
+  ): Promise<ImportCheck> =>
+    request<ImportCheck>(server, '/api/import/check', {
+      method: 'POST',
+      body: { items, volumeId },
+      timeoutMs: 20000,
+    }),
 
   thumb: (server: string, key: string, w = 400) =>
     `${server}/api/t?k=${encodeURIComponent(key)}&w=${w}`,

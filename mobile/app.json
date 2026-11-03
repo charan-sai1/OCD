@@ -8,6 +8,16 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#ffffff",
     "icon": "./assets/icon.png",
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "OCD reads your camera roll to show which photos are already backed up to your drive.",
+          "savePhotosPermission": "OCD can save photos you copy back from your drive.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.charansai.ocd"
