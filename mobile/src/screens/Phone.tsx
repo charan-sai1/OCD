@@ -27,6 +27,7 @@ type PhoneAsset = {
   id: string;
   filename: string;
   uri: string;
+  cloud?: boolean;
   size?: number;
   takenAt: number;
   kind: 'image' | 'video';
@@ -76,12 +77,14 @@ export function Phone({ server, onChangeServer }: Props) {
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
 
+  const androidExpoGo = Platform.OS === 'android' && Constants.appOwnership === 'expo';
+
   useEffect(() => {
     (async () => {
       try {
         setPerm(await MediaLibrary.getPermissionsAsync());
       } catch (e) {
-        setProblem(String(e));
+        setProblem(permissionProblem(e));
       } finally {
         setBooting(false);
       }
@@ -199,7 +202,7 @@ export function Phone({ server, onChangeServer }: Props) {
       setProblem(null);
       setPerm(await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']));
     } catch (e) {
-      setProblem(String(e));
+      setProblem(permissionProblem(e));
     }
   };
 
@@ -490,18 +493,29 @@ export function Phone({ server, onChangeServer }: Props) {
             drive, so you only send the new ones. Nothing is uploaded until you
             choose.
           </Text>
-          <View style={styles.permButton}>
-            <PrimaryButton
-              label={perm && !perm.canAskAgain ? 'Open Settings' : 'Allow photo access'}
-              onPress={perm && !perm.canAskAgain ? () => Linking.openSettings() : ask}
-            />
-          </View>
+          {androidExpoGo ? (
+            <View style={styles.permNotice}>
+              <Text style={styles.permNoticeText}>
+                Expo Go cannot read the Android camera roll. Open the OCD development
+                build on Android, or use the iPhone for now.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.permButton}>
+                <PrimaryButton
+                  label={perm && !perm.canAskAgain ? 'Open Settings' : 'Allow photo access'}
+                  onPress={perm && !perm.canAskAgain ? () => Linking.openSettings() : ask}
+                />
+              </View>
+              {perm?.canAskAgain ? (
+                <Pressable onPress={() => Linking.openSettings()} hitSlop={8}>
+                  <Text style={styles.settingsLink}>Open Settings</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
           {problem ? <Text style={styles.error}>{problem}</Text> : null}
-          {perm?.canAskAgain ? (
-            <Pressable onPress={() => Linking.openSettings()} hitSlop={8}>
-              <Text style={styles.settingsLink}>Open Settings</Text>
-            </Pressable>
-          ) : null}
         </View>
       </View>
     );
@@ -686,11 +700,20 @@ export function Phone({ server, onChangeServer }: Props) {
         <StatusBar style="light" />
         <View style={styles.viewer}>
           {preview ? (
-            <Image
-              source={{ uri: preview.uri }}
-              style={styles.viewerImage}
-              resizeMode="contain"
-            />
+            preview.uri ? (
+              <Image
+                source={{ uri: preview.uri }}
+                style={styles.viewerImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={styles.viewerCloud}>
+                <Text style={styles.viewerCloudTitle}>In iCloud</Text>
+                <Text style={styles.viewerCloudText}>
+                  Select this item and send it to download the original first.
+                </Text>
+              </View>
+            )
           ) : null}
           <Pressable
             onPress={() => setPreview(null)}
@@ -736,6 +759,7 @@ const Tile = React.memo(function Tile({
   onLongPress: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const showImage = Boolean(item.uri) && !failed;
 
   return (
     <Pressable
@@ -750,7 +774,7 @@ const Tile = React.memo(function Tile({
         pressed && { opacity: 0.72 },
       ]}
     >
-      {!failed ? (
+      {showImage ? (
         <Image
           source={{ uri: item.uri }}
           style={{ width: cell, height: cell }}
@@ -760,7 +784,9 @@ const Tile = React.memo(function Tile({
         />
       ) : (
         <View style={styles.noPreview}>
-          <Text style={styles.noPreviewText}>{item.kind === 'video' ? 'Video' : 'In iCloud'}</Text>
+          <Text style={styles.noPreviewText}>
+            {item.cloud ? 'In iCloud' : item.kind === 'video' ? 'Video' : 'Preview unavailable'}
+          </Text>
         </View>
       )}
       {badge?.onDrive ? (
@@ -825,6 +851,7 @@ async function resolveAssets(list: MediaLibrary.Asset[]): Promise<PhoneAsset[]> 
 
 async function resolveOne(a: MediaLibrary.Asset): Promise<PhoneAsset> {
   let uri = a.uri;
+  let cloud = false;
   if (Platform.OS === 'ios') {
     try {
       // false: never pull originals down from iCloud just to show a badge.
@@ -832,26 +859,44 @@ async function resolveOne(a: MediaLibrary.Asset): Promise<PhoneAsset> {
         shouldDownloadFromNetwork: false,
       });
       if (info.localUri) uri = info.localUri;
+      else cloud = true;
     } catch {
       // iCloud-only asset; the tile will say so.
+      cloud = true;
+    }
+    // React Native's image loader has no handler for ph://. Handing it one
+    // just logs "No suitable image URL loader found" and leaves an empty tile.
+    if (uri.startsWith('ph://')) {
+      cloud = true;
+      uri = '';
     }
   }
   let size: number | undefined;
-  try {
-    const file = await FileSystem.getInfoAsync(uri);
-    if (file.exists && !file.isDirectory) size = file.size;
-  } catch {
-    // Size is optional; a missing size just leaves the badge unknown.
+  if (uri) {
+    try {
+      const file = await FileSystem.getInfoAsync(uri);
+      if (file.exists && !file.isDirectory) size = file.size;
+    } catch {
+      // Size is optional; a missing size just leaves the badge unknown.
+    }
   }
   return {
     id: a.id,
     filename: a.filename,
     uri,
+    cloud,
     size,
     takenAt: Math.round(a.creationTime / 1000),
     kind: a.mediaType === 'video' ? 'video' : 'image',
     duration: a.duration,
   };
+}
+
+function permissionProblem(e: unknown): string {
+  if (Platform.OS === 'android' && Constants.appOwnership === 'expo') {
+    return 'Expo Go cannot grant camera-roll access on Android. Use the iPhone, or install the OCD development build.';
+  }
+  return e instanceof Error ? e.message : String(e);
 }
 
 const styles = StyleSheet.create({
@@ -920,6 +965,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   permButton: { marginTop: space(7) },
+  permNotice: {
+    marginTop: space(5),
+    padding: space(4),
+    borderRadius: radius.md,
+    backgroundColor: '#fff7ed',
+  },
+  permNoticeText: { color: '#9a3412', fontSize: 14, lineHeight: 20 },
   error: {
     marginTop: space(4),
     color: colors.danger,
@@ -1063,6 +1115,20 @@ const styles = StyleSheet.create({
   deleteText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
   viewer: { flex: 1, backgroundColor: colors.black },
   viewerImage: { width: '100%', height: '100%' },
+  viewerCloud: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space(10),
+  },
+  viewerCloudTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
+  viewerCloudText: {
+    marginTop: space(2),
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   viewerDone: {
     position: 'absolute',
     right: space(5),
