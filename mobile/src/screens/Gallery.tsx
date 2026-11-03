@@ -129,6 +129,10 @@ export function Gallery({ server, onChangeServer }: Props) {
   }, [hasMore, load]);
 
   const shown = rows.length;
+  // Only warn about drives the grid is actually trying to show.
+  const offline = (lib ? libs.filter((l) => l.id === lib) : libs).filter(
+    (l) => !l.available,
+  );
   const subtitle = loading
     ? 'Loading photos…'
     : shown === 0
@@ -193,6 +197,17 @@ export function Gallery({ server, onChangeServer }: Props) {
           {building ? <Text style={styles.scanning}>Scanning drive…</Text> : null}
         </View>
       </View>
+
+      {offline.length > 0 ? (
+        <View style={styles.offline} accessibilityRole="alert">
+          <Text style={styles.offlineText}>
+            {offline.length === 1
+              ? `${offline[0].name} is offline.`
+              : `${offline.map((l) => l.name).join(' and ')} are offline.`}{' '}
+            Plug the drive back in, then pull to refresh.
+          </Text>
+        </View>
+      ) : null}
 
       {problem ? <ErrorBanner message={problem} onRetry={refresh} /> : null}
 
@@ -395,6 +410,14 @@ const styles = StyleSheet.create({
   },
   stats: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   scanning: { fontSize: 12, color: colors.faint },
+  offline: {
+    marginHorizontal: space(4),
+    marginBottom: space(2),
+    padding: space(3),
+    borderRadius: radius.md,
+    backgroundColor: '#fff7ed',
+  },
+  offlineText: { color: '#9a3412', fontSize: 13, lineHeight: 18 },
   skeleton: {
     flexDirection: 'row',
     flexWrap: 'wrap',
