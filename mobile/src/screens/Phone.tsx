@@ -8,6 +8,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -17,9 +18,9 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
-import { api, ImportMatch, messageFor } from '../api';
+import { api, ImportMatch, Library, messageFor, uploadFile } from '../api';
 import { colors, duration, radius, space } from '../theme';
-import { PrimaryButton, Wordmark } from '../ui';
+import { Chip, PrimaryButton, Wordmark } from '../ui';
 
 type PhoneAsset = {
   id: string;
@@ -57,6 +58,19 @@ export function Phone({ server, onChangeServer }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [preview, setPreview] = useState<PhoneAsset | null>(null);
 
+  const [libs, setLibs] = useState<Library[]>([]);
+  const [destId, setDestId] = useState('');
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<'all' | 'new'>('all');
+  const [sending, setSending] = useState(false);
+  const [sendTotal, setSendTotal] = useState(0);
+  const [sentCount, setSentCount] = useState(0);
+  const [sendName, setSendName] = useState<string | null>(null);
+  const [sendProgress, setSendProgress] = useState(0);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sentNote, setSentNote] = useState<string | null>(null);
+
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
 
@@ -72,6 +86,25 @@ export function Phone({ server, onChangeServer }: Props) {
     })();
   }, []);
 
+  const loadLibraries = useCallback(async () => {
+    try {
+      const all = await api.libraries(server);
+      const usable = all.filter((l) => l.available);
+      setLibs(usable);
+      setDestId((prev) =>
+        usable.some((l) => l.id === prev) ? prev : usable[0]?.id ?? '',
+      );
+    } catch {
+      // The camera roll still works offline; the send bar explains the rest.
+    }
+  }, [server]);
+
+  useEffect(() => {
+    // Loading the library list is an external read, not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadLibraries();
+  }, [loadLibraries]);
+
   const load = useCallback(
     async (reset: boolean) => {
       if (busy.current) return;
@@ -79,10 +112,13 @@ export function Phone({ server, onChangeServer }: Props) {
       if (reset) {
         after.current = undefined;
         setAssets([]);
-        setBadges({});
         setHasMore(false);
         setDriveProblem(null);
         setProblem(null);
+        setSendError(null);
+        setSentNote(null);
+        setSelected(new Set());
+        setSelecting(false);
         setLoading(true);
       } else {
         setLoadingMore(true);
@@ -123,7 +159,11 @@ export function Phone({ server, onChangeServer }: Props) {
             setBadges((prev) => {
               const next = { ...prev };
               withSize.forEach((a, i) => {
-                next[a.id] = res.matches[i] ?? { onDrive: false };
+                const match = res.matches[i] ?? { onDrive: false };
+                // A file sent a moment ago may not be in the catalog until the
+                // next write lands; do not take its badge away in the meantime.
+                next[a.id] =
+                  match.onDrive || !prev[a.id]?.onDrive ? match : prev[a.id];
               });
               return next;
             });
@@ -164,6 +204,7 @@ export function Phone({ server, onChangeServer }: Props) {
   const refresh = () => {
     if (busy.current) return;
     setRefreshing(true);
+    loadLibraries();
     load(true);
   };
 
@@ -172,6 +213,151 @@ export function Phone({ server, onChangeServer }: Props) {
   };
 
   const onDrive = assets.reduce((n, a) => n + (badges[a.id]?.onDrive ? 1 : 0), 0);
+  const newCount = assets.length - onDrive;
+  const visible = filter === 'new' ? assets.filter((a) => !badges[a.id]?.onDrive) : assets;
+  const dest = libs.find((l) => l.id === destId);
+
+  const enterSelection = () => {
+    if (sending) return;
+    setSelecting(true);
+    setSelected(new Set());
+    setSentNote(null);
+  };
+
+  const cancelSelection = () => {
+    if (sending) return;
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const onTilePress = (a: PhoneAsset) => {
+    if (selecting) toggle(a.id);
+    else setPreview(a);
+  };
+
+  const onTileLongPress = (a: PhoneAsset) => {
+    if (sending) return;
+    setSelecting(true);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.add(a.id);
+      return next;
+    });
+  };
+
+  const selectAllNew = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      visible.filter((a) => !badges[a.id]?.onDrive).forEach((a) => next.add(a.id));
+      return next;
+    });
+  };
+
+  const markOnDrive = (
+    a: PhoneAsset,
+    res: { path?: string; existingPath?: string; volumeId?: string; label?: string },
+  ) => {
+    setBadges((prev) => ({
+      ...prev,
+      [a.id]: {
+        onDrive: true,
+        path: res.path ?? res.existingPath,
+        volumeId: res.volumeId,
+        label: res.label,
+      },
+    }));
+  };
+
+  const dropSelected = (id: string) => {
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const send = async () => {
+    if (!dest || sending || selected.size === 0) return;
+    const list = assets.filter((a) => selected.has(a.id));
+    if (list.length === 0) return;
+    setSending(true);
+    setSendError(null);
+    setSentNote(null);
+    setSendTotal(list.length);
+    setSentCount(0);
+    setSendProgress(0);
+    let done = 0;
+    let failed = 0;
+
+    for (const a of list) {
+      setSendName(a.filename);
+      setSendProgress(0);
+      try {
+        const ready = await ensureUploadable(a);
+        if (!ready) {
+          throw new Error('This item is only in iCloud and could not be downloaded.');
+        }
+        const start = await api.uploadStart(server, {
+          libraryId: dest.id,
+          name: a.filename,
+          size: ready.size,
+          takenAt: a.takenAt,
+          kind: a.kind,
+        });
+        if (start.existingPath) {
+          markOnDrive(a, start);
+          dropSelected(a.id);
+          done++;
+          setSentCount(done);
+          continue;
+        }
+        if (!start.uploadId) throw new Error('The desktop did not start the upload.');
+        try {
+          await uploadFile(server, start.uploadId, ready.uri, (sentBytes, totalBytes) => {
+            setSendProgress(totalBytes > 0 ? sentBytes / totalBytes : 0);
+          });
+          const fin = await api.uploadFinish(server, start.uploadId);
+          markOnDrive(a, fin);
+          dropSelected(a.id);
+          done++;
+          setSentCount(done);
+        } catch (e) {
+          // Never leave a half-written file among the real ones.
+          try {
+            await api.uploadAbort(server, start.uploadId);
+          } catch {
+            // The session may already be gone.
+          }
+          throw e;
+        }
+      } catch (e) {
+        failed++;
+        setSendError(`${a.filename}: ${messageFor(e)}`);
+      }
+    }
+
+    setSending(false);
+    setSendName(null);
+    if (failed === 0) {
+      setSentNote(
+        `Sent ${done} ${done === 1 ? 'item' : 'items'} to ${dest.name}.`,
+      );
+      setSelected(new Set());
+      setSelecting(false);
+    } else {
+      setSentNote(`Sent ${done} of ${list.length}. ${failed} could not be sent.`);
+    }
+  };
 
   const header = (
     <View
@@ -186,15 +372,47 @@ export function Phone({ server, onChangeServer }: Props) {
           <Text style={styles.change}>Change server</Text>
         </Pressable>
       </View>
-      <Text style={styles.title}>Camera roll</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>{selecting ? 'Select photos' : 'Camera roll'}</Text>
+        {assets.length > 0 ? (
+          <Pressable
+            onPress={selecting ? cancelSelection : enterSelection}
+            hitSlop={10}
+            disabled={sending}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.change, sending && styles.dim]}>
+              {selecting ? 'Cancel' : 'Select'}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={styles.stats}>
         {loading
           ? 'Reading your camera roll…'
           : `${assets.length.toLocaleString()}${hasMore ? '+' : ''} items${
               onDrive ? ` · ${onDrive} on drive` : ''
-            }`}
+            }${newCount ? ` · ${newCount} new` : ''}`}
         {checking ? '  ·  Checking drive…' : ''}
       </Text>
+      {selecting ? (
+        <View style={styles.selectRow}>
+          <Text style={styles.selectCount}>{selected.size} selected</Text>
+          <Pressable onPress={selectAllNew} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.selectAction}>Select all new</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {assets.length > 0 ? (
+        <View style={styles.filterRow}>
+          <Chip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
+          <Chip
+            label={newCount ? `Not on drive (${newCount})` : 'Not on drive'}
+            active={filter === 'new'}
+            onPress={() => setFilter('new')}
+          />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -249,15 +467,34 @@ export function Phone({ server, onChangeServer }: Props) {
           <Text style={styles.noticeText}>{problem}</Text>
         </View>
       ) : null}
+      {sendError ? (
+        <View style={styles.notice} accessibilityRole="alert">
+          <Text style={styles.noticeText}>{sendError}</Text>
+        </View>
+      ) : null}
+      {sentNote ? (
+        <View style={styles.okNotice}>
+          <Text style={styles.okText}>{sentNote}</Text>
+        </View>
+      ) : null}
 
       <FlatList
-        data={assets}
+        data={visible}
+        extraData={selected}
         keyExtractor={(a) => a.id}
         numColumns={COLS}
         columnWrapperStyle={{ gap: GAP }}
         contentContainerStyle={{ gap: GAP, paddingBottom: space(8) }}
         renderItem={({ item }) => (
-          <Tile item={item} cell={cell} badge={badges[item.id]} onPress={() => setPreview(item)} />
+          <Tile
+            item={item}
+            cell={cell}
+            badge={badges[item.id]}
+            selecting={selecting}
+            selected={selected.has(item.id)}
+            onPress={() => onTilePress(item)}
+            onLongPress={() => onTileLongPress(item)}
+          />
         )}
         onEndReached={onEnd}
         onEndReachedThreshold={0.9}
@@ -284,14 +521,82 @@ export function Phone({ server, onChangeServer }: Props) {
         ListEmptyComponent={
           loading ? undefined : (
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No photos on this phone</Text>
+              <Text style={styles.emptyTitle}>
+                {filter === 'new' ? 'Nothing new here' : 'No photos on this phone'}
+              </Text>
               <Text style={styles.emptyText}>
-                Take a photo, then pull down here to refresh.
+                {filter === 'new'
+                  ? 'Every photo loaded so far is already on the drive.'
+                  : 'Take a photo, then pull down here to refresh.'}
               </Text>
             </View>
           )
         }
       />
+
+      {selecting ? (
+        <View style={styles.sendBar}>
+          <View style={styles.destRow}>
+            <Text style={styles.sendLabel}>Send to</Text>
+            {libs.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.destChips}
+                keyboardShouldPersistTaps="handled"
+              >
+                {libs.map((l) => (
+                  <Chip
+                    key={l.id}
+                    label={l.name}
+                    active={l.id === destId}
+                    onPress={() => setDestId(l.id)}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={styles.sendMissing} numberOfLines={1}>
+                No drive folder connected
+              </Text>
+            )}
+          </View>
+          <View style={styles.sendRow}>
+            <View style={styles.sendInfo}>
+              <Text style={styles.sendTitle}>
+                {selected.size
+                  ? `${selected.size} selected`
+                  : 'Tap photos to select them'}
+              </Text>
+              <Text style={styles.sendSub} numberOfLines={1}>
+                {sending
+                  ? `${sendName ?? 'Sending'} · ${Math.round(sendProgress * 100)}%${
+                      sendTotal ? ` — ${sentCount}/${sendTotal}` : ''
+                    }`
+                  : dest
+                    ? `To ${dest.name}`
+                    : 'Choose a drive above'}
+              </Text>
+            </View>
+            <Pressable
+              onPress={send}
+              disabled={!dest || selected.size === 0 || sending}
+              accessibilityRole="button"
+              accessibilityLabel="Send selected photos to the drive"
+              style={({ pressed }) => [
+                styles.sendButton,
+                (!dest || selected.size === 0 || sending) && styles.dim,
+                pressed && styles.sendButtonPressed,
+              ]}
+            >
+              {sending ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.sendButtonText}>Send</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <Modal
         visible={preview !== null}
@@ -338,20 +643,29 @@ const Tile = React.memo(function Tile({
   item,
   cell,
   badge,
+  selecting,
+  selected,
   onPress,
+  onLongPress,
 }: {
   item: PhoneAsset;
   cell: number;
   badge?: ImportMatch;
+  selecting: boolean;
+  selected: boolean;
   onPress: () => void;
+  onLongPress: () => void;
 }) {
   const [failed, setFailed] = useState(false);
 
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={260}
       accessibilityRole="imagebutton"
       accessibilityLabel={item.filename}
+      accessibilityState={selecting ? { selected } : undefined}
       style={({ pressed }) => [
         { width: cell, height: cell, backgroundColor: colors.surface },
         pressed && { opacity: 0.72 },
@@ -380,9 +694,40 @@ const Tile = React.memo(function Tile({
           <Text style={styles.videoText}>▶ {duration(item.duration)}</Text>
         </View>
       ) : null}
+      {selecting ? (
+        <View style={[styles.selectCircle, selected && styles.selectCircleOn]}>
+          {selected ? <Text style={styles.selectTick}>✓</Text> : null}
+        </View>
+      ) : null}
+      {selected ? <View pointerEvents="none" style={styles.selectedRing} /> : null}
     </Pressable>
   );
 });
+
+// ensureUploadable returns a local file the streaming uploader can read. An
+// iCloud-only item is fetched first; nothing is sent until it exists.
+async function ensureUploadable(
+  a: PhoneAsset,
+): Promise<{ uri: string; size: number } | null> {
+  let uri = a.uri;
+  if (Platform.OS === 'ios') {
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(a.id, {
+        shouldDownloadFromNetwork: true,
+      });
+      if (info.localUri) uri = info.localUri;
+    } catch {
+      // Fall back to the URI we already have.
+    }
+  }
+  try {
+    const file = await FileSystem.getInfoAsync(uri);
+    if (file.exists && !file.isDirectory) return { uri, size: file.size };
+  } catch {
+    // Missing cache copy or an unreadable URI.
+  }
+  return null;
+}
 
 async function resolveAssets(list: MediaLibrary.Asset[]): Promise<PhoneAsset[]> {
   const out = new Array<PhoneAsset>(list.length);
@@ -443,7 +788,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     height: 34,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: space(3),
+  },
   change: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  dim: { opacity: 0.45 },
   title: {
     fontSize: 32,
     lineHeight: 38,
@@ -458,6 +810,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.muted,
   },
+  filterRow: {
+    flexDirection: 'row',
+    marginTop: space(3),
+  },
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: space(2),
+  },
+  selectCount: { fontSize: 13, fontWeight: '700', color: colors.text },
+  selectAction: { fontSize: 13, fontWeight: '600', color: colors.muted },
   boot: { marginTop: space(20) },
   permission: {
     paddingHorizontal: space(6),
@@ -497,6 +861,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7ed',
   },
   noticeText: { color: '#9a3412', fontSize: 13, lineHeight: 18 },
+  okNotice: {
+    marginHorizontal: space(4),
+    marginBottom: space(2),
+    padding: space(3),
+    borderRadius: radius.md,
+    backgroundColor: '#ecfdf3',
+  },
+  okText: { color: '#027a48', fontSize: 13, lineHeight: 18 },
   more: { paddingVertical: space(7), alignItems: 'center' },
   empty: {
     paddingHorizontal: space(10),
@@ -533,6 +905,72 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)',
   },
   videoText: { color: colors.white, fontSize: 10, fontWeight: '700' },
+  selectCircle: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.white,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectCircleOn: { backgroundColor: colors.text, borderColor: colors.text },
+  selectTick: { color: colors.white, fontSize: 13, fontWeight: '800', lineHeight: 16 },
+  selectedRing: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 3,
+    borderColor: colors.text,
+  },
+  sendBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    backgroundColor: colors.bg,
+    paddingHorizontal: space(4),
+    paddingTop: space(2.5),
+    paddingBottom: space(3),
+  },
+  destRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+    marginBottom: space(2),
+  },
+  destChips: { gap: 0 },
+  sendLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.faint,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  sendMissing: { flex: 1, fontSize: 12, color: colors.muted },
+  sendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(3),
+  },
+  sendInfo: { flex: 1, gap: 2 },
+  sendTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  sendSub: { fontSize: 12, color: colors.muted },
+  sendButton: {
+    height: 42,
+    minWidth: 84,
+    paddingHorizontal: space(5),
+    borderRadius: radius.pill,
+    backgroundColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonPressed: { opacity: 0.8 },
+  sendButtonText: { color: colors.white, fontSize: 15, fontWeight: '700' },
   viewer: { flex: 1, backgroundColor: colors.black },
   viewerImage: { width: '100%', height: '100%' },
   viewerDone: {

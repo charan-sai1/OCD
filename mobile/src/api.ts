@@ -61,6 +61,42 @@ export type ImportCheck = {
   drives?: string[];
 };
 
+export type UploadTarget = {
+  libraryId?: string;
+  volumeId?: string;
+  name: string;
+  size: number;
+  takenAt?: number;
+  kind?: 'image' | 'video';
+  width?: number;
+  height?: number;
+  duration?: number;
+  sha256?: string;
+};
+
+export type UploadStart = {
+  uploadId?: string;
+  existingPath?: string;
+  path?: string;
+  size?: number;
+  offset?: number;
+  libraryId?: string;
+  volumeId?: string;
+  label?: string;
+};
+
+export type UploadFinish = {
+  verified: boolean;
+  sha256: string;
+  path: string;
+  size: number;
+  existing: boolean;
+  itemId: string;
+  libraryId: string;
+  volumeId: string;
+  label?: string;
+};
+
 const PORT = 8090;
 const CONFIG = (FileSystem.documentDirectory ?? '') + 'ocd-server.txt';
 
@@ -107,14 +143,23 @@ export class ApiError extends Error {
 async function request<T>(
   server: string,
   path: string,
-  init: { method?: string; body?: unknown; timeoutMs?: number } = {},
+  init: {
+    method?: string;
+    body?: unknown;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), init.timeoutMs ?? 12000);
   try {
+    const headers: Record<string, string> = {
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    };
     const res = await fetch(server + path, {
       method: init.method ?? 'GET',
-      headers: init.body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
       body: init.body ? JSON.stringify(init.body) : undefined,
       signal: ctl.signal,
     });
@@ -131,6 +176,43 @@ async function request<T>(
     return (await res.json()) as T;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function deviceHeaders(): Record<string, string> {
+  const name = (Constants.deviceName ?? '').trim();
+  return name ? { 'X-OCD-Device': name } : {};
+}
+
+// uploadFile streams the local file to the server. It is separate from request
+// because a large video must never be read into JS memory just to be sent.
+export async function uploadFile(
+  server: string,
+  uploadId: string,
+  uri: string,
+  onProgress?: (sent: number, total: number) => void,
+): Promise<void> {
+  const task = FileSystem.createUploadTask(
+    `${server}/api/upload/${encodeURIComponent(uploadId)}?offset=0`,
+    uri,
+    {
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: deviceHeaders(),
+    },
+    (p) => onProgress?.(p.totalBytesSent, p.totalBytesExpectedToSend),
+  );
+  const res = await task.uploadAsync();
+  if (!res) throw new Error('The upload was cancelled.');
+  if (res.status < 200 || res.status >= 300) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = JSON.parse(res.body) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Some failures have no JSON body.
+    }
+    throw new ApiError(res.status, message);
   }
 }
 
@@ -175,9 +257,29 @@ export const api = {
       timeoutMs: 20000,
     }),
 
+  uploadStart: (server: string, target: UploadTarget) =>
+    request<UploadStart>(server, '/api/upload/start', {
+      method: 'POST',
+      body: target,
+      timeoutMs: 20000,
+      headers: deviceHeaders(),
+    }),
+
+  uploadFinish: (server: string, uploadId: string) =>
+    request<UploadFinish>(server, `/api/upload/${encodeURIComponent(uploadId)}/finish`, {
+      method: 'POST',
+      timeoutMs: 120000,
+      headers: deviceHeaders(),
+    }),
+
+  uploadAbort: (server: string, uploadId: string) =>
+    request<{ aborted: boolean }>(server, `/api/upload/${encodeURIComponent(uploadId)}/abort`, {
+      method: 'POST',
+      timeoutMs: 15000,
+    }),
+
   thumb: (server: string, key: string, w = 400) =>
     `${server}/api/t?k=${encodeURIComponent(key)}&w=${w}`,
-
   original: (server: string, key: string) => `${server}/api/orig?k=${encodeURIComponent(key)}`,
 };
 

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"ocd/internal/dedupe"
 	"ocd/internal/media"
@@ -40,6 +41,13 @@ type Server struct {
 
 	importMu    sync.Mutex
 	importCache map[string]*catalogLookup
+
+	uploadMu sync.Mutex
+	uploads  map[string]*uploadSession
+
+	persistMu    sync.Mutex
+	persistTimer *time.Timer
+	saveMu       sync.Mutex
 
 	index  *media.Index
 	thumbs *media.Thumbs
@@ -79,6 +87,7 @@ func New(cfg Config) *Server {
 	s.drives = newCatalogStore()
 	s.sysRoot = volume.RootOf(cfg.DataDir)
 	s.importCache = map[string]*catalogLookup{}
+	s.uploads = map[string]*uploadSession{}
 	return s
 }
 
@@ -105,6 +114,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/drives/refresh", s.drivesRefresh)
 	mux.HandleFunc("/api/catalog", s.catalogDownload)
 	mux.HandleFunc("/api/import/check", s.importCheck)
+	mux.HandleFunc("/api/upload/start", s.uploadStart)
+	mux.HandleFunc("/api/upload/", s.uploadItem)
 	mux.HandleFunc("/api/item", s.itemInfo)
 	mux.HandleFunc("/api/fav", s.favToggle)
 	mux.HandleFunc("/api/orig", s.orig)

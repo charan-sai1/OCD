@@ -329,6 +329,9 @@ func (s *Server) startScan(reason string) bool {
 		libs := s.libMedia()
 		s.emitIndex("index", 0, 0, 0, reason)
 
+		// Serialize with phone imports: an upload must never write the index or
+		// a drive catalog at the same moment a scan is writing them.
+		s.saveMu.Lock()
 		err := s.index.Build(libs, func(p media.Progress) {
 			s.scanMu.Lock()
 			s.scanProg = p
@@ -336,6 +339,7 @@ func (s *Server) startScan(reason string) bool {
 			s.emitIndex("index", p.Done, 0, p.Skipped, p.Message)
 		})
 		if err != nil {
+			s.saveMu.Unlock()
 			s.emitJSON("index-error", 0, 0, err.Error())
 			return
 		}
@@ -354,6 +358,7 @@ func (s *Server) startScan(reason string) bool {
 		// start from it instead of walking the disk.
 		s.writeCatalogs(libs)
 		s.drives.refresh(s.libs.list())
+		s.saveMu.Unlock()
 		s.emitJSON("indexed", s.index.Len(), 0, "")
 	}()
 	return true

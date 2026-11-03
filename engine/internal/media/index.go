@@ -272,9 +272,21 @@ func (ix *Index) reindex() {
 // Save writes the index atomically so a crash mid-write cannot corrupt it.
 func (ix *Index) Save() error {
 	ix.mu.RLock()
-	items := ix.items
-	ix.mu.RUnlock()
-	return ix.write(items)
+	defer ix.mu.RUnlock()
+	return ix.write(ix.items)
+}
+
+// Put adds or replaces one item in memory. Callers persist later, so a batch of
+// imports costs one index write instead of one per file.
+func (ix *Index) Put(it Item) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if i, ok := ix.pos[it.Key()]; ok {
+		ix.items[i] = it
+	} else {
+		ix.items = append(ix.items, it)
+	}
+	ix.ready()
 }
 
 // write persists a set of items atomically. The scan uses it to checkpoint part
