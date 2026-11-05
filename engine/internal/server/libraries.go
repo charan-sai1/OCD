@@ -7,17 +7,24 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"ocd/internal/importer"
+	"ocd/internal/volume"
 )
 
 // Library is a folder the user has saved in the app. It is the unit shown on
 // the main page: a name, a path, whether it is currently reachable, and a
 // cached photo count.
+//
+// VolumeID and Rel let the store find the same folder again when the drive is
+// plugged in under a different letter. The id is the filesystem's own serial,
+// so it survives any mount path. Rel is the part of the path below the volume
+// root, in slash form.
 type Library struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
@@ -27,13 +34,18 @@ type Library struct {
 	Bytes        int64     `json:"bytes"`
 	CollectionID string    `json:"collectionId,omitempty"`
 	CountedAt    time.Time `json:"countedAt,omitempty"`
+
+	VolumeID    string `json:"volumeId,omitempty"`
+	VolumeLabel string `json:"volumeLabel,omitempty"`
+	Rel         string `json:"rel,omitempty"`
 }
 
 // libraryStore is the persisted, ordered set of libraries.
 type libraryStore struct {
-	mu    sync.Mutex
-	file  string
-	items []Library
+	mu        sync.Mutex
+	file      string
+	items     []Library
+	lastRemap time.Time
 }
 
 type libraryFile struct {
@@ -49,12 +61,112 @@ func newLibraryStore(file string) (*libraryStore, error) {
 			st.items = lf.Items
 		}
 	}
+	st.remap(mountedRoots())
 	return st, nil
+}
+
+// mountedRoots lists the drive roots Windows (or the OS) has mounted. It is
+// one stat per letter, so it is cheap enough to call when a drive is missing.
+func mountedRoots() []string {
+	if runtime.GOOS == "windows" {
+		var out []string
+		for c := 'A'; c <= 'Z'; c++ {
+			r := string(c) + `:\`
+			if fi, err := os.Stat(r); err == nil && fi.IsDir() {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if fi, err := os.Stat("/"); err == nil && fi.IsDir() {
+		return []string{"/"}
+	}
+	return nil
+}
+
+func relFromRoot(path, root string) string {
+	path = filepath.Clean(path)
+	root = filepath.Clean(root)
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "."
+	}
+	return filepath.ToSlash(rel)
+}
+
+func joinRel(root, rel string) string {
+	rel = filepath.FromSlash(rel)
+	if rel == "." || rel == "" {
+		return root
+	}
+	return filepath.Join(root, rel)
+}
+
+// remap points saved libraries at the drive that actually carries them. A
+// letter change must not orphan the library or the item keys built on its id.
+// It is throttled by callers to once per few seconds or per missing library.
+func (st *libraryStore) remap(roots []string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.remapLocked(roots)
+}
+
+func (st *libraryStore) remapLocked(roots []string) {
+	if len(roots) == 0 {
+		return
+	}
+	changed := false
+	// First, backfill the identity of libraries that are reachable.
+	for i := range st.items {
+		l := &st.items[i]
+		if !pathAvailable(l.Path) {
+			continue
+		}
+		if l.VolumeID != "" {
+			continue
+		}
+		if info, err := volumeOfPath(l.Path); err == nil {
+			l.VolumeID, l.VolumeLabel, l.Rel = info.ID, info.Label, relFromRoot(l.Path, info.Root)
+			changed = true
+		}
+	}
+	// Then re-point the ones that are not, by volume id.
+	for i := range st.items {
+		l := &st.items[i]
+		if pathAvailable(l.Path) || l.VolumeID == "" {
+			continue
+		}
+		for _, root := range roots {
+			if strings.EqualFold(strings.TrimRight(root, `/\`), strings.TrimRight(l.Path, `/\`)) {
+				continue
+			}
+			info, err := volumeOfPath(root)
+			if err != nil {
+				continue
+			}
+			if info.ID != l.VolumeID {
+				continue
+			}
+			candidate := joinRel(root, l.Rel)
+			if pathAvailable(candidate) {
+				l.Path = candidate
+				changed = true
+				break
+			}
+		}
+	}
+	if changed {
+		_ = st.saveLocked()
+	}
 }
 
 func (st *libraryStore) save() error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	return st.saveLocked()
+}
+
+func (st *libraryStore) saveLocked() error {
 	b, err := json.MarshalIndent(libraryFile{Items: st.items}, "", "  ")
 	if err != nil {
 		return err
@@ -62,15 +174,45 @@ func (st *libraryStore) save() error {
 	return writeFileAtomic(st.file, b, 0o644)
 }
 
-// list returns the libraries with availability refreshed.
+// volumeOfPath is a package-level hook so tests can pin drive identities the
+// way catalog tests pin s.drives.volumeOf.
+var volumeOfPath = volume.Of
+
+// list returns the libraries with availability refreshed. If a saved library
+// has gone missing, one throttled scan tries to find its drive under another
+// letter before it is reported offline.
 func (st *libraryStore) list() []Library {
 	st.mu.Lock()
-	defer st.mu.Unlock()
+	now := time.Now()
+	missing := false
+	for i := range st.items {
+		if !pathAvailable(st.items[i].Path) {
+			missing = true
+			break
+		}
+	}
+	if missing && now.Sub(st.lastRemap) > 3*time.Second {
+		st.remapLocked(mountedRoots())
+		st.lastRemap = now
+	}
+	changed := false
+	for i := range st.items {
+		if st.items[i].VolumeID == "" && pathAvailable(st.items[i].Path) {
+			if info, err := volumeOfPath(st.items[i].Path); err == nil {
+				st.items[i].VolumeID, st.items[i].VolumeLabel, st.items[i].Rel = info.ID, info.Label, relFromRoot(st.items[i].Path, info.Root)
+				changed = true
+			}
+		}
+	}
+	if changed {
+		_ = st.saveLocked()
+	}
 	out := make([]Library, len(st.items))
 	copy(out, st.items)
 	for i := range out {
 		out[i].Available = pathAvailable(out[i].Path)
 	}
+	st.mu.Unlock()
 	return out
 }
 

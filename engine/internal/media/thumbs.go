@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 
 	_ "image/gif"
@@ -26,27 +28,52 @@ type Thumbs struct {
 	dir    string
 	ffmpeg func() string
 
-	// runFFmpeg exists so tests can inspect the command without a decoder.
-	runFFmpeg func(bin string, args ...string) ([]byte, error)
+	// runFFmpeg and runFFprobe exist so tests can inspect the commands
+	// without a real decoder. probe is the optional duration override tests
+	// inject; nil means "ask ffprobe, then the index probe".
+	runFFmpeg  func(bin string, args ...string) ([]byte, error)
+	runFFprobe func(bin string, args ...string) ([]byte, error)
+	probe      func(src string) (float64, error)
 
 	mu   sync.Mutex
 	busy map[string]chan struct{}
 }
+
+// thumbVersion bumps the cache key whenever the preview pipeline changes, so
+// tiles rendered by an old, buggy version are rebuilt instead of reused.
+const thumbVersion = 3
 
 // NewThumbs prepares a cache rooted at dir.
 func NewThumbs(dir string, ffmpeg func() string) *Thumbs {
 	return &Thumbs{
 		dir:    dir,
 		ffmpeg: ffmpeg,
-		busy:   map[string]chan struct{}{},
 		runFFmpeg: func(bin string, args ...string) ([]byte, error) {
 			return exec.Command(bin, args...).CombinedOutput()
 		},
+		runFFprobe: func(bin string, args ...string) ([]byte, error) {
+			return exec.Command(bin, args...).CombinedOutput()
+		},
+		busy: map[string]chan struct{}{},
 	}
 }
 
+// ffmpegSibling returns the ffprobe binary that lives beside ffmpeg.
+func ffmpegSibling(ffmpeg, name string) string {
+	// ffprobe lives next to ffmpeg when bundled, e.g. tools/ffmpeg/ffmpeg.exe
+	// -> tools/ffmpeg/ffprobe(.exe).
+	if ffmpeg == "" {
+		return ""
+	}
+	cand := filepath.Join(filepath.Dir(ffmpeg), name)
+	if st, err := os.Stat(cand); err != nil || st.IsDir() {
+		return ""
+	}
+	return cand
+}
+
 func thumbKey(src string, size, mtime int64, maxDim int) string {
-	h := sha1.Sum([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%d", src, size, mtime, maxDim)))
+	h := sha1.Sum([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%d\x00%d", src, size, mtime, maxDim, thumbVersion)))
 	s := hex.EncodeToString(h[:])
 	return s[:2] + "/" + s[2:4] + "/" + s[4:]
 }
@@ -103,6 +130,52 @@ func usable(p string) (bool, error) {
 		return false, err
 	}
 	return fi.Size() > 0, nil
+}
+
+// frameUsable reports whether a generated preview contains a real picture. A
+// near-black frame — common for exports that open on a black title card — is
+// useless as a tile, so it counts as a miss and the caller tries another seek.
+func frameUsable(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		return false
+	}
+	b := img.Bounds()
+	if b.Dx() <= 0 || b.Dy() <= 0 {
+		return false
+	}
+	// Sample a coarse grid, not every pixel of a big tile.
+	stepX, stepY := 1, 1
+	if b.Dx() > 64 {
+		stepX = b.Dx() / 64
+	}
+	if b.Dy() > 64 {
+		stepY = b.Dy() / 64
+	}
+	var total, lit, n int64
+	for y := b.Min.Y; y < b.Max.Y; y += stepY {
+		for x := b.Min.X; x < b.Max.X; x += stepX {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			v := int64(r>>8) + int64(g>>8) + int64(bl>>8)
+			total += v
+			n++
+			if v > 24 { // not pure black
+				lit++
+			}
+		}
+	}
+	if n == 0 {
+		return false
+	}
+	if lit*100 < n { // fewer than 1% of sampled pixels are lit
+		return false
+	}
+	return true
 }
 
 func (t *Thumbs) generate(src, dst string, maxDim int) error {
@@ -320,8 +393,45 @@ func applyOrientation(src *image.RGBA, o int) *image.RGBA {
 	return dst
 }
 
-// ffmpegPreview asks ffmpeg for a single frame. Videos seek a second in for a
-// more representative frame; stills decode from the start.
+// probeDuration returns how long the video runs, so the thumbnail seek lands on
+// a real frame instead of a black opening card.
+func (t *Thumbs) probeDuration(src string) (float64, error) {
+	if t.probe != nil {
+		return t.probe(src)
+	}
+	var bin string
+	if t.ffmpeg != nil {
+		bin = ffmpegSibling(t.ffmpeg(), "ffprobe")
+	}
+	if bin == "" {
+		// No ffprobe next to ffmpeg: fall back to the header-only index probe,
+		// which reads the mvhd box and covers MOV/MP4.
+		if m, err := Probe(src); err == nil && m.Duration > 0 {
+			return m.Duration, nil
+		}
+		return 0, fmt.Errorf("ffprobe is not installed")
+	}
+	run := t.runFFprobe
+	if run == nil {
+		run = func(b string, args ...string) ([]byte, error) {
+			return exec.Command(b, args...).CombinedOutput()
+		}
+	}
+	out, err := run(bin, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", src)
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(out))
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < 0 {
+		return 0, fmt.Errorf("no duration in ffprobe output")
+	}
+	return f, nil
+}
+
+// ffmpegPreview asks ffmpeg for a single frame. For videos it seeks a little
+// way into the file first and rejects near-black frames, because exports
+// frequently start black; stills decode from the start.
 func (t *Thumbs) ffmpegPreview(src, out string, maxDim int, video bool) error {
 	bin := ""
 	if t.ffmpeg != nil {
@@ -330,17 +440,34 @@ func (t *Thumbs) ffmpegPreview(src, out string, maxDim int, video bool) error {
 	if bin == "" {
 		return fmt.Errorf("no preview available for %s (ffmpeg is not installed)", filepath.Base(src))
 	}
-	seeks := []string{"0"}
-	if video {
-		seeks = []string{"1", "0"}
+	run := t.runFFmpeg
+	if run == nil {
+		run = func(b string, args ...string) ([]byte, error) {
+			return exec.Command(b, args...).CombinedOutput()
+		}
 	}
+
+	// HEIC files are not videos and have no duration; seeking into one
+	// makes ffmpeg fail before it decodes anything, so only seek when the
+	// caller asked for a frame from a moving picture.
+	seeks := []string{""}
+	if video {
+		dur, derr := t.probeDuration(src)
+		if derr == nil && dur > 0 {
+			seeks = []string{
+				strconv.FormatFloat(dur*0.25, 'f', 2, 64),
+				strconv.FormatFloat(dur*0.5, 'f', 2, 64),
+				"0",
+			}
+		} else {
+			seeks = []string{"1", "0"}
+		}
+	}
+
 	var last string
 	for _, ss := range seeks {
-		// HEIC files are not videos and have no duration; seeking into one
-		// makes ffmpeg fail before it decodes anything, so only seek when the
-		// caller asked for a frame from a moving picture.
 		args := []string{"-v", "error", "-nostdin"}
-		if ss != "0" || video {
+		if ss != "" {
 			args = append(args, "-ss", ss)
 		}
 		args = append(args,
@@ -355,17 +482,20 @@ func (t *Thumbs) ffmpegPreview(src, out string, maxDim int, video bool) error {
 			// cannot use to guess a format, so name it explicitly.
 			"-c:v", "mjpeg", "-q:v", "4", "-f", "image2", "-update", "1", "-y", out,
 		)
-		combined, err := t.runFFmpeg(bin, args...)
+		combined, err := run(bin, args...)
 		if err != nil {
 			last = string(combined)
 			continue
 		}
-		if ok, _ := usable(out); ok {
+		if ok, _ := usable(out); ok && frameUsable(out) {
 			return nil
+		}
+		if ok, _ := usable(out); !ok {
+			last = "ffmpeg produced no output"
 		}
 	}
 	if last == "" {
-		last = "ffmpeg produced no output"
+		last = "every frame was black or missing"
 	}
 	return fmt.Errorf("could not preview %s: %s", filepath.Base(src), trimOutput(last))
 }
