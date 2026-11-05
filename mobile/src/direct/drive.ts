@@ -296,7 +296,7 @@ export function thumbUriFor(
   return cache.thumbs.get(key);
 }
 
-function itemFromRel(rel: string, size = 0, mtime = 0): DirectItem {
+export function itemFromRel(rel: string, size = 0, mtime = 0): DirectItem {
   const base = rel.slice(rel.lastIndexOf('/') + 1);
   const ext = rel.slice(rel.lastIndexOf('.')).toLowerCase();
   return {
@@ -314,7 +314,7 @@ function itemFromRel(rel: string, size = 0, mtime = 0): DirectItem {
   };
 }
 
-function catalogEntryToItem(e: CatalogEntry): DirectItem {
+export function catalogEntryToItem(e: CatalogEntry): DirectItem {
   const rel = normalizeSlashes(e.p);
   const base = rel.slice(rel.lastIndexOf('/') + 1);
   return {

@@ -35,6 +35,12 @@ func Of(p string) (Info, error) {
 	if root == "" {
 		return Info{}, ErrNoVolume
 	}
+	// A drive indexed on a phone carries its identity in .ocd/volume.json.
+	// Honour it before asking the platform, so the phone and the PC derive one
+	// id for the drive instead of two, which would split its preview names.
+	if id, ok := readFallback(filepath.Join(root, fallbackDir, "volume.json")); ok {
+		return Info{ID: id, Label: fallbackLabel(root), Root: root}, nil
+	}
 	if id, label, err := nativeID(root); err == nil && id != "" {
 		return Info{ID: id, Label: label, Root: root, Native: true}, nil
 	}

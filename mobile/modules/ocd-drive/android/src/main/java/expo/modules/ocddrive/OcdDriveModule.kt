@@ -124,6 +124,12 @@ class OcdDriveModule : Module() {
       )
     }
 
+    // Names only: the previews folder holds one flat set of files, and
+    // checking what is already there must not cost a stat per item.
+    AsyncFunction("listNames") { path: String ->
+      File(path).list()?.toList() ?: emptyList<String>()
+    }
+
     AsyncFunction("stat") { path: String ->
       val f = File(path)
       mapOf(

@@ -31,25 +31,28 @@ export type FileStat = {
 type OcdDriveNative = {
   hasAllFilesAccess(): boolean;
   requestAllFilesAccess(): boolean;
-  listVolumes(): DriveVolume[];
-  scan(root: string, maxEntries: number): ScanResult;
-  stat(path: string): FileStat;
-  readBase64(path: string): string;
-  writeBase64Atomic(path: string, data: string, keepBackup: boolean): boolean;
-  writeText(path: string, text: string): boolean;
-  mkdirs(path: string): boolean;
-  remove(path: string): boolean;
-  rename(from: string, to: string): boolean;
-  freeBytes(path: string): number;
-  imageThumb(src: string, dst: string, maxSize: number, quality: number): boolean;
-  videoDuration(src: string): number;
+  // Everything below is an Expo `AsyncFunction`: it runs off the JS thread and
+  // resolves later. Nothing that touches the filesystem may block the UI.
+  listVolumes(): Promise<DriveVolume[]>;
+  scan(root: string, maxEntries: number): Promise<ScanResult>;
+  listNames(path: string): Promise<string[]>;
+  stat(path: string): Promise<FileStat>;
+  readBase64(path: string): Promise<string>;
+  writeBase64Atomic(path: string, data: string, keepBackup: boolean): Promise<boolean>;
+  writeText(path: string, text: string): Promise<boolean>;
+  mkdirs(path: string): Promise<boolean>;
+  remove(path: string): Promise<boolean>;
+  rename(from: string, to: string): Promise<boolean>;
+  freeBytes(path: string): Promise<number>;
+  imageThumb(src: string, dst: string, maxSize: number, quality: number): Promise<boolean>;
+  videoDuration(src: string): Promise<number>;
   videoThumb(
     src: string,
     dst: string,
     atMs: number,
     maxSize: number,
     quality: number,
-  ): boolean;
+  ): Promise<boolean>;
 };
 
 /**

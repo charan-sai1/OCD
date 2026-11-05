@@ -1,4 +1,4 @@
-import { gunzipSync } from 'fflate';
+import { Gzip, gunzipSync, strToU8 } from 'fflate';
 import base64js from 'base64-js';
 
 export type CatalogHeader = {
@@ -101,6 +101,68 @@ export function parseCatalog(bytes: Uint8Array): Catalog {
 
 export const DIRS = ['.ocd', 'thumbs'] as const;
 export const FILE_CATALOG = 'catalog.gz';
+
+/** One file the phone is about to write into a catalog. */
+export type CatalogWriteEntry = {
+  p: string;
+  s: number;
+  m: number;
+  k?: string;
+  w?: number;
+  h?: number;
+  d?: number;
+  t?: number;
+};
+
+/**
+ * encodeCatalog produces the same bytes the Go writer produces: one gzipped
+ * JSON object per line, header first, with the engine's long field names. The
+ * phone never invents a schema — it writes what the engine already reads.
+ */
+export function encodeCatalog(
+  header: Omit<CatalogHeader, 'count'>,
+  entries: CatalogWriteEntry[],
+): Uint8Array {
+  const h: Record<string, unknown> = {
+    format: 'ocd-catalog',
+    version: 1,
+    volumeId: header.volumeId,
+    generated: header.generated,
+    count: entries.length,
+  };
+  if (header.label) h.label = header.label;
+  if (header.indexVersion) h.indexVersion = header.indexVersion;
+
+  // Streamed rather than joined: a 40,000-item catalog is several megabytes of
+  // text and holding it twice can push a phone into swapping. Level 1 matches
+  // the engine's gzip.BestSpeed — the catalog is read far more than written.
+  const chunks: Uint8Array[] = [];
+  const gz = new Gzip({ level: 1 }, (chunk) => {
+    chunks.push(chunk);
+  });
+
+  gz.push(strToU8(JSON.stringify(h) + '\n'), false);
+  for (const e of entries) {
+    const o: Record<string, unknown> = { path: e.p, size: e.s, mtime: e.m };
+    if (e.k) o.kind = e.k;
+    if (e.w) o.width = e.w;
+    if (e.h) o.height = e.h;
+    if (e.d) o.duration = e.d;
+    if (e.t) o.shot = e.t;
+    gz.push(strToU8(JSON.stringify(o) + '\n'), false);
+  }
+  gz.push(new Uint8Array(0), true);
+
+  let total = 0;
+  for (const chunk of chunks) total += chunk.length;
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
+}
 
 export function normSlashes(s: string): string {
   return s.replace(/\\/g, '/').replace(/\/+/g, '/');

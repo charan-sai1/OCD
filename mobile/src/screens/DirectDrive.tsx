@@ -22,6 +22,27 @@ import {
   type Catalog,
   type DirectItem,
 } from '../direct/drive';
+import {
+  accessGranted,
+  driveId,
+  ensureThumb,
+  existingThumbs,
+  fileUri,
+  freeBytes,
+  isDriveModuleAvailable,
+  itemsFromCatalog,
+  itemsFromScan,
+  readCatalog,
+  removableDrives,
+  requestAccess,
+  scanVolume,
+  syntheticCatalog,
+  thumbPath,
+  writeCatalog,
+  type DriveVolume,
+} from '../direct/native';
+import { encodeCatalog } from '../direct/catalog';
+import { thumbName } from '../direct/hash';
 
 import { ScreenHeader, TextAction } from '../layout';
 import { colors, radius, space } from '../theme';
@@ -64,6 +85,137 @@ export function DirectDrive() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const busy = useRef(false);
+
+  // Native drive access (development build only). When the module is missing
+  // the screen behaves exactly as before and uses SAF.
+  const [nativeAccess, setNativeAccess] = useState(
+    () => isDriveModuleAvailable && accessGranted(),
+  );
+  const [volumes, setVolumes] = useState<DriveVolume[]>([]);
+  const [native, setNative] = useState<{
+    root: string;
+    volumeId: string;
+    label: string;
+    volume: DriveVolume;
+  } | null>(null);
+  const [thumbs, setThumbs] = useState<Set<string>>(new Set());
+  const [needsIndex, setNeedsIndex] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const pendingThumbs = useRef<Set<string>>(new Set());
+
+  const refreshVolumes = useCallback(async () => {
+    if (!isDriveModuleAvailable) return;
+    const granted = accessGranted();
+    setNativeAccess(granted);
+    setVolumes(granted ? await removableDrives() : []);
+  }, []);
+
+  useEffect(() => {
+    // Volume listing touches a platform API; do it after the screen is up so
+    // the first render is not blocked by a permission check.
+    const timer = setTimeout(() => {
+      void refreshVolumes();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [refreshVolumes]);
+
+  const openNative = useCallback(async (v: DriveVolume) => {
+    setProblem(null);
+    setLoading(true);
+    try {
+      const root = v.path;
+      const derivedId = await driveId(root, v);
+      const names = await existingThumbs(root);
+      const catalog = await readCatalog(root);
+      // Prefer the identity the catalog already uses: preview names are hashed
+      // from it, so a second identity would miss every preview on the drive.
+      const volumeId = catalog?.header.volumeId || derivedId;
+
+      setNative({ root, volumeId, label: v.label || 'USB drive', volume: v });
+      setStored(null);
+      setTreeUri(null);
+      setThumbs(names);
+
+      if (catalog && catalog.entries.length > 0) {
+        setItems(itemsFromCatalog(catalog));
+        setCatalog(catalog);
+        setHadThumbs(names.size > 0);
+        setNeedsIndex(false);
+      } else {
+        // Browsing an unindexed drive stays read-only until the user asks for
+        // an index; the scan is only used to show what is on it.
+        const { entries } = await scanVolume(root);
+        setItems(itemsFromScan(entries));
+        setCatalog(syntheticCatalog(volumeId, v.label, entries.length));
+        setHadThumbs(names.size > 0);
+        setNeedsIndex(entries.length > 0);
+      }
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Could not open that drive.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Writes a catalog for this drive. This is the only place the phone writes
+   * to a drive, and it only happens when the user asks for it. The new catalog
+   * is built completely in memory and swapped in atomically, so a failure
+   * leaves the previous catalog (or no catalog) exactly as it was.
+   */
+  const indexNative = useCallback(async () => {
+    if (!native || indexing) return;
+    setProblem(null);
+    setIndexing(true);
+    try {
+      const space = await freeBytes(native.root);
+      if (space < 8 * 1024 * 1024) {
+        setProblem('The drive is too full to write a catalog safely. Free some space and try again.');
+        return;
+      }
+
+      const { entries, truncated } = await scanVolume(native.root);
+      if (entries.length === 0) {
+        setProblem('No photos or videos were found on this drive.');
+        return;
+      }
+
+      const bytes = encodeCatalog(
+        {
+          format: 'ocd-catalog',
+          version: 1,
+          volumeId: native.volumeId,
+          label: native.label,
+          indexVersion: 1,
+          generated: new Date().toISOString(),
+        },
+        entries.map((e) => ({ p: e.p, s: e.s, m: e.m, k: e.k })),
+      );
+
+      if (!(await writeCatalog(native.root, bytes))) {
+        setProblem('Could not write the catalog to the drive.');
+        return;
+      }
+
+      // Read back what actually landed rather than trusting the buffer.
+      const written = await readCatalog(native.root);
+      if (!written) {
+        setProblem('The catalog was written but could not be read back. Re-index to retry.');
+        return;
+      }
+
+      setCatalog(written);
+      setItems(itemsFromCatalog(written));
+      setNeedsIndex(false);
+      if (truncated) {
+        setProblem('This drive holds more items than one pass can index. The first 500,000 were saved.');
+      }
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Could not index this drive.');
+    } finally {
+      setIndexing(false);
+    }
+  }, [indexing, native]);
 
   const load = useCallback(async (uri: string) => {
     if (busy.current) return;
@@ -119,6 +271,10 @@ export function DirectDrive() {
     await clearDrive();
     forgetWalk();
     setStored(null);
+    setNative(null);
+    setNeedsIndex(false);
+    setThumbs(new Set());
+    pendingThumbs.current.clear();
     setItems([]);
     setCatalog(null);
     setTreeUri(null);
@@ -128,12 +284,16 @@ export function DirectDrive() {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (native) {
+      await openNative(native.volume);
+      return;
+    }
     if (!treeUri) return;
     // Drop cached listings so a drive that gained files while unplugged, or
     // was reconnected after a failure, is read again from scratch.
     await forgetWalk();
     await load(treeUri);
-  }, [load, treeUri]);
+  }, [load, native, openNative, treeUri]);
 
   const toggleSelect = useCallback((rel: string) => {
     setSelected((prev) => {
@@ -164,11 +324,39 @@ export function DirectDrive() {
   );
 
   const thumbUri = useCallback(
-    (item: GridItem) => {
+    async (item: GridItem): Promise<string | undefined> => {
+      if (native) {
+        const name = thumbName(native.volumeId, item.key, item.size, item.v).toLowerCase();
+        if (thumbs.has(name)) {
+          return fileUri(thumbPath(native.root, native.volumeId, item.key, item.size, item.v));
+        }
+
+        // The drive has no preview for this file yet: build one now, off the
+        // JS thread, and let the tile redraw when it lands.
+        if (!pendingThumbs.current.has(name)) {
+          pendingThumbs.current.add(name);
+          ensureThumb(native.root, native.volumeId, {
+            p: item.key,
+            s: item.size,
+            m: item.v,
+            k: item.kind,
+          })
+            .then((path) => {
+              if (path) setThumbs((prev) => new Set(prev).add(name));
+            })
+            .catch(() => {
+              // A file the decoders cannot read keeps its original tile.
+            })
+            .finally(() => pendingThumbs.current.delete(name));
+        }
+
+        // Videos cannot borrow the original as a poster frame.
+        if (item.kind === 'video') return undefined;
+        return fileUri(native.root + '/' + item.key);
+      }
+
       const direct = { ...item, rel: item.key, lib: 'direct' } as DirectItem;
-      const thumb = catalog
-        ? thumbUriFor(direct, catalog, treeUri ?? '')
-        : undefined;
+      const thumb = catalog ? thumbUriFor(direct, catalog, treeUri ?? '') : undefined;
       if (thumb) return thumb;
       // No preview travels with the drive (or this file was never indexed):
       // let the platform draw the original. This keeps photos visible on a
@@ -176,12 +364,20 @@ export function DirectDrive() {
       if (item.kind === 'video') return undefined;
       return originalUriFor(direct, treeUri ?? undefined);
     },
-    [catalog, treeUri],
+    [catalog, native, thumbs, treeUri],
+  );
+
+  const originalFor = useCallback(
+    async (item: GridItem): Promise<string | undefined> => {
+      if (native) return fileUri(native.root + '/' + item.key);
+      return originalUriFor({ rel: item.key } as DirectItem, treeUri ?? undefined);
+    },
+    [native, treeUri],
   );
 
   const shareItem = useCallback(
     async (item: GridItem) => {
-      const uri = await originalUriFor({ rel: item.key } as DirectItem, treeUri ?? undefined);
+      const uri = await originalFor(item);
       if (!uri) {
         setProblem('That file is not reachable on the drive.');
         return;
@@ -194,7 +390,7 @@ export function DirectDrive() {
         setProblem(e instanceof Error ? e.message : 'Could not share this file.');
       }
     },
-    [treeUri],
+    [originalFor],
   );
 
   const shareSelected = useCallback(async () => {
@@ -207,7 +403,7 @@ export function DirectDrive() {
           name: item.name,
           kind: item.kind,
           size: item.size,
-          localUri: await originalUriFor({ rel: item.key } as DirectItem, treeUri ?? undefined),
+          localUri: await originalFor(item),
         })),
       );
       const missing = withUris.filter((p) => !p.localUri).length;
@@ -221,7 +417,7 @@ export function DirectDrive() {
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not share these files.');
     }
-  }, [gridItems, selected, treeUri]);
+  }, [gridItems, originalFor, selected]);
 
   return (
     <View style={styles.root}>
@@ -229,10 +425,10 @@ export function DirectDrive() {
         <View style={styles.brandRow}>
           <Wordmark />
           <TextAction
-            label={stored ? 'Disconnect' : 'Choose drive'}
-            onPress={stored ? disconnect : chooseDrive}
+            label={stored || native ? 'Disconnect' : 'Choose drive'}
+            onPress={stored || native ? disconnect : chooseDrive}
             accessibilityHint={
-              stored
+              stored || native
                 ? 'Stop reading this drive in the app'
                 : 'Pick the drive you plugged into this phone'
             }
@@ -241,7 +437,7 @@ export function DirectDrive() {
 
         <Text style={styles.title}>USB Drive</Text>
 
-        {stored ? (
+        {stored || native ? (
           <View style={styles.statsRow}>
             <Text style={styles.stats}>
               {loading
@@ -250,7 +446,7 @@ export function DirectDrive() {
                   : 'Loading catalogue…'
                 : `${items.length.toLocaleString()} items${hadThumbs ? '' : ' · no previews on drive'}`}
             </Text>
-            <Text style={styles.scanning}>{stored.label}</Text>
+            <Text style={styles.scanning}>{stored ? stored.label : native?.label}</Text>
           </View>
         ) : (
           <View style={styles.pickWrap}>
@@ -262,6 +458,53 @@ export function DirectDrive() {
               Plug the drive into this phone, then choose it. OCD reads the catalogue already on
               the drive and shows your photos and videos here — no computer involved.
             </Text>
+
+            {isDriveModuleAvailable ? (
+              nativeAccess ? (
+                volumes.length > 0 ? (
+                  <View style={styles.volumes}>
+                    <Text style={styles.pickSection}>Drives on this phone</Text>
+                    {volumes.map((v) => (
+                      <Pressable
+                        key={v.path}
+                        onPress={() => openNative(v)}
+                        style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${v.label || 'USB drive'}`}
+                      >
+                        <Text style={styles.volumeLabel}>{v.label || 'USB drive'}</Text>
+                        <Text style={styles.volumePath}>{v.path}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.pickNote}>
+                    No removable drive is mounted. Plug the drive in, then pull down to refresh.
+                  </Text>
+                )
+              ) : (
+                <View style={styles.volumes}>
+                  <Text style={styles.pickSection}>Full drive control</Text>
+                  <Text style={styles.pickNote}>
+                    OCD needs the “All files access” permission to read sizes, dates and previews
+                    straight from the drive. Nothing is deleted or changed without asking.
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      requestAccess();
+                      // The settings screen takes over; refresh when we return.
+                      setTimeout(() => refreshVolumes().catch(() => {}), 1200);
+                    }}
+                    style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Allow full drive access"
+                  >
+                    <Text style={styles.pickButtonText}>Allow access</Text>
+                  </Pressable>
+                </View>
+              )
+            ) : null}
+
             <View style={styles.chips}>
               <Pressable
                 onPress={chooseDrive}
@@ -278,11 +521,30 @@ export function DirectDrive() {
 
       {problem ? <ErrorBanner message={problem} onRetry={refresh} /> : null}
 
+      {native && needsIndex ? (
+        <View style={styles.indexBar}>
+          <Text style={styles.indexText}>
+            {indexing
+              ? 'Indexing this drive. Keep it plugged in.'
+              : 'This drive has no catalogue yet. Index it here to open instantly next time and to build previews on the drive.'}
+          </Text>
+          {indexing ? (
+            <ActivityIndicator color={colors.muted} size="small" />
+          ) : (
+            <TextAction
+              label="Index drive"
+              onPress={indexNative}
+              accessibilityHint="Scan this drive and write a catalog to it"
+            />
+          )}
+        </View>
+      ) : null}
+
       {loading && items.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator color={colors.muted} />
         </View>
-      ) : stored ? (
+      ) : stored || native ? (
         selecting ? (
           <View style={styles.selectionBar}>
             <Text style={styles.selectionText}>{selected.size} selected</Text>
@@ -313,7 +575,7 @@ export function DirectDrive() {
         )
       ) : null}
 
-      {stored && items.length > 0 ? (
+      {(stored || native) && items.length > 0 ? (
         <FlatList
           data={gridItems}
           keyExtractor={(it) => it.key}
@@ -351,8 +613,8 @@ export function DirectDrive() {
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>Nothing here</Text>
               <Text style={styles.emptyText}>
-                The drive is empty, or its media is not recognised yet. Index it on your
-                computer and the previews and playback arrive automatically.
+                The drive is empty, or its media is not recognised yet. Index it here and the
+                previews appear on the drive itself.
               </Text>
             </View>
           }
@@ -366,12 +628,27 @@ export function DirectDrive() {
           start={viewer}
           onClose={() => setViewer(null)}
           onShareItem={(item) => shareItem(item)}
-          thumbUriFor={(item) =>
-            thumbUriFor({ ...item, rel: item.key } as DirectItem, catalog ?? EMPTY_CATALOG, treeUri ?? '')
-          }
-          originalUriFor={(item) =>
-            originalUriFor({ rel: item.key } as DirectItem, treeUri ?? undefined)
-          }
+          thumbUriFor={(item) => {
+            if (native) {
+              const name = thumbName(
+                native.volumeId,
+                item.key,
+                item.size,
+                item.v,
+              ).toLowerCase();
+              return thumbs.has(name)
+                ? fileUri(
+                    thumbPath(native.root, native.volumeId, item.key, item.size, item.v),
+                  )
+                : undefined;
+            }
+            return thumbUriFor(
+              { ...item, rel: item.key } as DirectItem,
+              catalog ?? EMPTY_CATALOG,
+              treeUri ?? '',
+            );
+          }}
+          originalUriFor={originalFor}
         />
       ) : null}
     </View>
@@ -413,6 +690,33 @@ const styles = StyleSheet.create({
   pickTitle: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: space(1.5) },
   pickText: { fontSize: 14, lineHeight: 20, color: colors.muted },
   chips: { flexDirection: 'row', marginTop: space(4) },
+  volumes: { marginTop: space(4), gap: space(2) },
+  pickSection: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.faint,
+  },
+  pickNote: { fontSize: 13, lineHeight: 19, color: colors.muted },
+  volumeRow: {
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space(3),
+    paddingVertical: space(2.5),
+  },
+  volumeLabel: { fontSize: 15, fontWeight: '600', color: colors.text },
+  volumePath: { fontSize: 12, color: colors.faint, marginTop: 2 },
+  indexBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space(3),
+    paddingHorizontal: space(3),
+    paddingVertical: space(2),
+    backgroundColor: colors.surface,
+  },
+  indexText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.muted },
   pickButton: {
     borderRadius: radius.md,
     paddingHorizontal: space(5),
