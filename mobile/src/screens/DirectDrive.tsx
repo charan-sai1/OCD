@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Platform,
   Pressable,
@@ -25,6 +26,7 @@ import {
 import {
   accessGranted,
   driveId,
+  ensureAccess,
   ensureThumb,
   existingThumbs,
   fileUri,
@@ -34,7 +36,6 @@ import {
   itemsFromScan,
   readCatalog,
   removableDrives,
-  requestAccess,
   scanVolume,
   syntheticCatalog,
   thumbPath,
@@ -117,6 +118,15 @@ export function DirectDrive() {
       void refreshVolumes();
     }, 0);
     return () => clearTimeout(timer);
+  }, [refreshVolumes]);
+
+  useEffect(() => {
+    // Returning from the all-files settings screen is the moment the drive
+    // becomes readable, so re-list volumes whenever the app comes forward.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshVolumes();
+    });
+    return () => sub.remove();
   }, [refreshVolumes]);
 
   const openNative = useCallback(async (v: DriveVolume) => {
@@ -490,10 +500,8 @@ export function DirectDrive() {
                     straight from the drive. Nothing is deleted or changed without asking.
                   </Text>
                   <Pressable
-                    onPress={() => {
-                      requestAccess();
-                      // The settings screen takes over; refresh when we return.
-                      setTimeout(() => refreshVolumes().catch(() => {}), 1200);
+                    onPress={async () => {
+                      if (await ensureAccess()) await refreshVolumes();
                     }}
                     style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
                     accessibilityRole="button"

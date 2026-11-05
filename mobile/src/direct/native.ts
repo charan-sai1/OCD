@@ -1,5 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import base64js from 'base64-js';
+import { strToU8 } from 'fflate';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { drive, isDriveModuleAvailable, type DriveVolume } from 'ocd-drive';
 
 import { parseCatalog, type Catalog } from './catalog';
@@ -9,6 +11,10 @@ import { thumbName } from './hash';
 export { isDriveModuleAvailable };
 export type { DriveVolume };
 
+/** Before Android 11 the drive is reachable with ordinary storage permission. */
+const LEGACY_STORAGE =
+  Platform.OS === 'android' && Number(Platform.Version) < 30;
+
 /** Preview size and quality, matching the engine's 400px JPEGs. */
 export const THUMB_SIZE = 400;
 const THUMB_QUALITY = 82;
@@ -16,11 +22,37 @@ const THUMB_QUALITY = 82;
 const BLACK_FRAME_BYTES = 3000;
 
 export function accessGranted(): boolean {
-  return isDriveModuleAvailable && drive().hasAllFilesAccess();
+  if (!isDriveModuleAvailable) return false;
+  // Below Android 11 the module's all-files check is meaningless: access comes
+  // from the ordinary storage permission instead.
+  if (LEGACY_STORAGE) return true;
+  return drive().hasAllFilesAccess();
 }
 
 export function requestAccess(): void {
-  if (isDriveModuleAvailable) drive().requestAllFilesAccess();
+  if (!isDriveModuleAvailable || LEGACY_STORAGE) return;
+  drive().requestAllFilesAccess();
+}
+
+/**
+ * Asks for whatever this Android version needs, and reports whether the drive
+ * is usable right now. On Android 11+ the first call opens system settings and
+ * returns false; the caller waits for the app to come back to the foreground.
+ */
+export async function ensureAccess(): Promise<boolean> {
+  if (!isDriveModuleAvailable) return false;
+  if (LEGACY_STORAGE) {
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+    ]);
+    return Object.values(result).every(
+      (state) => state === PermissionsAndroid.RESULTS.GRANTED,
+    );
+  }
+  if (accessGranted()) return true;
+  requestAccess();
+  return false;
 }
 
 /**
@@ -102,9 +134,13 @@ export async function driveId(root: string, v: DriveVolume): Promise<string> {
   const id = 'vol_' + randomHex16();
   try {
     await drive().mkdirs(ocdDir(root));
-    await drive().writeText(
+    // Same atomic write as the catalog: a torn identity file would hand the
+    // drive a new name on the next launch and orphan its previews.
+    const bytes = strToU8(JSON.stringify({ id, created: new Date().toISOString() }, null, 2));
+    await drive().writeBase64Atomic(
       ocdDir(root) + '/volume.json',
-      JSON.stringify({ id, created: new Date().toISOString() }, null, 2),
+      base64js.fromByteArray(bytes),
+      false,
     );
   } catch {
     // A read-only drive keeps the id for this session only.
