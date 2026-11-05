@@ -6,7 +6,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import {
   api,
@@ -26,11 +30,14 @@ type Tab = 'drive' | 'phone';
 export default function App() {
   // Every screen reads its insets from here, so the provider has to sit above
   // them; without it useSafeAreaInsets falls back to zero and headers collide
-  // with the notch again.
+  // with the notch again. The gesture root belongs here for the same reason:
+  // screens deep in the tree cannot open the gesture system on their own.
   return (
-    <SafeAreaProvider>
-      <Root />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <Root />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

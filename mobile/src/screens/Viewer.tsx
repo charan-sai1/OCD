@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
-  Image,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -17,6 +16,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { api, GridItem } from '../api';
 import { TOUCH } from '../layout';
 import { bytes, colors, duration, radius, space, takenOn } from '../theme';
+import { shareRemoteFiles } from '../share';
+import { ZoomableImage } from './ZoomableImage';
 
 type Props = {
   server: string;
@@ -29,6 +30,7 @@ export function Viewer({ server, items, start, onClose }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [position, setPosition] = useState({ index: start, playing: false });
+  const [problem, setProblem] = useState<string | null>(null);
   const { index: current, playing } = position;
   const item = items[current] ?? items[start];
 
@@ -46,6 +48,17 @@ export function Viewer({ server, items, start, onClose }: Props) {
     setPosition((p) => ({ ...p, playing: false }));
     onClose();
   };
+
+  const shareCurrent = useCallback(async () => {
+    if (!item) return;
+    try {
+      await shareRemoteFiles(server, [
+        { key: item.key, name: item.name, kind: item.kind, size: item.size },
+      ]);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Could not share this file.');
+    }
+  }, [item, server]);
 
   return (
     <Modal visible animationType="fade" onRequestClose={close} statusBarTranslucent>
@@ -78,11 +91,11 @@ export function Viewer({ server, items, start, onClose }: Props) {
                 />
               ) : (
                 <>
-                  <Image
+                  <ZoomableImage
+                    key={`${it.key}@1600`}
                     source={{ uri: api.thumb(server, it.key, 1600) }}
-                    style={{ width, height }}
-                    resizeMode="contain"
-                    fadeDuration={120}
+                    width={width}
+                    height={height}
                     accessibilityLabel={
                       it.kind === 'video' ? `Video still, ${it.name}` : `Photo, ${it.name}`
                     }
@@ -112,18 +125,33 @@ export function Viewer({ server, items, start, onClose }: Props) {
               <Text style={styles.position}>
                 {current + 1} / {items.length}
               </Text>
-              <Pressable
-                onPress={close}
-                style={styles.done}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Text style={styles.doneText}>Done</Text>
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable
+                  onPress={shareCurrent}
+                  style={styles.shareAction}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Share ${item?.name ?? 'photo'}`}
+                >
+                  <Text style={styles.shareActionText}>Share</Text>
+                </Pressable>
+                <Pressable
+                  onPress={close}
+                  style={styles.done}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Text style={styles.doneText}>Done</Text>
+                </Pressable>
+              </View>
             </View>
 
             {item ? (
               <View style={[styles.bottom, { paddingBottom: insets.bottom + space(4) }]}>
+                {problem ? (
+                  <View style={styles.shareProblem} accessibilityRole="alert">
+                    <Text style={styles.shareProblemText}>{problem}</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name}
                 </Text>
@@ -213,6 +241,7 @@ function VideoSlide({
   );
 }
 
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.black },
   top: {
@@ -282,4 +311,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(180,35,24,0.92)',
   },
   videoProblemText: { color: colors.white, fontSize: 13, lineHeight: 18 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+  },
+  shareAction: {
+    minHeight: TOUCH,
+    paddingHorizontal: space(3),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  shareActionText: { color: colors.black, fontSize: 15, fontWeight: '700' },
+  shareProblem: {
+    padding: space(2),
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(180,35,24,0.92)',
+  },
+  shareProblemText: { color: colors.white, fontSize: 13, lineHeight: 18 },
 });

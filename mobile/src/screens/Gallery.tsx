@@ -1,8 +1,6 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Keyboard,
   Platform,
   Pressable,
@@ -14,11 +12,19 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { api, Cursor, GridItem, Library, messageFor } from '../api';
 import { ScreenHeader, TextAction } from '../layout';
-import { colors, radius, space, takenOn } from '../theme';
+import { colors, radius, space } from '../theme';
 import { Chip, ErrorBanner, Wordmark } from '../ui';
+import { shareRemoteFiles } from '../share';
 import { Viewer } from './Viewer';
+import { Tile } from './GalleryTile';
 
 const COLS = 3;
 const GAP = 2;
@@ -46,6 +52,8 @@ export function Gallery({ server, onChangeServer }: Props) {
   const [building, setBuilding] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const cursor = useRef<Cursor | undefined>(undefined);
   const busy = useRef(false);
@@ -133,6 +141,44 @@ export function Gallery({ server, onChangeServer }: Props) {
     if (hasMore && !busy.current) load(false);
   }, [hasMore, load]);
 
+  const shareItem = useCallback(
+    async (item: GridItem) => {
+      try {
+        await shareRemoteFiles(server, [
+          { key: item.key, name: item.name, kind: item.kind, size: item.size },
+        ]);
+      } catch (e) {
+        setProblem(messageFor(e));
+      }
+    },
+    [server],
+  );
+
+  const shareSelected = useCallback(async () => {
+    const items = rows.filter((item) => selected.has(item.key));
+    if (!items.length) return;
+    try {
+      await shareRemoteFiles(
+        server,
+        items.map((item) => ({ key: item.key, name: item.name, kind: item.kind, size: item.size })),
+      );
+      // Sharing clears the selection, like other gallery apps.
+      setSelecting(false);
+      setSelected(new Set());
+    } catch (e) {
+      setProblem(messageFor(e));
+    }
+  }, [rows, selected, server]);
+
+  const toggleSelect = useCallback((key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   const shown = rows.length;
   // Only warn about drives the grid is actually trying to show.
   const offline = (lib ? libs.filter((l) => l.id === lib) : libs).filter(
@@ -212,6 +258,39 @@ export function Gallery({ server, onChangeServer }: Props) {
         </View>
       </ScreenHeader>
 
+      {selecting ? (
+        <View style={styles.selectionBar}>
+          <Text style={styles.selectionText}>{selected.size} selected</Text>
+          <View style={styles.selectionActions}>
+            <TextAction
+              label="Cancel"
+              onPress={() => {
+                setSelecting(false);
+                setSelected(new Set());
+              }}
+            />
+            {selected.size > 0 ? (
+              <TextAction
+                label="Share"
+                onPress={shareSelected}
+                accessibilityHint="Share the selected photos"
+              />
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View style={styles.topActions}>
+          <TextAction
+            label="Select"
+            onPress={() => {
+              setSelecting(true);
+              setSelected(new Set());
+            }}
+            accessibilityHint="Choose photos to share"
+          />
+        </View>
+      )}
+
       {offline.length > 0 ? (
         <View style={styles.offline} accessibilityRole="alert">
           <Text style={styles.offlineText}>
@@ -239,7 +318,18 @@ export function Gallery({ server, onChangeServer }: Props) {
               item={item}
               server={server}
               size={cell}
-              onPress={() => setViewer(index)}
+              selecting={selecting}
+              selected={selected.has(item.key)}
+              onPress={() => {
+                if (selecting) {
+                  toggleSelect(item.key);
+                  return;
+                }
+                setViewer(index);
+              }}
+              onLongPress={selecting ? undefined : () => shareItem(item)}
+              onToggleSelect={() => toggleSelect(item.key)}
+              onShare={() => shareItem(item)}
             />
           )}
           onEndReached={onEnd}
@@ -296,67 +386,6 @@ export function Gallery({ server, onChangeServer }: Props) {
       ) : null}
     </View>
   );
-}
-
-const Tile = memo(function Tile({
-  item,
-  server,
-  size,
-  onPress,
-}: {
-  item: GridItem;
-  server: string;
-  size: number;
-  onPress: () => void;
-}) {
-  const [failed, setFailed] = useState(false);
-  const label = [
-    item.kind === 'video' ? 'Video' : 'Photo',
-    item.name,
-    item.kind === 'video' && item.dur ? formatDur(item.dur) : '',
-    takenOn(item.shot),
-    item.dir || 'Drive root',
-  ]
-    .filter(Boolean)
-    .join(', ');
-
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="imagebutton"
-      accessibilityLabel={label}
-      accessibilityHint="Opens the full view"
-      style={({ pressed }) => [
-        { width: size, height: size, backgroundColor: colors.surface },
-        pressed && { opacity: 0.72 },
-      ]}
-    >
-      {!failed ? (
-        <Image
-          source={{ uri: api.thumb(server, item.key, 400) }}
-          style={{ width: size, height: size }}
-          resizeMode="cover"
-          onError={() => setFailed(true)}
-          fadeDuration={120}
-        />
-      ) : (
-        <View style={styles.noPreview}>
-          <Text style={styles.noPreviewText}>{item.kind === 'video' ? 'Video' : 'No preview'}</Text>
-        </View>
-      )}
-      {item.kind === 'video' ? (
-        <View style={styles.videoBadge}>
-          <Text style={styles.videoText}>▶ {formatDur(item.dur)}</Text>
-        </View>
-      ) : null}
-    </Pressable>
-  );
-});
-
-function formatDur(seconds: number | undefined): string {
-  if (!seconds || seconds <= 0) return '';
-  const s = Math.round(seconds);
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 
 function Skeleton({ cell, width }: { cell: number; width: number }) {
@@ -477,20 +506,27 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textAlign: 'center',
   },
-  noPreview: {
-    flex: 1,
+  selectionBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    padding: space(2),
+    backgroundColor: colors.surface,
   },
-  noPreviewText: { fontSize: 11, color: colors.faint },
-  videoBadge: {
-    position: 'absolute',
-    right: 5,
-    bottom: 5,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    backgroundColor: 'rgba(0,0,0,0.62)',
+  selectionText: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '500',
   },
-  videoText: { color: colors.white, fontSize: 10, fontWeight: '700' },
+  selectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+  },
+  topActions: {
+    padding: space(2),
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: space(2),
+  },
 });
