@@ -93,7 +93,7 @@ export function Viewer({ server, items, start, onClose }: Props) {
                 <>
                   <ZoomableImage
                     key={`${it.key}@1600`}
-                    source={{ uri: api.thumb(server, it.key, 1600) }}
+                    source={{ uri: api.thumb(server, it.key, 1600, it.v) }}
                     width={width}
                     height={height}
                     accessibilityLabel={

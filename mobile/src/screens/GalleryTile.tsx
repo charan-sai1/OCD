@@ -49,7 +49,7 @@ export const Tile = memo(function Tile({
     >
       {!failed ? (
         <Image
-          source={{ uri: api.thumb(server, item.key, 400) }}
+          source={{ uri: api.thumb(server, item.key, 400, item.v) }}
           style={{ width: size, height: size }}
           resizeMode="cover"
           onError={() => setFailed(true)}

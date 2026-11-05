@@ -289,8 +289,8 @@ export const api = {
       timeoutMs: 15000,
     }),
 
-  thumb: (server: string, key: string, w = 400) =>
-    `${server}/api/t?k=${encodeURIComponent(key)}&w=${w}`,
+  thumb: (server: string, key: string, w = 400, v?: number | string) =>
+    `${server}/api/t?k=${encodeURIComponent(key)}&w=${w}${v !== undefined && v !== '' ? `&v=${encodeURIComponent(String(v))}` : ''}`,
   original: (server: string, key: string) => `${server}/api/orig?k=${encodeURIComponent(key)}`,
 };
 
