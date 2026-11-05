@@ -6,6 +6,9 @@ export type ShareableItem = {
   name: string;
   kind?: 'photo' | 'video' | string;
   size?: number;
+  // A file/ content URI on this phone; when set we share the local file
+  // rather than downloading it from the computer first.
+  localUri?: string;
 };
 
 // A share downloads the original from the drive into the app cache first.
@@ -41,7 +44,9 @@ export async function shareRemoteFiles(server: string, items: ShareableItem[]): 
   await clearOldShareFiles();
 
   const files = await Promise.all(
-    items.map((item) => downloadShareableFile(server, item)),
+    items.map((item) =>
+      item.localUri ? prepareLocalFile(item) : downloadShareableFile(server, item),
+    ),
   );
 
   // Both share sheets are single-file APIs, so share them in order.
@@ -55,6 +60,15 @@ export async function shareRemoteFiles(server: string, items: ShareableItem[]): 
 }
 
 type DownloadedFile = { uri: string; name: string };
+
+async function prepareLocalFile(item: ShareableItem): Promise<DownloadedFile> {
+  const dir = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? ''}ocd-share/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  const ext = getExtension(item.name, item.kind);
+  const fileUri = `${dir}${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+  await FileSystem.copyAsync({ from: item.localUri as string, to: fileUri });
+  return { uri: fileUri, name: safeLocalName(item.name) };
+}
 
 async function downloadShareableFile(
   server: string,

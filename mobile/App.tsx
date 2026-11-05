@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,12 +21,13 @@ import {
   saveServer,
 } from './src/api';
 import { Connect } from './src/screens/Connect';
+import { DirectDrive } from './src/screens/DirectDrive';
 import { Gallery } from './src/screens/Gallery';
 import { Phone } from './src/screens/Phone';
 import { Wordmark } from './src/ui';
 import { colors, space } from './src/theme';
 
-type Tab = 'drive' | 'phone';
+type Tab = 'drive' | 'phone' | 'usb';
 
 export default function App() {
   // Every screen reads its insets from here, so the provider has to sit above
@@ -98,15 +100,20 @@ function Root() {
 
   if (!server) {
     return (
-      <>
+      <View style={styles.shell}>
         <StatusBar style="dark" />
-        <Connect
-          initial={initial}
-          busy={connecting}
-          problem={problem}
-          onConnect={connect}
-        />
-      </>
+        {tab === 'usb' && Platform.OS === 'android' ? (
+          <DirectDrive />
+        ) : (
+          <Connect
+            initial={initial}
+            busy={connecting}
+            problem={problem}
+            onConnect={connect}
+          />
+        )}
+        <TabBar tab={tab} onChange={setTab} />
+      </View>
     );
   }
 
@@ -121,6 +128,8 @@ function Root() {
             setProblem(null);
           }}
         />
+      ) : tab === 'usb' ? (
+        <DirectDrive />
       ) : (
         <Phone
           server={server}
@@ -137,6 +146,9 @@ function Root() {
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   const insets = useSafeAreaInsets();
+  // Only show the USB tab on Android, where SAF browsing is wired up. iOS
+  // gets its own route once Dev builds exist.
+  const tabs: readonly Tab[] = Platform.OS === 'android' ? ['drive', 'phone', 'usb'] : ['drive', 'phone'];
   return (
     <View
       style={[
@@ -145,7 +157,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
         { paddingBottom: Math.max(insets.bottom, space(2)) },
       ]}
     >
-      {(['drive', 'phone'] as const).map((t) => {
+      {tabs.map((t) => {
         const active = tab === t;
         return (
           <Pressable
@@ -157,7 +169,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
           >
             <View style={[styles.dot, active && styles.dotActive]} />
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-              {t === 'drive' ? 'Drive' : 'Phone'}
+              {t === 'drive' ? 'Drive' : t === 'phone' ? 'Phone' : 'USB'}
             </Text>
           </Pressable>
         );

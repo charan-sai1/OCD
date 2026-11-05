@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   NativeScrollEvent,
@@ -24,9 +25,14 @@ type Props = {
   items: GridItem[];
   start: number;
   onClose: () => void;
+  /** When the app browses a drive plugged into the phone instead of a computer,
+   *  items are resolved through these rather than /api/t and /api/orig. */
+  thumbUriFor?: (item: GridItem) => string | undefined;
+  originalUriFor?: (item: GridItem) => string | undefined | Promise<string | undefined>;
+  onShareItem?: (item: GridItem) => void | Promise<void>;
 };
 
-export function Viewer({ server, items, start, onClose }: Props) {
+export function Viewer({ server, items, start, onClose, thumbUriFor, originalUriFor, onShareItem }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [position, setPosition] = useState({ index: start, playing: false });
@@ -51,6 +57,10 @@ export function Viewer({ server, items, start, onClose }: Props) {
 
   const shareCurrent = useCallback(async () => {
     if (!item) return;
+    if (onShareItem) {
+      await onShareItem(item);
+      return;
+    }
     try {
       await shareRemoteFiles(server, [
         { key: item.key, name: item.name, kind: item.kind, size: item.size },
@@ -58,7 +68,7 @@ export function Viewer({ server, items, start, onClose }: Props) {
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not share this file.');
     }
-  }, [item, server]);
+  }, [item, onShareItem, server]);
 
   return (
     <Modal visible animationType="fade" onRequestClose={close} statusBarTranslucent>
@@ -79,44 +89,52 @@ export function Viewer({ server, items, start, onClose }: Props) {
           initialNumToRender={1}
           maxToRenderPerBatch={2}
           windowSize={3}
-          renderItem={({ item: it, index }) => (
-            <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
-              {it.kind === 'video' && index === current && playing ? (
-                <VideoSlide
-                  key={it.key}
-                  source={api.original(server, it.key)}
-                  width={width}
-                  height={height}
-                  onClose={() => setPosition((p) => ({ ...p, playing: false }))}
-                />
-              ) : (
-                <>
-                  <ZoomableImage
-                    key={`${it.key}@1600`}
-                    source={{ uri: api.thumb(server, it.key, 1600, it.v) }}
+          renderItem={({ item: it, index }) => {
+            const thumb =
+              thumbUriFor?.(it) ??
+              (server ? api.thumb(server, it.key, 1600, it.v) : undefined);
+            const resolve = originalUriFor ? () => originalUriFor(it) : undefined;
+            return (
+              <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
+                {it.kind === 'video' && index === current && playing ? (
+                  <VideoSlide
+                    key={it.key}
+                    fallback={originalUriFor ? undefined : api.original(server, it.key)}
+                    resolve={resolve}
                     width={width}
                     height={height}
-                    accessibilityLabel={
-                      it.kind === 'video' ? `Video still, ${it.name}` : `Photo, ${it.name}`
-                    }
+                    onClose={() => setPosition((p) => ({ ...p, playing: false }))}
                   />
-                  {it.kind === 'video' ? (
-                    <Pressable
-                      onPress={() => {
-                        if (index === current) setPosition({ index, playing: true });
-                      }}
-                      style={({ pressed }) => [styles.play, pressed && { opacity: 0.8 }]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Play ${it.name}`}
-                      accessibilityHint="Plays the video from the drive"
-                    >
-                      <Text style={styles.playText}>▶  Play video</Text>
-                    </Pressable>
-                  ) : null}
-                </>
-              )}
-            </View>
-          )}
+                ) : (
+                  <>
+                    <SlideImage
+                      key={`${it.key}@1600`}
+                      thumbUri={thumb}
+                      resolve={resolve}
+                      width={width}
+                      height={height}
+                      accessibilityLabel={
+                        it.kind === 'video' ? `Video still, ${it.name}` : `Photo, ${it.name}`
+                      }
+                    />
+                    {it.kind === 'video' ? (
+                      <Pressable
+                        onPress={() => {
+                          if (index === current) setPosition({ index, playing: true });
+                        }}
+                        style={({ pressed }) => [styles.play, pressed && { opacity: 0.8 }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Play ${it.name}`}
+                        accessibilityHint="Plays the video from the drive"
+                      >
+                        <Text style={styles.playText}>▶  Play video</Text>
+                      </Pressable>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            );
+          }}
         />
 
         {!playing ? (
@@ -173,11 +191,126 @@ export function Viewer({ server, items, start, onClose }: Props) {
 }
 
 /**
- * VideoSlide plays the original straight from the computer over Wi-Fi. The
- * server answers range requests, so the native player can seek without
- * downloading the whole file first.
+ * SlideImage shows the preview immediately and swaps in the original once it
+ * is reachable. Over Wi-Fi the original resolves at once; on a phone reading a
+ * USB drive it takes a folder listing or two, and the preview bridges the gap.
+ */
+function SlideImage({
+  thumbUri,
+  resolve,
+  width,
+  height,
+  accessibilityLabel,
+}: {
+  thumbUri?: string;
+  resolve?: () => string | undefined | Promise<string | undefined>;
+  width: number;
+  height: number;
+  accessibilityLabel: string;
+}) {
+  const [uri, setUri] = useState<string | undefined>(thumbUri);
+  const resolver = useRef(resolve);
+  useEffect(() => {
+    resolver.current = resolve;
+  }, [resolve]);
+
+  useEffect(() => {
+    let alive = true;
+    const found = resolver.current?.();
+    if (!found) return;
+    Promise.resolve(found)
+      .then((next) => {
+        if (alive && next) setUri(next);
+      })
+      .catch(() => {
+        // The preview stays visible; a full-size miss is not worth an alert.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [thumbUri]);
+
+  if (!uri) {
+    // The original is still being located on the drive; the black backdrop
+    // matches the rest of the viewer until it arrives.
+    return <View style={{ width, height }} />;
+  }
+
+  return (
+    <ZoomableImage
+      key={uri}
+      source={{ uri }}
+      width={width}
+      height={height}
+      accessibilityLabel={accessibilityLabel}
+    />
+  );
+}
+
+/**
+ * VideoSlide resolves the original before mounting the player. A USB drive
+ * cannot be played by URL alone, so the file is located first; the server path
+ * uses its fallback URL immediately.
  */
 function VideoSlide({
+  fallback,
+  resolve,
+  width,
+  height,
+  onClose,
+}: {
+  fallback?: string;
+  resolve?: () => string | undefined | Promise<string | undefined>;
+  width: number;
+  height: number;
+  onClose: () => void;
+}) {
+  const [source, setSource] = useState<string | undefined>(fallback);
+  const [problem, setProblem] = useState<string | null>(null);
+  const resolver = useRef(resolve);
+  useEffect(() => {
+    resolver.current = resolve;
+  }, [resolve]);
+
+  useEffect(() => {
+    let alive = true;
+    if (source) return;
+    const found = resolver.current?.();
+    if (!found) return;
+    Promise.resolve(found)
+      .then((next) => {
+        if (!alive) return;
+        if (next) setSource(next);
+        else setProblem('That file is not reachable on the drive.');
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        setProblem(e instanceof Error ? e.message : 'Could not open this video.');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [source]);
+
+  if (!source) {
+    return (
+      <View style={[StyleSheet.absoluteFill, styles.videoRoot, styles.videoLoading]}>
+        <ActivityIndicator color={colors.white} />
+        {problem ? (
+          <Text style={[styles.videoProblemText, styles.videoLoadingText]}>{problem}</Text>
+        ) : null}
+      </View>
+    );
+  }
+  return <VideoPlayer source={source} width={width} height={height} onClose={onClose} />;
+}
+
+/**
+ * VideoPlayer plays the original straight from the computer over Wi-Fi or from
+ * the drive plugged into the phone. Both are file-backed, so the native player
+ * can seek without downloading the whole file first.
+ */
+function VideoPlayer({
   source,
   width,
   height,
@@ -289,6 +422,8 @@ const styles = StyleSheet.create({
   },
   playText: { color: colors.black, fontSize: 15, fontWeight: '700' },
   videoRoot: { backgroundColor: colors.black },
+  videoLoading: { alignItems: 'center', justifyContent: 'center', gap: space(3) },
+  videoLoadingText: { paddingHorizontal: space(6), textAlign: 'center' },
   videoClose: {
     position: 'absolute',
     top: space(2),

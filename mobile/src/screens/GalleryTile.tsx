@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api, GridItem } from '../api';
 import { colors, takenOn } from '../theme';
@@ -13,6 +13,7 @@ export const Tile = memo(function Tile({
   selecting = false,
   selected = false,
   onToggleSelect,
+  thumbUri,
 }: {
   item: GridItem;
   server: string;
@@ -23,8 +24,31 @@ export const Tile = memo(function Tile({
   selecting?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  /** Override for browsing a drive plugged into the phone instead of a server.
+   *  It may answer asynchronously: the drive's preview is used when present,
+   *  otherwise the original file is resolved through a folder listing. */
+  thumbUri?: (item: GridItem) => string | undefined | Promise<string | undefined>;
 }) {
+  const [uri, setUri] = useState<string | undefined>(
+    thumbUri ? undefined : api.thumb(server, item.key, 400, item.v),
+  );
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!thumbUri) return;
+    let alive = true;
+    Promise.resolve(thumbUri(item))
+      .then((next) => {
+        if (alive && next) setUri(next);
+      })
+      .catch(() => {
+        // Leave the current tile in place; the list is still usable.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [thumbUri, item]);
+
   const label = [
     item.kind === 'video' ? 'Video' : 'Photo',
     item.name,
@@ -47,9 +71,9 @@ export const Tile = memo(function Tile({
         pressed && { opacity: 0.72 },
       ]}
     >
-      {!failed ? (
+      {!failed && uri ? (
         <Image
-          source={{ uri: api.thumb(server, item.key, 400, item.v) }}
+          source={{ uri }}
           style={{ width: size, height: size }}
           resizeMode="cover"
           onError={() => setFailed(true)}

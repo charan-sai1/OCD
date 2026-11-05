@@ -62,6 +62,10 @@ type Snapshot struct {
 	Entries []Entry
 }
 
+// DirName is the hidden folder every drive carries. Exported for the export
+// path, which writes into it directly.
+func DirName() string { return dirName }
+
 // Source says which file a read came from.
 type Source string
 

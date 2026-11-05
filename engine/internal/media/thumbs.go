@@ -84,6 +84,11 @@ func (t *Thumbs) Path(src string, maxDim int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if st.Size() == 0 {
+		// A zero-byte file has nothing to show, and passing it to the shell
+		// thumbnail provider can leave a decode spinning forever.
+		return "", fmt.Errorf("%s is empty", filepath.Base(src))
+	}
 	return filepath.Join(t.dir, filepath.FromSlash(thumbKey(src, st.Size(), st.ModTime().Unix(), maxDim))) + ".jpg", nil
 }
 

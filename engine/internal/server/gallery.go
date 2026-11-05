@@ -360,6 +360,15 @@ func (s *Server) startScan(reason string) bool {
 		s.drives.refresh(s.libs.list())
 		s.saveMu.Unlock()
 		s.emitJSON("indexed", s.index.Len(), 0, "")
+
+		// Put previews on the drive for a phone to read with no computer in
+		// sight. This can take a long time on a fresh drive, so it runs on its
+		// own after the index is published and holds no locks the app needs.
+		go func() {
+			if _, ok := s.runExport(true, 0); ok {
+				s.drives.refresh(s.libs.list())
+			}
+		}()
 	}()
 	return true
 }

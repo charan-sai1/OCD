@@ -61,6 +61,8 @@ type Server struct {
 	scanMu   sync.Mutex
 	scanning bool
 	scanProg media.Progress
+
+	exportMu sync.Mutex
 }
 
 // New creates a server.
@@ -131,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/photos", s.gallery)
 	mux.HandleFunc("/api/drives", s.drivesList)
 	mux.HandleFunc("/api/drives/refresh", s.drivesRefresh)
+	mux.HandleFunc("/api/export", s.exportThumbs)
 	mux.HandleFunc("/api/catalog", s.catalogDownload)
 	mux.HandleFunc("/api/import/check", s.importCheck)
 	mux.HandleFunc("/api/upload/start", s.uploadStart)
