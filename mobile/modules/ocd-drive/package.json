@@ -1,0 +1,7 @@
+{
+  "name": "ocd-drive",
+  "version": "0.1.0",
+  "description": "Direct USB drive access for OCD Manager",
+  "main": "index.ts",
+  "private": true
+}
