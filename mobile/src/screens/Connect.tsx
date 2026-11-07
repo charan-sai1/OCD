@@ -18,9 +18,11 @@ type Props = {
   busy: boolean;
   problem: string | null;
   onConnect: (url: string) => void;
+  /** Present when this phone can open a drive plugged straight into it. */
+  onUseDrive?: () => void;
 };
 
-export function Connect({ initial, busy, problem, onConnect }: Props) {
+export function Connect({ initial, busy, problem, onConnect, onUseDrive }: Props) {
   const [value, setValue] = useState(initial);
   const insets = useSafeAreaInsets();
 
@@ -73,6 +75,21 @@ export function Connect({ initial, busy, problem, onConnect }: Props) {
             <Text style={styles.hintStrong}>Phone</Text> in its window to see this
             address. Both devices need to be on the same Wi-Fi.
           </Text>
+
+          {onUseDrive ? (
+            <Pressable
+              onPress={onUseDrive}
+              style={styles.drive}
+              accessibilityRole="button"
+              accessibilityLabel="No computer? Open the drive plugged into this phone"
+            >
+              <Text style={styles.driveTitle}>No computer needed</Text>
+              <Text style={styles.driveText}>
+                Plug the drive into this phone and open it directly — OCD reads and
+                indexes it here.
+              </Text>
+            </Pressable>
+          ) : null}
 
           <Pressable
             onPress={() => setValue('http://localhost:8090')}
@@ -163,6 +180,18 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   hintStrong: { fontWeight: '700', color: colors.text },
+  drive: {
+    marginTop: space(6),
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space(3.5),
+    paddingVertical: space(3),
+    gap: 2,
+  },
+  driveTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  driveText: { fontSize: 13, lineHeight: 19, color: colors.muted },
   debug: {
     marginTop: space(4),
     alignSelf: 'flex-start',

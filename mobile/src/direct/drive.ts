@@ -154,7 +154,9 @@ async function walkTree(
     const children = await listDir(treeUri, uri);
     if (!children) continue;
     done += 1;
-    if (done % 25 === 0) onProgress?.(done);
+    // Always report the first folder: otherwise a slow drive sits at "0
+    // folders" for the first 25 directories and looks frozen.
+    if (done === 1 || done % 25 === 0) onProgress?.(done);
 
     for (const child of children) {
       const name = safeDecode(lastName(child));

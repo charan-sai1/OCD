@@ -99,6 +99,18 @@ export function serialVolumeId(v: DriveVolume): string {
   return /^[0-9A-F]{8}$/.test(hex) ? 'win:' + hex : '';
 }
 
+/**
+ * A name to show for a drive. Android falls back to the raw serial as the
+ * description when a volume has no label, which reads like an error code.
+ */
+export function volumeName(v: DriveVolume): string {
+  const label = (v.label || '').trim();
+  if (!label) return 'USB drive';
+  const bare = label.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  const serial = (v.uuid || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  return serial && bare === serial ? 'USB drive' : label;
+}
+
 function randomHex16(): string {
   let out = '';
   for (let i = 0; i < 16; i += 1) out += Math.floor(Math.random() * 16).toString(16);

@@ -24,6 +24,7 @@ import { Connect } from './src/screens/Connect';
 import { DirectDrive } from './src/screens/DirectDrive';
 import { Gallery } from './src/screens/Gallery';
 import { Phone } from './src/screens/Phone';
+import { isDriveModuleAvailable } from './src/direct/native';
 import { Wordmark } from './src/ui';
 import { colors, space } from './src/theme';
 
@@ -44,12 +45,16 @@ export default function App() {
 }
 
 function Root() {
+  // A phone with the drive module can work without a computer, so it opens on
+  // the USB tab instead of a connect screen that cannot be satisfied.
+  const canBrowseDrive = Platform.OS === 'android' && isDriveModuleAvailable;
+
   const [booting, setBooting] = useState(true);
   const [server, setServer] = useState<string | null>(null);
   const [initial, setInitial] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [tab, setTab] = useState<Tab>('drive');
+  const [tab, setTab] = useState<Tab>(canBrowseDrive ? 'usb' : 'drive');
 
   useEffect(() => {
     (async () => {
@@ -62,8 +67,12 @@ function Root() {
       try {
         await api.version(saved);
         setServer(saved);
+        // A saved desktop is the main way in; land there, not on USB.
+        setTab('drive');
       } catch (e) {
         setProblem(messageFor(e));
+        // Show the address field and its error rather than silently landing on USB.
+        setTab('drive');
       } finally {
         setBooting(false);
       }
@@ -110,6 +119,7 @@ function Root() {
             busy={connecting}
             problem={problem}
             onConnect={connect}
+            onUseDrive={canBrowseDrive ? () => setTab('usb') : undefined}
           />
         )}
         <TabBar tab={tab} onChange={setTab} />

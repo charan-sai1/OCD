@@ -22,6 +22,7 @@ import {
   forgetWalk,
   type Catalog,
   type DirectItem,
+  type StoredDrive,
 } from '../direct/drive';
 import {
   accessGranted,
@@ -39,6 +40,7 @@ import {
   scanVolume,
   syntheticCatalog,
   thumbPath,
+  volumeName,
   writeCatalog,
   type DriveVolume,
 } from '../direct/native';
@@ -74,6 +76,10 @@ export function DirectDrive() {
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
 
   const [stored, setStored] = useState<{ treeUri: string; label: string } | null>(null);
+  // A drive remembered from the Android picker, kept but not auto-opened when
+  // the native path is available: walking 25,000 files on launch is exactly
+  // what this screen must not do.
+  const [safFallback, setSafFallback] = useState<StoredDrive | null>(null);
   const [items, setItems] = useState<DirectItem[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [treeUri, setTreeUri] = useState<string | null>(null);
@@ -141,7 +147,7 @@ export function DirectDrive() {
       // from it, so a second identity would miss every preview on the drive.
       const volumeId = catalog?.header.volumeId || derivedId;
 
-      setNative({ root, volumeId, label: v.label || 'USB drive', volume: v });
+      setNative({ root, volumeId, label: volumeName(v), volume: v });
       setStored(null);
       setTreeUri(null);
       setThumbs(names);
@@ -257,11 +263,19 @@ export function DirectDrive() {
   useEffect(() => {
     storedDrive()
       .then((d) => {
-        if (d) {
-          setStored(d);
-          return load(d.treeUri);
+        if (!d) {
+          setLoading(false);
+          return;
         }
-        setLoading(false);
+        if (isDriveModuleAvailable) {
+          // Native access is faster and knows sizes and dates, so do not walk
+          // the drive through SAF on launch. Keep it as an explicit fallback.
+          setSafFallback(d);
+          setLoading(false);
+          return;
+        }
+        setStored(d);
+        return load(d.treeUri);
       })
       .catch(() => setLoading(false));
   }, [load]);
@@ -460,7 +474,9 @@ export function DirectDrive() {
                   : 'Loading catalogue…'
                 : `${items.length.toLocaleString()} items${hadThumbs ? '' : ' · no previews on drive'}`}
             </Text>
-            <Text style={styles.scanning}>{stored ? stored.label : native?.label}</Text>
+            <Text style={styles.scanning}>
+              {stored ? stored.label : native ? volumeName(native.volume) : ''}
+            </Text>
           </View>
         ) : (
           <View style={styles.pickWrap}>
@@ -484,9 +500,9 @@ export function DirectDrive() {
                         onPress={() => openNative(v)}
                         style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
                         accessibilityRole="button"
-                        accessibilityLabel={`Open ${v.label || 'USB drive'}`}
+                        accessibilityLabel={`Open ${volumeName(v)}`}
                       >
-                        <Text style={styles.volumeLabel}>{v.label || 'USB drive'}</Text>
+                        <Text style={styles.volumeLabel}>{volumeName(v)}</Text>
                         <Text style={styles.volumePath}>{v.path}</Text>
                       </Pressable>
                     ))}
@@ -515,6 +531,27 @@ export function DirectDrive() {
                   </Pressable>
                 </View>
               )
+            ) : null}
+
+            {safFallback ? (
+              <View style={styles.volumes}>
+                <Text style={styles.pickSection}>Opened before</Text>
+                <Pressable
+                  onPress={() => {
+                    setSafFallback(null);
+                    setStored(safFallback);
+                    void load(safFallback.treeUri);
+                  }}
+                  style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${safFallback.label} through the folder picker`}
+                >
+                  <Text style={styles.volumeLabel}>{safFallback.label}</Text>
+                  <Text style={styles.volumePath}>
+                    Folder picker · slower, has no sizes or previews
+                  </Text>
+                </Pressable>
+              </View>
             ) : null}
 
             <View style={styles.chips}>
