@@ -175,6 +175,10 @@ export function DirectDrive() {
    */
   const indexNative = useCallback(async () => {
     if (!native || indexing) return;
+    if (!native.volume.writable) {
+      setProblem('This drive is write-protected, so OCD can only browse it.');
+      return;
+    }
     setProblem(null);
     setIndexing(true);
     try {
@@ -532,19 +536,23 @@ export function DirectDrive() {
       {native && needsIndex ? (
         <View style={styles.indexBar}>
           <Text style={styles.indexText}>
-            {indexing
-              ? 'Indexing this drive. Keep it plugged in.'
-              : 'This drive has no catalogue yet. Index it here to open instantly next time and to build previews on the drive.'}
+            {!native.volume.writable
+              ? 'This drive is write-protected. You can browse it, but OCD cannot add a catalogue or previews to it.'
+              : indexing
+                ? 'Indexing this drive. Keep it plugged in.'
+                : 'This drive has no catalogue yet. Index it here to open instantly next time and to build previews on the drive.'}
           </Text>
-          {indexing ? (
-            <ActivityIndicator color={colors.muted} size="small" />
-          ) : (
-            <TextAction
-              label="Index drive"
-              onPress={indexNative}
-              accessibilityHint="Scan this drive and write a catalog to it"
-            />
-          )}
+          {native.volume.writable ? (
+            indexing ? (
+              <ActivityIndicator color={colors.muted} size="small" />
+            ) : (
+              <TextAction
+                label="Index drive"
+                onPress={indexNative}
+                accessibilityHint="Scan this drive and write a catalog to it"
+              />
+            )
+          ) : null}
         </View>
       ) : null}
 

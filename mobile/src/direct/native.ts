@@ -57,14 +57,15 @@ export async function ensureAccess(): Promise<boolean> {
 
 /**
  * Removable volumes that are actually mounted. The primary volume is excluded:
- * it is the phone's own storage, not a drive the user plugged in.
+ * it is the phone's own storage, not a drive the user plugged in. Write-protected
+ * drives are included so they can still be browsed; only indexing is refused.
  */
 export async function removableDrives(): Promise<DriveVolume[]> {
   if (!isDriveModuleAvailable) return [];
   try {
     const volumes = await drive().listVolumes();
     return volumes.filter(
-      (v) => v.removable && !v.primary && v.state === 'mounted' && !!v.path && v.writable,
+      (v) => v.removable && !v.primary && v.state === 'mounted' && !!v.path,
     );
   } catch {
     return [];
