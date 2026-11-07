@@ -56,19 +56,76 @@ export async function ensureAccess(): Promise<boolean> {
 }
 
 /**
- * Removable volumes that are actually mounted. The primary volume is excluded:
- * it is the phone's own storage, not a drive the user plugged in. Write-protected
- * drives are included so they can still be browsed; only indexing is refused.
+ * A volume Android has mounted and given a real filesystem path. The primary
+ * volume is excluded: it is the phone's own storage, not a drive the user
+ * plugged in. Read-only mounts are included so they can still be browsed;
+ * only indexing is refused.
  */
-export async function removableDrives(): Promise<DriveVolume[]> {
-  if (!isDriveModuleAvailable) return [];
+function usableVolume(v: DriveVolume): boolean {
+  if (v.primary || !v.path) return false;
+  if (v.path.includes('/emulated')) return false;
+  if (v.state !== 'mounted' && v.state !== 'mounted_ro') return false;
+  // Most USB drives report isRemovable, but some OTG bridges do not. A volume
+  // mounted under /storage or /mnt/media_rw is still a real disk, never the
+  // phone's own storage (already excluded above).
+  return v.removable || /^\/(storage|mnt\/media_rw)\/[^/]+$/i.test(v.path);
+}
+
+/** A disk-like volume the platform knows about but has not mounted. */
+function unmountedVolume(v: DriveVolume): boolean {
+  if (v.primary) return false;
+  if (v.state === 'mounted' || v.state === 'mounted_ro') return false;
+  return v.removable || !!v.uuid;
+}
+
+export type DriveVolumeReport = {
+  /** Mounted volumes the app can actually read. */
+  usable: DriveVolume[];
+  /** Volumes Android knows about but has not given a mount point. */
+  unmounted: DriveVolume[];
+};
+
+/**
+ * Lists volumes in two groups. Android mounts the partitions of one disk
+ * independently, so a disk can be plugged in while only its first partition is
+ * readable. Separating the groups lets the screen say that plainly instead of
+ * looking as if the second partition does not exist.
+ */
+export async function driveVolumes(): Promise<DriveVolumeReport> {
+  if (!isDriveModuleAvailable) return { usable: [], unmounted: [] };
   try {
     const volumes = await drive().listVolumes();
-    return volumes.filter(
-      (v) => v.removable && !v.primary && v.state === 'mounted' && !!v.path,
-    );
+    return {
+      usable: volumes.filter(usableVolume),
+      unmounted: volumes.filter(unmountedVolume),
+    };
   } catch {
-    return [];
+    return { usable: [], unmounted: [] };
+  }
+}
+
+export async function removableDrives(): Promise<DriveVolume[]> {
+  return (await driveVolumes()).usable;
+}
+
+type VolumeListener = { remove(): void };
+
+/**
+ * Native mount/unmount notifications. A drive that finishes mounting after the
+ * screen is already open would otherwise stay invisible until the app is
+ * restarted. The screen also polls as a fallback for platforms where this
+ * event never arrives.
+ */
+export function watchVolumes(listener: () => void): VolumeListener {
+  if (!isDriveModuleAvailable) return { remove() {} };
+  const emitter = drive() as unknown as {
+    addListener?: (name: string, cb: (event: unknown) => void) => VolumeListener;
+  };
+  if (typeof emitter.addListener !== 'function') return { remove() {} };
+  try {
+    return emitter.addListener('onVolumeChange', (_event: unknown) => listener());
+  } catch {
+    return { remove() {} };
   }
 }
 

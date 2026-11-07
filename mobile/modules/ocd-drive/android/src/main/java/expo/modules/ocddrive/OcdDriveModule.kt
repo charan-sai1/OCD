@@ -1,7 +1,9 @@
 package expo.modules.ocddrive
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
@@ -36,8 +38,46 @@ class OcdDriveModule : Module() {
   private val ctx: Context
     get() = requireNotNull(appContext.reactContext) { "React context is gone" }
 
+  private var volumeReceiver: BroadcastReceiver? = null
+
   override fun definition() = ModuleDefinition {
     Name("OcdDrive")
+
+    // Android mounts partitions on a plugged-in disk one at a time, and the
+    // second one can finish seconds after the app is already on screen. The
+    // screen listens for this and re-lists instead of making the user restart.
+    Events("onVolumeChange")
+
+    OnCreate {
+      val context = appContext.reactContext ?: return@OnCreate
+      val filter = IntentFilter().apply {
+        addAction(Intent.ACTION_MEDIA_MOUNTED)
+        addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+        addAction(Intent.ACTION_MEDIA_EJECT)
+        addAction(Intent.ACTION_MEDIA_REMOVED)
+        addAction(Intent.ACTION_MEDIA_BAD_REMOVAL)
+      }
+      val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+          sendEvent("onVolumeChange", mapOf("action" to (intent?.action ?: "")))
+        }
+      }
+      volumeReceiver = receiver
+      runCatching {
+        if (Build.VERSION.SDK_INT >= 33) {
+          context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+          context.registerReceiver(receiver, filter)
+        }
+      }
+    }
+
+    OnDestroy {
+      volumeReceiver?.let { receiver ->
+        runCatching { appContext.reactContext?.unregisterReceiver(receiver) }
+      }
+      volumeReceiver = null
+    }
 
     Function("hasAllFilesAccess") {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -58,13 +98,13 @@ class OcdDriveModule : Module() {
       true
     }
 
-    // Mounted volumes, with the USB volume's FAT serial exposed as uuid. The
-    // serial is the same value Windows reports, so both platforms can derive one
-    // volume identity for a drive instead of two.
+    // Every volume the platform knows about, mounted or not. The caller decides
+    // what is usable, and can tell the user when a plugged-in disk has a
+    // partition Android never gave a mount point.
     AsyncFunction("listVolumes") {
       val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
-      sm.storageVolumes.mapNotNull { v ->
-        val path = volumePath(v) ?: return@mapNotNull null
+      sm.storageVolumes.map { v ->
+        val path = volumePath(v) ?: ""
         mapOf(
           "uuid" to (v.uuid ?: ""),
           "label" to runCatching { v.getDescription(ctx) }.getOrDefault(""),
@@ -72,7 +112,7 @@ class OcdDriveModule : Module() {
           "primary" to v.isPrimary,
           "removable" to v.isRemovable,
           "state" to v.state,
-          "writable" to File(path).canWrite()
+          "writable" to (path.isNotEmpty() && File(path).canWrite())
         )
       }
     }
@@ -327,11 +367,13 @@ class OcdDriveModule : Module() {
 
   private fun volumePath(v: StorageVolume): String? {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      return v.directory?.absolutePath
+      v.directory?.absolutePath?.takeIf { it.isNotEmpty() }?.let { return it }
     }
     return try {
-      // getPath is hidden but present on every release that lacks getDirectory.
-      StorageVolume::class.java.getMethod("getPath").invoke(v) as? String
+      // Some OEM builds leave getDirectory() null for a USB volume that is
+      // mounted. getPath is hidden but present; ask it before giving up.
+      (StorageVolume::class.java.getMethod("getPath").invoke(v) as? String)
+        ?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
       null
     }

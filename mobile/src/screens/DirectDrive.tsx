@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -38,11 +39,12 @@ import {
   readCatalog,
   readCatalogWithSource,
   readMediaMetadata,
-  removableDrives,
+  driveVolumes,
   scanVolume,
   syntheticCatalog,
   thumbPath,
   volumeName,
+  watchVolumes,
   writeCatalog,
   type DriveVolume,
 } from '../direct/native';
@@ -73,6 +75,20 @@ const EMPTY_CATALOG: Catalog = {
 const COLS = 3;
 const GAP = 2;
 
+/** True when two volume lists describe the same drives, so polling does not re-render. */
+function sameVolumes(a: DriveVolume[], b: DriveVolume[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (v, i) =>
+        v.path === b[i].path &&
+        v.state === b[i].state &&
+        v.label === b[i].label &&
+        v.writable === b[i].writable,
+    )
+  );
+}
+
 export function DirectDrive() {
   const { width } = useWindowDimensions();
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
@@ -101,6 +117,8 @@ export function DirectDrive() {
     () => isDriveModuleAvailable && accessGranted(),
   );
   const [volumes, setVolumes] = useState<DriveVolume[]>([]);
+  const [unmounted, setUnmounted] = useState<DriveVolume[]>([]);
+  const [refreshingDrives, setRefreshingDrives] = useState(false);
   const [native, setNative] = useState<{
     root: string;
     volumeId: string;
@@ -113,11 +131,26 @@ export function DirectDrive() {
   const [indexing, setIndexing] = useState(false);
   const pendingThumbs = useRef<Set<string>>(new Set());
 
-  const refreshVolumes = useCallback(async () => {
+  const refreshVolumes = useCallback(async (showSpinner = false) => {
     if (!isDriveModuleAvailable) return;
+    if (showSpinner) setRefreshingDrives(true);
     const granted = accessGranted();
     setNativeAccess(granted);
-    setVolumes(granted ? await removableDrives() : []);
+    if (!granted) {
+      setVolumes([]);
+      setUnmounted([]);
+      if (showSpinner) setRefreshingDrives(false);
+      return;
+    }
+    try {
+      const report = await driveVolumes();
+      setVolumes((prev) => (sameVolumes(prev, report.usable) ? prev : report.usable));
+      setUnmounted((prev) =>
+        sameVolumes(prev, report.unmounted) ? prev : report.unmounted,
+      );
+    } finally {
+      if (showSpinner) setRefreshingDrives(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -137,6 +170,26 @@ export function DirectDrive() {
     });
     return () => sub.remove();
   }, [refreshVolumes]);
+
+  useEffect(() => {
+    // The mount broadcast arrives before the poll below would notice.
+    const sub = watchVolumes(() => {
+      void refreshVolumes();
+    });
+    return () => sub.remove();
+  }, [refreshVolumes]);
+
+  useEffect(() => {
+    // Android mounts the partitions of one disk independently, and the second
+    // can finish seconds after the app is already showing the picker. Re-check
+    // while the picker is visible so it appears without a restart. The primary
+    // volume and unmounted volumes are already filtered out, so this is cheap.
+    if (!isDriveModuleAvailable || native || stored || !nativeAccess) return;
+    const timer = setInterval(() => {
+      void refreshVolumes();
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [native, nativeAccess, refreshVolumes, stored]);
 
   const openNative = useCallback(async (v: DriveVolume) => {
     setProblem(null);
@@ -519,95 +572,148 @@ export function DirectDrive() {
               {stored ? stored.label : native ? volumeName(native.volume) : ''}
             </Text>
           </View>
-        ) : (
-          <View style={styles.pickWrap}>
-            <View style={styles.pickGlyph}>
-              <Text style={styles.pickIcon}>▭</Text>
-            </View>
-            <Text style={styles.pickTitle}>Copy from your drive</Text>
-            <Text style={styles.pickText}>
-              Plug the drive into this phone, then choose it. OCD reads the catalogue already on
-              the drive and shows your photos and videos here — no computer involved.
-            </Text>
+        ) : null}
+      </ScreenHeader>
 
-            {isDriveModuleAvailable ? (
-              nativeAccess ? (
-                volumes.length > 0 ? (
-                  <View style={styles.volumes}>
-                    <Text style={styles.pickSection}>Drives on this phone</Text>
-                    {volumes.map((v) => (
-                      <Pressable
-                        key={v.path}
-                        onPress={() => openNative(v)}
-                        style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Open ${volumeName(v)}`}
+      {!stored && !native ? (
+        <ScrollView
+          style={styles.pickScroll}
+          contentContainerStyle={styles.pickWrap}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshingDrives}
+              onRefresh={() => void refreshVolumes(true)}
+              tintColor={colors.muted}
+            />
+          }
+        >
+          <View style={styles.pickGlyph}>
+            <Text style={styles.pickIcon}>▭</Text>
+          </View>
+          <Text style={styles.pickTitle}>Copy from your drive</Text>
+          <Text style={styles.pickText}>
+            Plug the drive into this phone, then choose it. OCD reads the catalogue already on
+            the drive and shows your photos and videos here — no computer involved.
+          </Text>
+
+          {isDriveModuleAvailable ? (
+            nativeAccess ? (
+              <View style={styles.volumes}>
+                <View style={styles.volumesHead}>
+                  <Text style={styles.pickSection}>Drives on this phone</Text>
+                  <TextAction
+                    label={refreshingDrives ? 'Checking…' : 'Refresh'}
+                    onPress={() => void refreshVolumes(true)}
+                    disabled={refreshingDrives}
+                    accessibilityHint="Check again for drives Android has mounted"
+                  />
+                </View>
+
+                {volumes.length > 0 ? (
+                  volumes.map((v) => (
+                    <Pressable
+                      key={v.path}
+                      onPress={() => openNative(v)}
+                      style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${volumeName(v)}`}
+                    >
+                      <Text style={styles.volumeLabel}>{volumeName(v)}</Text>
+                      <Text style={styles.volumePath}>
+                        {v.path}
+                        {v.writable ? '' : ' · read-only'}
+                      </Text>
+                    </Pressable>
+                  ))
+                ) : unmounted.length === 0 ? (
+                  <Text style={styles.pickNote}>
+                    Android has not mounted a drive yet. Plug it in and tap Refresh, or pull down.
+                  </Text>
+                ) : null}
+
+                {unmounted.length > 0 ? (
+                  <>
+                    <Text style={[styles.pickSection, styles.unmountedSection]}>
+                      Not mounted by Android
+                    </Text>
+                    {unmounted.map((v, i) => (
+                      <View
+                        key={`${v.uuid || v.label || 'volume'}-${v.state}-${i}`}
+                        style={[styles.volumeRow, styles.volumeRowMuted]}
                       >
                         <Text style={styles.volumeLabel}>{volumeName(v)}</Text>
-                        <Text style={styles.volumePath}>{v.path}</Text>
-                      </Pressable>
+                        <Text style={styles.volumePath}>
+                          {v.state || 'unmounted'} · Android has not mounted this volume
+                        </Text>
+                      </View>
                     ))}
-                  </View>
-                ) : (
-                  <Text style={styles.pickNote}>
-                    No removable drive is mounted. Plug the drive in, then pull down to refresh.
-                  </Text>
-                )
-              ) : (
-                <View style={styles.volumes}>
-                  <Text style={styles.pickSection}>Full drive control</Text>
-                  <Text style={styles.pickNote}>
-                    OCD needs the “All files access” permission to read sizes, dates and previews
-                    straight from the drive. Nothing is deleted or changed without asking.
-                  </Text>
-                  <Pressable
-                    onPress={async () => {
-                      if (await ensureAccess()) await refreshVolumes();
-                    }}
-                    style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Allow full drive access"
-                  >
-                    <Text style={styles.pickButtonText}>Allow access</Text>
-                  </Pressable>
-                </View>
-              )
-            ) : null}
+                    <Text style={styles.pickNote}>
+                      Android mounts the partitions of one disk separately. OCD can only read the
+                      volume Android has mounted. Try unplugging and reconnecting, or use a powered
+                      USB hub.
+                    </Text>
+                  </>
+                ) : null}
 
-            {safFallback ? (
+                <Text style={styles.pickDiagnostic}>
+                  OCD sees {volumes.length} readable volume
+                  {volumes.length === 1 ? '' : 's'} on this phone.
+                </Text>
+              </View>
+            ) : (
               <View style={styles.volumes}>
-                <Text style={styles.pickSection}>Opened before</Text>
+                <Text style={styles.pickSection}>Full drive control</Text>
+                <Text style={styles.pickNote}>
+                  OCD needs the “All files access” permission to read sizes, dates and previews
+                  straight from the drive. Nothing is deleted or changed without asking.
+                </Text>
                 <Pressable
-                  onPress={() => {
-                    setSafFallback(null);
-                    setStored(safFallback);
-                    void load(safFallback.treeUri);
+                  onPress={async () => {
+                    if (await ensureAccess()) await refreshVolumes();
                   }}
-                  style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
+                  style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open ${safFallback.label} through the folder picker`}
+                  accessibilityLabel="Allow full drive access"
                 >
-                  <Text style={styles.volumeLabel}>{safFallback.label}</Text>
-                  <Text style={styles.volumePath}>
-                    Folder picker · slower, has no sizes or previews
-                  </Text>
+                  <Text style={styles.pickButtonText}>Allow access</Text>
                 </Pressable>
               </View>
-            ) : null}
+            )
+          ) : null}
 
-            <View style={styles.chips}>
+          {safFallback ? (
+            <View style={styles.volumes}>
+              <Text style={styles.pickSection}>Opened before</Text>
               <Pressable
-                onPress={chooseDrive}
-                style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
+                onPress={() => {
+                  setSafFallback(null);
+                  setStored(safFallback);
+                  void load(safFallback.treeUri);
+                }}
+                style={({ pressed }) => [styles.volumeRow, pressed && styles.pickButtonPressed]}
                 accessibilityRole="button"
-                accessibilityLabel="Choose a drive to browse"
+                accessibilityLabel={`Open ${safFallback.label} through the folder picker`}
               >
-                <Text style={styles.pickButtonText}>Choose drive</Text>
+                <Text style={styles.volumeLabel}>{safFallback.label}</Text>
+                <Text style={styles.volumePath}>
+                  Folder picker · slower, has no sizes or previews
+                </Text>
               </Pressable>
             </View>
+          ) : null}
+
+          <View style={styles.chips}>
+            <Pressable
+              onPress={chooseDrive}
+              style={({ pressed }) => [styles.pickButton, pressed && styles.pickButtonPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Choose a drive to browse"
+            >
+              <Text style={styles.pickButtonText}>Choose drive</Text>
+            </Pressable>
           </View>
-        )}
-      </ScreenHeader>
+        </ScrollView>
+      ) : null}
 
       {problem ? <ErrorBanner message={problem} onRetry={refresh} /> : null}
 
@@ -764,7 +870,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: space(1),
   },
-  pickWrap: { marginTop: space(3), paddingVertical: space(4) },
+  pickScroll: { flex: 1 },
+  pickWrap: {
+    paddingHorizontal: space(4),
+    paddingTop: space(3),
+    paddingBottom: space(10),
+  },
   pickGlyph: {
     width: space(12),
     height: space(12),
@@ -779,6 +890,18 @@ const styles = StyleSheet.create({
   pickText: { fontSize: 14, lineHeight: 20, color: colors.muted },
   chips: { flexDirection: 'row', marginTop: space(4) },
   volumes: { marginTop: space(4), gap: space(2) },
+  volumesHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  unmountedSection: { marginTop: space(3) },
+  volumeRowMuted: { opacity: 0.6 },
+  pickDiagnostic: {
+    marginTop: space(1),
+    fontSize: 11,
+    color: colors.faint,
+  },
   pickSection: {
     fontSize: 12,
     fontWeight: '700',
