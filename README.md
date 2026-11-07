@@ -229,6 +229,60 @@ after the verified import.
 Then on the phone open `http://<PC-IP>:8090` (find the IP with `ipconfig`).
 The gallery itself is on port **8080**.
 
+## Phone app: on-drive browsing and indexing
+
+`mobile/` is the Expo companion. It works two ways: it talks to the PC over
+Wi-Fi, and it can open a drive plugged straight into the phone with no computer
+involved.
+
+**Expo Go** can browse a drive that already carries a catalog, read-only, using
+Android's document picker. A drive with no catalog still opens, but has no
+previews and no dates.
+
+**Development build** adds the native drive module and with it full control:
+
+| | Expo Go | Development build |
+|---|---|---|
+| Open a drive that already has a catalog | yes | yes |
+| Real file sizes and dates | no | yes |
+| Write a catalog to a drive | no | yes |
+| Build a missing preview on the drive | no | yes |
+
+Build and install it (EAS builds in the cloud, no Android SDK needed):
+
+```powershell
+cd mobile
+npm install
+npx eas build -p android --profile development
+```
+
+Install the APK on the phone, open **USB Drive**, allow "All files access",
+pick the drive, and press **Index drive** once.
+
+### What the phone writes
+
+Only inside `<drive>/.ocd/`, and only when you ask it to:
+
+| File | What it is |
+|------|------------|
+| `catalog.gz` | Same format the engine writes. Swapped in atomically; the previous copy is kept as `catalog.bak`. |
+| `thumbs/<hash>.jpg` | A 400px preview, built for the files you actually open. |
+| `volume.json` | Only when the drive exposes no serial. The PC adopts it, so both sides keep one identity. |
+
+Preview names are hashed from the drive's serial, the path, the size and the
+mtime, which is why the phone needs real file metadata. A phone-indexed drive
+and a PC-indexed drive therefore produce the same preview names for the same
+file, and neither has to rebuild the other's work.
+
+The phone never deletes or modifies a photo or video. It never rewrites a
+catalog in place. A failed or interrupted write leaves the previous catalog
+readable, because the new file is only renamed into position after it is
+completely written and flushed.
+
+One thing a phone-indexed catalog does not carry yet is the capture date pulled
+from EXIF. Files still sort chronologically where camera file names do, and the
+PC fills the dates in the next time it indexes the drive.
+
 ## Optional helper tools
 
 These make browsing better but are not required:
