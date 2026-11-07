@@ -256,6 +256,14 @@ npm install
 npx eas build -p android --profile development
 ```
 
+That development build loads its JavaScript from Metro, so keep
+`npx expo start --dev-client` running. For a standalone APK that needs no
+computer at all, use the preview profile:
+
+```powershell
+npx eas build -p android --profile preview
+```
+
 Install the APK on the phone, open **USB Drive**, allow "All files access",
 pick the drive, and press **Index drive** once.
 
