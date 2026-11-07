@@ -233,15 +233,21 @@ export function DirectDrive() {
         return;
       }
 
-      // Read back what actually landed rather than trusting the buffer.
-      const written = await readCatalog(native.root);
-      if (!written) {
+      // Read back what actually landed rather than trusting the buffer. The
+      // backup must not answer here: falling back to it would hide a failed
+      // write behind the previous catalog.
+      const written = await readCatalogWithSource(native.root);
+      if (
+        !written ||
+        written.source !== 'current' ||
+        written.catalog.entries.length !== record.length
+      ) {
         setProblem('The catalog was written but could not be read back. Re-index to retry.');
         return;
       }
 
-      setCatalog(written);
-      setItems(itemsFromCatalog(written));
+      setCatalog(written.catalog);
+      setItems(itemsFromCatalog(written.catalog));
       setNeedsIndex(false);
       setRecovered(false);
       if (truncated) {
