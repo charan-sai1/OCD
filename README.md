@@ -279,9 +279,16 @@ catalog in place. A failed or interrupted write leaves the previous catalog
 readable, because the new file is only renamed into position after it is
 completely written and flushed.
 
-One thing a phone-indexed catalog does not carry yet is the capture date pulled
-from EXIF. Files still sort chronologically where camera file names do, and the
-PC fills the dates in the next time it indexes the drive.
+The phone does not parse EXIF itself. Instead it asks Android's media database
+once for the whole drive: capture date, pixel dimensions and video duration come
+from there, with no per-file reads. Anything Android has not indexed falls back
+to the file's own modification time. Re-indexing on the phone keeps the dates a
+PC already wrote for files that have not changed, so plugging the drive into the
+phone does not degrade a richer catalog.
+
+If `catalog.gz` is ever damaged, the app opens `catalog.bak` instead of
+pretending the drive was never indexed, and offers to re-index when the drive is
+writable. The damaged file is never copied over the good backup.
 
 ## Optional helper tools
 

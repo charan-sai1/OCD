@@ -90,6 +90,48 @@ func TestBackupSurvivesCorruption(t *testing.T) {
 	}
 }
 
+// Writing over a damaged catalog must not promote the damage over the last
+// good backup. This is the failure that loses a 40,000-item catalog's only
+// readable copy.
+func TestWriteKeepsGoodBackupWhenCurrentIsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	first := sample()
+	if err := Write(dir, first); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	second := sample()
+	second.Entries = second.Entries[:2]
+	if err := Write(dir, second); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	// The backup now holds the complete first snapshot.
+	if err := os.WriteFile(Path(dir), []byte("not gzip at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	third := sample()
+	third.Entries = third.Entries[:1]
+	if err := Write(dir, third); err != nil {
+		t.Fatalf("write over damaged current: %v", err)
+	}
+
+	got, src, err := Read(dir)
+	if err != nil {
+		t.Fatalf("read after repair: %v", err)
+	}
+	if src != SourceCurrent || len(got.Entries) != 1 {
+		t.Fatalf("current = %d entries from %q, want 1 from current", len(got.Entries), src)
+	}
+
+	backup, err := readFile(BackupPath(dir))
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if len(backup.Entries) != len(first.Entries) {
+		t.Fatalf("backup entries = %d, want the original %d", len(backup.Entries), len(first.Entries))
+	}
+}
+
 func TestReadMissing(t *testing.T) {
 	if _, _, err := Read(t.TempDir()); err == nil {
 		t.Fatal("expected an error for a missing catalog")

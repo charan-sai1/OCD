@@ -25,10 +25,13 @@ func TestReadCatalogWrittenByPhone(t *testing.T) {
 	if snap.Header.Count != 2 || len(snap.Entries) != 2 {
 		t.Fatalf("count = %d, entries = %d", snap.Header.Count, len(snap.Entries))
 	}
-	if got := snap.Entries[0]; got.Path != "Photos/2024/a.jpg" || got.Size != 123456 || got.MTime != 1712345678 {
+	if got := snap.Entries[0]; got.Path != "Photos/2024/a.jpg" || got.Size != 123456 ||
+		got.MTime != 1712345678 || got.ShotAt != 1700000000 ||
+		got.Width != 5712 || got.Height != 4284 {
 		t.Errorf("first entry = %+v", got)
 	}
-	if got := snap.Entries[1]; got.Path != "Clips/b.MOV" || got.Kind != "video" || got.Duration != 12.5 {
+	if got := snap.Entries[1]; got.Path != "Clips/b.MOV" || got.Kind != "video" ||
+		got.Duration != 12.5 || got.ShotAt != 1712345000 {
 		t.Errorf("second entry = %+v", got)
 	}
 }

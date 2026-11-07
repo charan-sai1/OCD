@@ -4,12 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
 import expo.modules.kotlin.modules.Module
@@ -130,6 +134,97 @@ class OcdDriveModule : Module() {
       File(path).list()?.toList() ?: emptyList<String>()
     }
 
+    /**
+     * Capture metadata for everything MediaStore has indexed on this volume.
+     * One query covers the whole drive, which is why a phone index can carry
+     * dates and dimensions without opening tens of thousands of files one at
+     * a time. Anything the platform has not indexed is simply missing; the
+     * caller keeps the file's own mtime for those.
+     */
+    AsyncFunction("mediaMetadata") { root: String ->
+      val outFile = File(ctx.cacheDir, "ocd-meta-${System.currentTimeMillis()}.jsonl")
+      var count = 0
+      val rootPath = root.trimEnd('/')
+
+      try {
+        val resolver = ctx.contentResolver
+        val volumeName = mediaStoreVolumeName(rootPath)
+        val uri = MediaStore.Files.getContentUri(volumeName ?: "external")
+        val modern = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+
+        val columns = mutableListOf(
+          MediaStore.MediaColumns.DATE_TAKEN,
+          MediaStore.MediaColumns.WIDTH,
+          MediaStore.MediaColumns.HEIGHT,
+          MediaStore.MediaColumns.DURATION
+        )
+        if (modern) {
+          columns.add(MediaStore.MediaColumns.RELATIVE_PATH)
+          columns.add(MediaStore.MediaColumns.DISPLAY_NAME)
+        } else {
+          columns.add(MediaStore.MediaColumns.DATA)
+        }
+
+        // Android 9 and older have no per-volume URI; scope the shared external
+        // volume to this mount point instead.
+        val selection = if (modern) null else "${MediaStore.MediaColumns.DATA} LIKE ?"
+        val args = if (modern) null else arrayOf("$rootPath/%")
+
+        FileOutputStream(outFile).buffered().use { out ->
+          resolver.query(uri, columns.toTypedArray(), selection, args, null)?.use { c ->
+            val iDir = if (modern) c.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
+            val iName = if (modern) c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME) else -1
+            val iData = if (modern) -1 else c.getColumnIndex(MediaStore.MediaColumns.DATA)
+            val iTaken = c.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+            val iWidth = c.getColumnIndex(MediaStore.MediaColumns.WIDTH)
+            val iHeight = c.getColumnIndex(MediaStore.MediaColumns.HEIGHT)
+            val iDur = c.getColumnIndex(MediaStore.MediaColumns.DURATION)
+
+            fun longAt(i: Int): Long =
+              if (i >= 0 && !c.isNull(i)) c.getLong(i) else 0L
+            fun intAt(i: Int): Int =
+              if (i >= 0 && !c.isNull(i)) c.getInt(i) else 0
+
+            while (c.moveToNext()) {
+              val rel = if (modern) {
+                val dir = if (iDir >= 0 && !c.isNull(iDir)) c.getString(iDir) ?: "" else ""
+                val name = if (iName >= 0 && !c.isNull(iName)) c.getString(iName) ?: "" else ""
+                // RELATIVE_PATH for a file at the volume root can be "/".
+                (dir + name).trimStart('/')
+              } else {
+                val full = if (iData >= 0 && !c.isNull(iData)) c.getString(iData) ?: "" else ""
+                if (!full.startsWith("$rootPath/")) continue
+                full.substring(rootPath.length + 1)
+              }
+              if (rel.isEmpty()) continue
+
+              val taken = longAt(iTaken)
+              val width = intAt(iWidth)
+              val height = intAt(iHeight)
+              val durationMs = longAt(iDur)
+              if (taken <= 0L && width <= 0 && height <= 0 && durationMs <= 0L) continue
+
+              // Seconds, matching the catalog: DATE_TAKEN is milliseconds and
+              // DURATION is milliseconds, but the schema stores both as seconds.
+              val obj = JSONObject()
+              obj.put("p", rel)
+              if (taken > 0L) obj.put("t", taken / 1000L)
+              if (width > 0) obj.put("w", width)
+              if (height > 0) obj.put("h", height)
+              if (durationMs > 0L) obj.put("d", durationMs / 1000.0)
+              out.write((obj.toString() + "\n").toByteArray(Charsets.UTF_8))
+              count++
+            }
+          }
+        }
+      } catch (e: Exception) {
+        // An unreadable media database is not fatal: the caller falls back to
+        // each file's own modification time.
+      }
+
+      mapOf("path" to outFile.absolutePath, "count" to count)
+    }
+
     AsyncFunction("stat") { path: String ->
       val f = File(path)
       mapOf(
@@ -181,23 +276,18 @@ class OcdDriveModule : Module() {
       if (f.exists()) f.usableSpace else 0L
     }
 
-    // Image previews. BitmapFactory decodes HEIC on Android 9+, which is the
-    // same library the system gallery uses, so no extra codec is bundled.
+    // Image previews. ImageDecoder (Android 9+) applies the EXIF orientation
+    // and decodes HEIC, which is what keeps portrait shots upright instead of
+    // sideways. Older releases fall back to BitmapFactory plus a manual rotate.
     AsyncFunction("imageThumb") { src: String, dst: String, maxSize: Int, quality: Int ->
-      val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-      BitmapFactory.decodeFile(src, bounds)
-      if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-        return@AsyncFunction false
+      val file = File(src)
+      val target = File(dst)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        thumbWithImageDecoder(file, target, maxSize, quality) ||
+          thumbWithBitmapFactory(file, target, maxSize, quality)
+      } else {
+        thumbWithBitmapFactory(file, target, maxSize, quality)
       }
-      val opts = BitmapFactory.Options().apply {
-        inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxSize)
-      }
-      val decoded = BitmapFactory.decodeFile(src, opts) ?: return@AsyncFunction false
-      val scaled = scaleTo(decoded, maxSize)
-      val ok = writeJpeg(scaled, File(dst), quality)
-      if (scaled !== decoded) scaled.recycle()
-      decoded.recycle()
-      ok
     }
 
     AsyncFunction("videoDuration") { src: String ->
@@ -245,6 +335,92 @@ class OcdDriveModule : Module() {
     } catch (e: Exception) {
       null
     }
+  }
+
+  /** The MediaStore volume name for a mount point, e.g. "EC7-679B". */
+  private fun mediaStoreVolumeName(rootPath: String): String? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+    return try {
+      val sm = ctx.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+      val sv = sm.storageVolumes.firstOrNull {
+        volumePath(it)?.trimEnd('/') == rootPath
+      } ?: return null
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        // getMediaStoreVolumeName arrived in Android 11. On 10 the same value
+        // can be recovered by matching the volume's own UUID.
+        sv.mediaStoreVolumeName?.let { return it }
+      }
+      val uuid = sv.uuid ?: return null
+      MediaStore.getExternalVolumeNames(ctx).firstOrNull { it.equals(uuid, true) }
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  /**
+   * ImageDecoder honours the EXIF orientation of JPEG and HEIF, so the frame
+   * comes out the way the camera meant it. It also decodes HEIC on the same
+   * releases that can display it.
+   */
+  private fun thumbWithImageDecoder(src: File, dst: File, maxSize: Int, quality: Int): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+    return try {
+      val source = ImageDecoder.createSource(src)
+      val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        // Software bitmaps are the only ones JPEG compression can read back.
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        val sample = sampleSize(info.size.width, info.size.height, maxSize)
+        if (sample > 1) decoder.setTargetSampleSize(sample)
+      }
+      val scaled = scaleTo(decoded, maxSize)
+      val ok = writeJpeg(scaled, dst, quality)
+      if (scaled !== decoded) scaled.recycle()
+      decoded.recycle()
+      ok
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Pre-Android-9 path: BitmapFactory ignores orientation metadata, so a JPEG
+   * whose EXIF says "rotate 90" is turned upright here by hand.
+   */
+  private fun thumbWithBitmapFactory(src: File, dst: File, maxSize: Int, quality: Int): Boolean {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(src.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
+
+    val opts = BitmapFactory.Options().apply {
+      inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxSize)
+    }
+    var decoded = BitmapFactory.decodeFile(src.absolutePath, opts) ?: return false
+
+    val rotation = runCatching {
+      val exif = ExifInterface(src.absolutePath)
+      when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+        else -> 0f
+      }
+    }.getOrDefault(0f)
+
+    if (rotation != 0f) {
+      val matrix = Matrix().apply { postRotate(rotation) }
+      val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+      if (rotated !== decoded) {
+        decoded.recycle()
+        decoded = rotated
+      }
+    }
+
+    val scaled = scaleTo(decoded, maxSize)
+    val ok = writeJpeg(scaled, dst, quality)
+    if (scaled !== decoded) scaled.recycle()
+    decoded.recycle()
+    return ok
   }
 
   private fun writeAtomic(target: File, bytes: ByteArray, keepBackup: Boolean): Boolean {

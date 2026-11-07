@@ -20,6 +20,12 @@ export type ScanResult = {
   truncated: boolean;
 };
 
+export type MediaMetaResult = {
+  /** Cache file holding one JSON object per file MediaStore knows about. */
+  path: string;
+  count: number;
+};
+
 export type FileStat = {
   exists: boolean;
   size: number;
@@ -35,6 +41,7 @@ type OcdDriveNative = {
   // resolves later. Nothing that touches the filesystem may block the UI.
   listVolumes(): Promise<DriveVolume[]>;
   scan(root: string, maxEntries: number): Promise<ScanResult>;
+  mediaMetadata(root: string): Promise<MediaMetaResult>;
   listNames(path: string): Promise<string[]>;
   stat(path: string): Promise<FileStat>;
   readBase64(path: string): Promise<string>;

@@ -102,6 +102,15 @@ export function parseCatalog(bytes: Uint8Array): Catalog {
 export const DIRS = ['.ocd', 'thumbs'] as const;
 export const FILE_CATALOG = 'catalog.gz';
 
+/** Capture facts the platform's media database already knows about a file. */
+export type MediaMeta = {
+  p: string;
+  t?: number; // shot, Unix seconds
+  w?: number;
+  h?: number;
+  d?: number; // duration, seconds
+};
+
 /** One file the phone is about to write into a catalog. */
 export type CatalogWriteEntry = {
   p: string;
@@ -113,6 +122,43 @@ export type CatalogWriteEntry = {
   d?: number;
   t?: number;
 };
+
+/**
+ * buildCatalogEntries merges three sources for one file, in authority order:
+ * the catalog already on the drive (when the file is unchanged), then the
+ * platform's media database, then nothing at all. The scan refreshes only
+ * path, size, mtime and kind, so a phone re-index can never strip dates and
+ * dimensions a computer already worked out.
+ */
+export function buildCatalogEntries(
+  scan: { p: string; s: number; m: number; k?: string }[],
+  meta: Map<string, MediaMeta>,
+  previous: CatalogEntry[] = [],
+): CatalogWriteEntry[] {
+  const prev = new Map<string, CatalogEntry>();
+  for (const e of previous) prev.set(e.p, e);
+
+  const out: CatalogWriteEntry[] = [];
+  for (const f of scan) {
+    const old = prev.get(f.p);
+    const unchanged = !!old && old.size === f.s && old.m === f.m;
+    // FAT is case-insensitive, and MediaStore may report a different case than
+    // the directory walk, so the lookup is lowercased.
+    const m = meta.get(f.p.toLowerCase());
+
+    const entry: CatalogWriteEntry = { p: f.p, s: f.s, m: f.m, k: f.k };
+    const shot = (unchanged && old ? old.t : undefined) ?? m?.t;
+    if (shot) entry.t = shot;
+    const w = (unchanged && old ? old.w : undefined) ?? m?.w;
+    if (w) entry.w = w;
+    const h = (unchanged && old ? old.h : undefined) ?? m?.h;
+    if (h) entry.h = h;
+    const d = (unchanged && old ? old.d : undefined) ?? m?.d;
+    if (d) entry.d = d;
+    out.push(entry);
+  }
+  return out;
+}
 
 /**
  * encodeCatalog produces the same bytes the Go writer produces: one gzipped

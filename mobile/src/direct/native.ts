@@ -4,7 +4,7 @@ import { strToU8 } from 'fflate';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { drive, isDriveModuleAvailable, type DriveVolume } from 'ocd-drive';
 
-import { parseCatalog, type Catalog } from './catalog';
+import { parseCatalog, type Catalog, type MediaMeta } from './catalog';
 import { catalogEntryToItem, itemFromRel, type DirectItem } from './drive';
 import { thumbName } from './hash';
 
@@ -82,6 +82,11 @@ export function ocdDir(root: string): string {
 
 export function catalogPath(root: string): string {
   return ocdDir(root) + '/catalog.gz';
+}
+
+/** The previous catalog, kept by the atomic writer. */
+export function backupCatalogPath(root: string): string {
+  return ocdDir(root) + '/catalog.bak';
 }
 
 export function thumbDir(root: string): string {
@@ -198,13 +203,70 @@ export async function scanVolume(
   }
 }
 
-export async function readCatalog(root: string): Promise<Catalog | null> {
+export type CatalogSource = 'current' | 'backup';
+
+export type CatalogRead = {
+  catalog: Catalog;
+  /** Which file answered. "backup" means the primary is damaged. */
+  source: CatalogSource;
+};
+
+/**
+ * Capture metadata for a volume from the platform's media database. One query,
+ * no per-file reads. A file the platform has not indexed is simply absent from
+ * the map, and the caller falls back to the file's own mtime.
+ */
+export async function readMediaMetadata(root: string): Promise<Map<string, MediaMeta>> {
+  const out = new Map<string, MediaMeta>();
   try {
-    const b64 = await drive().readBase64(catalogPath(root));
-    return parseCatalog(base64js.toByteArray(b64));
+    const res = await drive().mediaMetadata(root);
+    try {
+      const text = await FileSystem.readAsStringAsync(fileUri(res.path), { encoding: 'utf8' });
+      for (const line of text.split('\n')) {
+        if (!line) continue;
+        try {
+          const o = JSON.parse(line) as MediaMeta;
+          if (o && typeof o.p === 'string' && o.p) {
+            // Keyed lowercased: FAT is case-insensitive and MediaStore may
+            // report a different case than the directory walk.
+            out.set(o.p.toLowerCase(), o);
+          }
+        } catch {
+          // A torn final line must not cost the whole metadata set.
+        }
+      }
+    } finally {
+      await FileSystem.deleteAsync(fileUri(res.path), { idempotent: true }).catch(() => {});
+    }
   } catch {
-    return null;
+    // No media database access: dates fall back to mtime, as before.
   }
+  return out;
+}
+
+/**
+ * Reads the catalog, falling back to the backup the way the engine does. A
+ * damaged primary on a drive that still has a good previous copy must not look
+ * like "this drive was never indexed".
+ */
+export async function readCatalogWithSource(root: string): Promise<CatalogRead | null> {
+  const candidates: [string, CatalogSource][] = [
+    [catalogPath(root), 'current'],
+    [backupCatalogPath(root), 'backup'],
+  ];
+  for (const [path, source] of candidates) {
+    try {
+      const b64 = await drive().readBase64(path);
+      return { catalog: parseCatalog(base64js.toByteArray(b64)), source };
+    } catch {
+      // Missing or damaged: try the next copy.
+    }
+  }
+  return null;
+}
+
+export async function readCatalog(root: string): Promise<Catalog | null> {
+  return (await readCatalogWithSource(root))?.catalog ?? null;
 }
 
 export async function catalogExists(root: string): Promise<boolean> {
@@ -217,12 +279,27 @@ export async function catalogExists(root: string): Promise<boolean> {
 
 /**
  * Writes the catalog the way the engine does: temp file, fsync, rename, and the
- * previous catalog kept as .bak. Only call this once the new snapshot is
- * complete in memory; a half-built catalog must never reach the drive.
+ * previous catalog kept as .bak. The current file is only promoted to backup
+ * when it still parses — rotating a damaged file over the last good copy would
+ * destroy the backup at exactly the moment it is needed.
  */
 export async function writeCatalog(root: string, bytes: Uint8Array): Promise<boolean> {
   await drive().mkdirs(ocdDir(root));
-  return drive().writeBase64Atomic(catalogPath(root), base64js.fromByteArray(bytes), true);
+
+  let keepBackup = false;
+  try {
+    const b64 = await drive().readBase64(catalogPath(root));
+    parseCatalog(base64js.toByteArray(b64));
+    keepBackup = true;
+  } catch {
+    // Absent (nothing to rotate) or damaged (must not rotate).
+  }
+
+  return drive().writeBase64Atomic(
+    catalogPath(root),
+    base64js.fromByteArray(bytes),
+    keepBackup,
+  );
 }
 
 /** Preview file names already on the drive, lowercased. */
@@ -248,11 +325,42 @@ export function thumbPath(
 export type ThumbTarget = { p: string; s: number; m: number; k: string };
 
 /**
+ * The native module serves one request at a time, and a full-size decode can
+ * take a while. Without a limit, a fast scroll queues hundreds of previews and
+ * every list/stat/read behind them, which makes the drive feel frozen. A few
+ * in flight keeps the grid filling without starving the rest.
+ */
+const MAX_PARALLEL_PREVIEWS = 3;
+let previewsActive = 0;
+const previewWaiters: (() => void)[] = [];
+
+async function withPreviewSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (previewsActive >= MAX_PARALLEL_PREVIEWS) {
+    await new Promise<void>((resolve) => previewWaiters.push(resolve));
+  }
+  previewsActive += 1;
+  try {
+    return await job();
+  } finally {
+    previewsActive -= 1;
+    previewWaiters.shift()?.();
+  }
+}
+
+/**
  * Builds one preview on the drive if it is missing. Videos are grabbed at a
  * quarter of the duration first: a video that opens on black is common, and a
  * black frame is worse than no tile at all.
  */
 export async function ensureThumb(
+  root: string,
+  volumeId: string,
+  entry: ThumbTarget,
+): Promise<string | null> {
+  return withPreviewSlot(() => buildThumb(root, volumeId, entry));
+}
+
+async function buildThumb(
   root: string,
   volumeId: string,
   entry: ThumbTarget,

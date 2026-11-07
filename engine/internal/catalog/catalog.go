@@ -148,8 +148,15 @@ func Write(root string, snap Snapshot) error {
 	cur := filepath.Join(dir, fileName)
 	bak := filepath.Join(dir, bakName)
 	if _, err := os.Stat(cur); err == nil {
-		_ = os.Remove(bak)
-		if err := os.Rename(cur, bak); err != nil {
+		// Rotate only a catalog that still reads. Promoting a damaged file over
+		// catalog.bak would destroy the last good copy at exactly the moment it
+		// is needed, so a bad current file is replaced without being kept.
+		if _, readErr := readFile(cur); readErr == nil {
+			_ = os.Remove(bak)
+			if err := os.Rename(cur, bak); err != nil {
+				return err
+			}
+		} else if err := os.Remove(cur); err != nil {
 			return err
 		}
 	}

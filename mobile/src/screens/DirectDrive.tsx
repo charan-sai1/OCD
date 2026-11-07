@@ -36,6 +36,8 @@ import {
   itemsFromCatalog,
   itemsFromScan,
   readCatalog,
+  readCatalogWithSource,
+  readMediaMetadata,
   removableDrives,
   scanVolume,
   syntheticCatalog,
@@ -44,7 +46,7 @@ import {
   writeCatalog,
   type DriveVolume,
 } from '../direct/native';
-import { encodeCatalog } from '../direct/catalog';
+import { buildCatalogEntries, encodeCatalog } from '../direct/catalog';
 import { thumbName } from '../direct/hash';
 
 import { ScreenHeader, TextAction } from '../layout';
@@ -107,6 +109,7 @@ export function DirectDrive() {
   } | null>(null);
   const [thumbs, setThumbs] = useState<Set<string>>(new Set());
   const [needsIndex, setNeedsIndex] = useState(false);
+  const [recovered, setRecovered] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const pendingThumbs = useRef<Set<string>>(new Set());
 
@@ -142,7 +145,11 @@ export function DirectDrive() {
       const root = v.path;
       const derivedId = await driveId(root, v);
       const names = await existingThumbs(root);
-      const catalog = await readCatalog(root);
+      const existing = await readCatalogWithSource(root);
+      const catalog = existing?.catalog ?? null;
+      // A catalog that only exists as .bak means the primary is damaged: show
+      // the previous copy rather than pretending the drive was never indexed.
+      const fromBackup = existing?.source === 'backup';
       // Prefer the identity the catalog already uses: preview names are hashed
       // from it, so a second identity would miss every preview on the drive.
       const volumeId = catalog?.header.volumeId || derivedId;
@@ -151,12 +158,13 @@ export function DirectDrive() {
       setStored(null);
       setTreeUri(null);
       setThumbs(names);
+      setRecovered(fromBackup);
 
       if (catalog && catalog.entries.length > 0) {
         setItems(itemsFromCatalog(catalog));
         setCatalog(catalog);
         setHadThumbs(names.size > 0);
-        setNeedsIndex(false);
+        setNeedsIndex(fromBackup && v.writable);
       } else {
         // Browsing an unindexed drive stays read-only until the user asks for
         // an index; the scan is only used to show what is on it.
@@ -200,6 +208,14 @@ export function DirectDrive() {
         return;
       }
 
+      // Dates and dimensions come from the platform's media database (one
+      // query, no per-file reads) and from whatever the drive already carried.
+      const [meta, previous] = await Promise.all([
+        readMediaMetadata(native.root),
+        readCatalog(native.root),
+      ]);
+      const record = buildCatalogEntries(entries, meta, previous?.entries ?? []);
+
       const bytes = encodeCatalog(
         {
           format: 'ocd-catalog',
@@ -209,7 +225,7 @@ export function DirectDrive() {
           indexVersion: 1,
           generated: new Date().toISOString(),
         },
-        entries.map((e) => ({ p: e.p, s: e.s, m: e.m, k: e.k })),
+        record,
       );
 
       if (!(await writeCatalog(native.root, bytes))) {
@@ -227,6 +243,7 @@ export function DirectDrive() {
       setCatalog(written);
       setItems(itemsFromCatalog(written));
       setNeedsIndex(false);
+      setRecovered(false);
       if (truncated) {
         setProblem('This drive holds more items than one pass can index. The first 500,000 were saved.');
       }
@@ -301,6 +318,7 @@ export function DirectDrive() {
     setStored(null);
     setNative(null);
     setNeedsIndex(false);
+    setRecovered(false);
     setThumbs(new Set());
     pendingThumbs.current.clear();
     setItems([]);
@@ -447,6 +465,23 @@ export function DirectDrive() {
     }
   }, [gridItems, originalFor, selected]);
 
+  // What the bar above the grid says. Kept out of the JSX because the damaged
+  // catalog case has its own wording.
+  const indexMessage = (() => {
+    if (!native) return '';
+    if (recovered) {
+      return native.volume.writable
+        ? 'The catalogue on this drive is damaged, so OCD opened the previous copy. Index to repair it — nothing is deleted.'
+        : 'The catalogue on this drive is damaged. OCD is showing the previous copy, and the drive is write-protected so it cannot be repaired here.';
+    }
+    if (!native.volume.writable) {
+      return 'This drive is write-protected. You can browse it, but OCD cannot add a catalogue or previews to it.';
+    }
+    return indexing
+      ? 'Indexing this drive. Keep it plugged in.'
+      : 'This drive has no catalogue yet. Index it here to open instantly next time and to build previews on the drive.';
+  })();
+
   return (
     <View style={styles.root}>
       <ScreenHeader style={styles.header}>
@@ -570,15 +605,9 @@ export function DirectDrive() {
 
       {problem ? <ErrorBanner message={problem} onRetry={refresh} /> : null}
 
-      {native && needsIndex ? (
+      {native && (needsIndex || recovered) ? (
         <View style={styles.indexBar}>
-          <Text style={styles.indexText}>
-            {!native.volume.writable
-              ? 'This drive is write-protected. You can browse it, but OCD cannot add a catalogue or previews to it.'
-              : indexing
-                ? 'Indexing this drive. Keep it plugged in.'
-                : 'This drive has no catalogue yet. Index it here to open instantly next time and to build previews on the drive.'}
-          </Text>
+          <Text style={styles.indexText}>{indexMessage}</Text>
           {native.volume.writable ? (
             indexing ? (
               <ActivityIndicator color={colors.muted} size="small" />
