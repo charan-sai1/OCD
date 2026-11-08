@@ -29,7 +29,6 @@ import {
   buildCatalogEntries,
   encodeCatalog,
   mergeCatalogEntries,
-  type CatalogEntry,
   type CatalogWriteEntry,
 } from './catalog';
 
@@ -819,12 +818,7 @@ export async function applyTidy(
 
   keepScreenOn(true);
   try {
-    const previous = await readCatalog(ctx.root);
-    const prevByPath = new Map<string, CatalogEntry>();
-    for (const e of previous?.entries ?? []) prevByPath.set(e.p, e);
-
     await mkdirs(duplicatesDir(ctx.root));
-    const adds: CatalogWriteEntry[] = [];
     const removes: string[] = [];
     const audit: string[] = [];
 
@@ -846,26 +840,12 @@ export async function applyTidy(
         result.errors.push(`${m.from}: could not be moved.`);
         continue;
       }
-      const check = await statFile(to);
-      if (!check.exists) {
-        result.failed += 1;
-        result.errors.push(`${m.from}: the move could not be confirmed.`);
-        continue;
-      }
 
       result.moved += 1;
       result.bytes += m.size;
-      const old = prevByPath.get(m.from);
-      adds.push({
-        p: m.to,
-        s: m.size,
-        m: old?.m ?? m.mtime,
-        k: old?.k ?? m.kind,
-        w: old?.w,
-        h: old?.h,
-        d: old?.d,
-        t: old?.t,
-      });
+      // The archive folder is not part of the gallery, so the moved file is
+      // dropped from the catalog instead of being re-added at its new path.
+      // Its audit row keeps the from/to pair for a later restore.
       removes.push(m.from);
       audit.push(
         auditLine({
@@ -895,7 +875,7 @@ export async function applyTidy(
         total: plan.moves.length,
         name: 'Updating the catalog…',
       });
-      const committed = await commitCatalog(ctx, plan.scan, adds, removes);
+      const committed = await commitCatalog(ctx, plan.scan, [], removes);
       result.catalogWritten = committed.ok;
       result.catalogCount = committed.count;
       if (!committed.ok && committed.error) result.errors.push(committed.error);

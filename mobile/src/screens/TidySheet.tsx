@@ -197,7 +197,15 @@ export function TidySheet({
         ) : null}
 
         {phase === 'preview' && plan ? (
-          plan.moves.length === 0 ? (
+          plan.cancelled ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Scan stopped</Text>
+              <Text style={styles.cardText}>
+                No files were moved. Run the scan again when you are ready; already
+                measured groups are discarded rather than shown as a clean result.
+              </Text>
+            </View>
+          ) : plan.moves.length === 0 ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>No duplicates found</Text>
               <Text style={styles.cardText}>
@@ -215,8 +223,9 @@ export function TidySheet({
                 <Text style={styles.cardText}>
                   {plan.groups.toLocaleString()} duplicate{' '}
                   {plan.groups === 1 ? 'group' : 'groups'} across{' '}
-                  {plan.scanned.toLocaleString()} files. Moving them frees{' '}
-                  {bytes(plan.reclaimable)} on the drive.
+                  {plan.scanned.toLocaleString()} files. Moving them takes{' '}
+                  {bytes(plan.reclaimable)} out of the gallery; they stay in
+                  _OCD Duplicates on the same drive.
                 </Text>
                 <Text style={styles.cardNote}>
                   The oldest, shallowest copy in each group stays in the gallery. Every
@@ -251,7 +260,7 @@ export function TidySheet({
             </Text>
             <Row label="Moved" value={result.moved.toLocaleString()} />
             <Row label="Failed" value={result.failed.toLocaleString()} />
-            <Row label="Space reclaimed from the gallery" value={bytes(result.bytes)} />
+            <Row label="Moved out of the gallery" value={bytes(result.bytes)} />
             <Row
               label="Catalog"
               value={

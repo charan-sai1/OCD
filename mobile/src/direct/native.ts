@@ -590,7 +590,12 @@ export async function removeFile(path: string): Promise<boolean> {
 
 /** Turns a decoded catalog into the grid's items. */
 export function itemsFromCatalog(catalog: Catalog): DirectItem[] {
-  return catalog.entries.map(catalogEntryToItem);
+  // The Tidy archive lives on the drive but is not part of the library. A
+  // catalog written by an older build might still mention it, so filter here as
+  // well as in every scanner.
+  return catalog.entries
+    .filter((e) => e.p.split('/')[0].toLowerCase() !== '_ocd duplicates')
+    .map(catalogEntryToItem);
 }
 
 /** Turns a native scan into the same items a catalog would have produced. */
