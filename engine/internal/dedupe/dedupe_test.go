@@ -216,3 +216,15 @@ func TestQuarantineDryRunMatchesReal(t *testing.T) {
 		t.Fatalf("dry destination %q != real destination %q", dry.Moved[0].To, real.Moved[0].To)
 	}
 }
+
+// The phone's Tidy action writes this folder; scanning it again would find the
+// same duplicates and plan moves inside themselves.
+func TestDefaultExclusionsSkipTidyFolder(t *testing.T) {
+	opts := Options{}
+	if !opts.excludedDir("_OCD Duplicates") {
+		t.Fatal("_OCD Duplicates must be excluded")
+	}
+	if opts.excludedDir("Phone") {
+		t.Fatal("a normal media folder must not be excluded")
+	}
+}

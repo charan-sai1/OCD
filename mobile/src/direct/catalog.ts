@@ -161,6 +161,40 @@ export function buildCatalogEntries(
 }
 
 /**
+ * mergeCatalogEntries applies an organise run to the catalog already on the
+ * drive instead of rebuilding it. Existing entries keep their dates, sizes and
+ * dimensions; only the paths an action touched change. Order is preserved so a
+ * re-written catalog stays stable for the PC.
+ */
+export function mergeCatalogEntries(
+  previous: readonly (CatalogEntry | CatalogWriteEntry)[],
+  adds: CatalogWriteEntry[],
+  removes: Iterable<string> = [],
+): CatalogWriteEntry[] {
+  const drop = new Set(removes);
+  const byPath = new Map<string, CatalogWriteEntry>();
+  const order: string[] = [];
+
+  for (const e of previous) {
+    if (drop.has(e.p)) continue;
+    // A written entry (already short keys) and a catalog entry (long keys) are
+    // both accepted so a merge can start from either side of a re-index.
+    const entry: CatalogWriteEntry =
+      'size' in e
+        ? { p: e.p, s: e.size, m: e.m, k: e.k, w: e.w, h: e.h, d: e.d, t: e.t }
+        : { p: e.p, s: e.s, m: e.m, k: e.k, w: e.w, h: e.h, d: e.d, t: e.t };
+    byPath.set(entry.p, entry);
+    order.push(entry.p);
+  }
+  for (const a of adds) {
+    if (drop.has(a.p)) continue;
+    if (!byPath.has(a.p)) order.push(a.p);
+    byPath.set(a.p, a);
+  }
+  return order.map((p) => byPath.get(p)!);
+}
+
+/**
  * encodeCatalog produces the same bytes the Go writer produces: one gzipped
  * JSON object per line, header first, with the engine's long field names. The
  * phone never invents a schema — it writes what the engine already reads.

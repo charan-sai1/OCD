@@ -34,6 +34,15 @@ export type FileStat = {
   isDir: boolean;
 };
 
+export type CopyResult = {
+  ok: boolean;
+  size: number;
+  /** Lowercase hex SHA-256 of the bytes that landed on the drive. */
+  sha256: string;
+  /** Empty on success; a readable reason otherwise. */
+  error: string;
+};
+
 type OcdDriveNative = {
   hasAllFilesAccess(): boolean;
   requestAllFilesAccess(): boolean;
@@ -44,13 +53,24 @@ type OcdDriveNative = {
   mediaMetadata(root: string): Promise<MediaMetaResult>;
   listNames(path: string): Promise<string[]>;
   stat(path: string): Promise<FileStat>;
+  statSizes(paths: string[]): Promise<number[]>;
   readBase64(path: string): Promise<string>;
   writeBase64Atomic(path: string, data: string, keepBackup: boolean): Promise<boolean>;
   writeText(path: string, text: string): Promise<boolean>;
+  appendText(path: string, text: string): Promise<boolean>;
   mkdirs(path: string): Promise<boolean>;
   remove(path: string): Promise<boolean>;
   rename(from: string, to: string): Promise<boolean>;
   freeBytes(path: string): Promise<number>;
+  copyAndHash(
+    src: string,
+    dst: string,
+    mtimeSeconds: number,
+    verify: boolean,
+  ): Promise<CopyResult>;
+  hashFile(path: string): Promise<string>;
+  setMtime(path: string, seconds: number): Promise<boolean>;
+  keepScreenOn(on: boolean): boolean;
   imageThumb(src: string, dst: string, maxSize: number, quality: number): Promise<boolean>;
   videoDuration(src: string): Promise<number>;
   videoThumb(

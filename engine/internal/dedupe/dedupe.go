@@ -62,6 +62,8 @@ type Result struct {
 var defaultExclude = []string{
 	"$RECYCLE.BIN", "System Volume Information", ".Spotlight-V100", ".Trashes",
 	".fseventsd", "@eaDir", "#recycle", ".git", "node_modules",
+	// Written by the phone's Tidy action; never a source of duplicates itself.
+	"_OCD Duplicates",
 }
 
 func (o Options) excludedDir(name string) bool {

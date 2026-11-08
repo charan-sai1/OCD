@@ -184,7 +184,7 @@ func phoneSkipFolder(name string) bool {
 		return true
 	}
 	switch name {
-	case "$RECYCLE.BIN", "System Volume Information", "@eaDir", "#recycle":
+	case "$RECYCLE.BIN", "System Volume Information", "@eaDir", "#recycle", "_OCD Duplicates":
 		return true
 	}
 	return false

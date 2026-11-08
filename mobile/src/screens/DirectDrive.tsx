@@ -50,10 +50,13 @@ import {
 } from '../direct/native';
 import { buildCatalogEntries, encodeCatalog } from '../direct/catalog';
 import { thumbName } from '../direct/hash';
+import type { DriveContext } from '../direct/backup';
 
 import { ScreenHeader, TextAction } from '../layout';
 import { colors, radius, space } from '../theme';
 import { ErrorBanner, Wordmark } from '../ui';
+import { BackupSheet } from './BackupSheet';
+import { TidySheet } from './TidySheet';
 import { Viewer } from './Viewer';
 import { Tile } from './GalleryTile';
 import type { GridItem } from '../api';
@@ -108,6 +111,7 @@ export function DirectDrive() {
   const [viewer, setViewer] = useState<number | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sheet, setSheet] = useState<'backup' | 'tidy' | null>(null);
 
   const busy = useRef(false);
 
@@ -233,6 +237,36 @@ export function DirectDrive() {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * Re-reads the catalog after Backup or Tidy changed the drive. The action
+   * already wrote and verified the catalog; this only mirrors it into the
+   * screen so the grid shows the new state without a rescan.
+   */
+  const reloadCatalog = useCallback(async () => {
+    if (!native) return;
+    try {
+      const read = await readCatalogWithSource(native.root);
+      if (!read) return;
+      const names = await existingThumbs(native.root);
+      setThumbs(names);
+      setCatalog(read.catalog);
+      setItems(itemsFromCatalog(read.catalog));
+      setRecovered(read.source === 'backup');
+      setNeedsIndex(read.source === 'backup' && native.volume.writable);
+      setHadThumbs(names.size > 0);
+    } catch {
+      // The drive may have been unplugged; leave the current view as it is.
+    }
+  }, [native]);
+
+  const driveContext = useMemo<DriveContext | null>(
+    () =>
+      native
+        ? { root: native.root, volumeId: native.volumeId, label: native.label }
+        : null,
+    [native],
+  );
 
   /**
    * Writes a catalog for this drive. This is the only place the phone writes
@@ -757,6 +791,20 @@ export function DirectDrive() {
           </View>
         ) : (
           <View style={styles.topActions}>
+            {native?.volume.writable ? (
+              <>
+                <TextAction
+                  label="Back up phone"
+                  onPress={() => setSheet('backup')}
+                  accessibilityHint="Copy photos and videos from this phone onto the drive"
+                />
+                <TextAction
+                  label="Tidy duplicates"
+                  onPress={() => setSheet('tidy')}
+                  accessibilityHint="Find duplicate files on the drive and move the extras to one folder"
+                />
+              </>
+            ) : null}
             <TextAction
               label="Select"
               onPress={() => {
@@ -843,6 +891,26 @@ export function DirectDrive() {
             );
           }}
           originalUriFor={originalFor}
+        />
+      ) : null}
+
+      {/* Each sheet mounts fresh when opened, so its last run never shows up
+          again. That also keeps the reset out of an effect. */}
+      {sheet === 'backup' ? (
+        <BackupSheet
+          visible
+          ctx={driveContext}
+          onClose={() => setSheet(null)}
+          onDone={reloadCatalog}
+        />
+      ) : null}
+
+      {sheet === 'tidy' ? (
+        <TidySheet
+          visible
+          ctx={driveContext}
+          onClose={() => setSheet(null)}
+          onDone={reloadCatalog}
         />
       ) : null}
     </View>
@@ -975,6 +1043,7 @@ const styles = StyleSheet.create({
   topActions: {
     padding: space(2),
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
     gap: space(2),
   },

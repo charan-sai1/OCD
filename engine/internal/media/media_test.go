@@ -994,3 +994,15 @@ func TestIndexNeighboursRespectFilters(t *testing.T) {
 		t.Errorf("got prev=%s next=%s", prev, next)
 	}
 }
+
+// The phone's Tidy action parks redundant copies in this folder. It must stay
+// out of the index and out of a second duplicate scan, or the gallery would
+// show a duplicate of every duplicate.
+func TestSkipDirHidesOrganiseFolder(t *testing.T) {
+	if !skipDir("_OCD Duplicates") {
+		t.Fatal("_OCD Duplicates must be skipped")
+	}
+	if skipDir("Phone") {
+		t.Fatal("a normal media folder must not be skipped")
+	}
+}

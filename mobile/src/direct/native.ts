@@ -2,14 +2,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import base64js from 'base64-js';
 import { strToU8 } from 'fflate';
 import { PermissionsAndroid, Platform } from 'react-native';
-import { drive, isDriveModuleAvailable, type DriveVolume } from 'ocd-drive';
+import { drive, isDriveModuleAvailable, type CopyResult, type DriveVolume } from 'ocd-drive';
 
 import { parseCatalog, type Catalog, type MediaMeta } from './catalog';
 import { catalogEntryToItem, itemFromRel, type DirectItem } from './drive';
 import { thumbName } from './hash';
 
 export { isDriveModuleAvailable };
-export type { DriveVolume };
+export type { CopyResult, DriveVolume };
 
 /** Before Android 11 the drive is reachable with ordinary storage permission. */
 const LEGACY_STORAGE =
@@ -148,6 +148,36 @@ export function backupCatalogPath(root: string): string {
 
 export function thumbDir(root: string): string {
   return ocdDir(root) + '/thumbs';
+}
+
+/** Files copied from the phone are staged here before their final rename. */
+export function incomingDir(root: string): string {
+  return root.replace(/\/+$/, '') + '/.ocd-incoming';
+}
+
+/** Where the phone moves redundant drive files. Never part of the gallery. */
+export function duplicatesDir(root: string): string {
+  return root.replace(/\/+$/, '') + '/_OCD Duplicates';
+}
+
+/** Append-only record of every organise action the phone performed. */
+export function auditPath(root: string): string {
+  return ocdDir(root) + '/audit.jsonl';
+}
+
+/** Joins a volume-relative path onto the mount point, with slashes. */
+export function absolutePath(root: string, rel: string): string {
+  return root.replace(/\/+$/, '') + '/' + rel.replace(/^\/+/, '');
+}
+
+/** Turns `file:///storage/...` into the real path a native call expects. */
+export function localPath(uri: string): string {
+  if (!uri.startsWith('file://')) return uri;
+  try {
+    return decodeURIComponent(uri.slice(7));
+  } catch {
+    return uri.slice(7);
+  }
 }
 
 /**
@@ -452,6 +482,109 @@ export async function freeBytes(root: string): Promise<number> {
     return await drive().freeBytes(root);
   } catch {
     return 0;
+  }
+}
+
+export async function statFile(path: string): Promise<{ exists: boolean; size: number; mtime: number; isDir: boolean }> {
+  try {
+    return await drive().stat(path);
+  } catch {
+    return { exists: false, size: 0, mtime: 0, isDir: false };
+  }
+}
+
+/**
+ * Sizes for a batch of paths, in the same order. Missing files come back as -1.
+ * The camera-roll listing uses this instead of one bridge call per asset.
+ */
+export async function statSizes(paths: string[]): Promise<number[]> {
+  if (!paths.length) return [];
+  try {
+    return await drive().statSizes(paths);
+  } catch {
+    return paths.map(() => -1);
+  }
+}
+
+/**
+ * Copies a phone asset onto the drive and verifies it by hashing the bytes on
+ * both sides. The caller is responsible for choosing a destination that does
+ * not exist: this never overwrites a file.
+ */
+export async function copyAndHash(
+  src: string,
+  dst: string,
+  mtimeSeconds: number,
+  verify = true,
+): Promise<CopyResult> {
+  try {
+    return await drive().copyAndHash(src, dst, mtimeSeconds, verify);
+  } catch (e) {
+    return {
+      ok: false,
+      size: 0,
+      sha256: '',
+      error: e instanceof Error ? e.message : 'copy failed',
+    };
+  }
+}
+
+export async function hashFile(path: string): Promise<string> {
+  try {
+    return await drive().hashFile(path);
+  } catch {
+    return '';
+  }
+}
+
+export async function setMtime(path: string, seconds: number): Promise<boolean> {
+  try {
+    return await drive().setMtime(path, seconds);
+  } catch {
+    return false;
+  }
+}
+
+export async function appendText(path: string, text: string): Promise<boolean> {
+  try {
+    return await drive().appendText(path, text);
+  } catch {
+    return false;
+  }
+}
+
+/** Keeps the screen awake while a long copy runs, then releases it. */
+export function keepScreenOn(on: boolean): void {
+  if (!isDriveModuleAvailable) return;
+  try {
+    drive().keepScreenOn(on);
+  } catch {
+    // The flag is a nicety; losing it must not fail a backup.
+  }
+}
+
+export async function mkdirs(path: string): Promise<boolean> {
+  try {
+    return await drive().mkdirs(path);
+  } catch {
+    return false;
+  }
+}
+
+export async function renameFile(from: string, to: string): Promise<boolean> {
+  try {
+    return await drive().rename(from, to);
+  } catch {
+    return false;
+  }
+}
+
+/** Removes a scratch file the app itself created. Never used on originals. */
+export async function removeFile(path: string): Promise<boolean> {
+  try {
+    return await drive().remove(path);
+  } catch {
+    return false;
   }
 }
 

@@ -18,11 +18,15 @@ import android.os.storage.StorageVolume
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
+import android.view.WindowManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.security.MessageDigest
 import kotlin.math.max
 
 /**
@@ -307,13 +311,98 @@ class OcdDriveModule : Module() {
     AsyncFunction("rename") { from: String, to: String ->
       val src = File(from)
       val dst = File(to)
-      dst.parentFile?.mkdirs()
-      src.renameTo(dst)
+      // A non-destructive move must never replace an existing file. The caller
+      // resolves name clashes before asking, so refusing here is a safety net.
+      if (dst.exists()) {
+        false
+      } else {
+        dst.parentFile?.mkdirs()
+        src.renameTo(dst)
+      }
     }
 
     AsyncFunction("freeBytes") { path: String ->
       val f = File(path)
       if (f.exists()) f.usableSpace else 0L
+    }
+
+    // Batch stat: the backup engine needs sizes for a whole camera-roll page,
+    // and one bridge call per asset is far too slow for a large library.
+    // Missing files come back as -1 so the caller can tell them apart from 0.
+    AsyncFunction("statSizes") { paths: List<String> ->
+      paths.map { p ->
+        when {
+          p.startsWith("content://") -> try {
+            ctx.contentResolver.openAssetFileDescriptor(Uri.parse(p), "r")?.use { fd ->
+              fd.length.toDouble()
+            } ?: -1.0
+          } catch (e: Exception) {
+            -1.0
+          }
+          else -> if (File(p).isFile) File(p).length().toDouble() else -1.0
+        }
+      }
+    }
+
+    /**
+     * Streams a phone asset into the drive while hashing it, then verifies the
+     * copy by reading it back. The source can be a content:// URI (SAF/photos)
+     * or a file path; the destination is always a real filesystem path on the
+     * drive. Nothing existing is overwritten.
+     *
+     * Returns a map rather than throwing: a single unreadable asset must not
+     * abort a 5,000-file backup, and the caller reports it per file.
+     */
+    AsyncFunction("copyAndHash") { src: String, dst: String, mtimeSeconds: Double, verify: Boolean ->
+      copyAndHashFile(src, dst, mtimeSeconds.toLong(), verify)
+    }
+
+    AsyncFunction("hashFile") { path: String ->
+      try {
+        hashHex(File(path))
+      } catch (e: Exception) {
+        ""
+      }
+    }
+
+    AsyncFunction("setMtime") { path: String, seconds: Double ->
+      try {
+        File(path).setLastModified((seconds * 1000.0).toLong())
+      } catch (e: Exception) {
+        false
+      }
+    }
+
+    AsyncFunction("appendText") { path: String, text: String ->
+      val f = File(path)
+      f.parentFile?.mkdirs()
+      try {
+        FileOutputStream(f, true).use { out ->
+          out.write(text.toByteArray(Charsets.UTF_8))
+          out.flush()
+          out.fd.sync()
+        }
+        true
+      } catch (e: Exception) {
+        false
+      }
+    }
+
+    // A backup can run for many minutes. The screen staying on is the only
+    // thing keeping Android from throttling the app in the foreground build.
+    Function("keepScreenOn") { on: Boolean ->
+      runCatching {
+        appContext.currentActivity?.let { activity ->
+          activity.runOnUiThread {
+            if (on) {
+              activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+              activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+          }
+        }
+      }
+      true
     }
 
     // Image previews. ImageDecoder (Android 9+) applies the EXIF orientation
@@ -363,6 +452,121 @@ class OcdDriveModule : Module() {
         runCatching { r.release() }
       }
     }
+  }
+
+  private fun openSource(src: String): InputStream {
+    return when {
+      src.startsWith("content://") ->
+        ctx.contentResolver.openInputStream(Uri.parse(src))
+          ?: throw IllegalStateException("cannot open $src")
+      src.startsWith("file://") -> {
+        val path = Uri.parse(src).path ?: throw IllegalStateException("bad file URI")
+        FileInputStream(File(path))
+      }
+      else -> FileInputStream(File(src))
+    }
+  }
+
+  /**
+   * Copies src to dst through a temp file on the same volume so a yanked cable
+   * cannot leave a half-written file among the real photos. The SHA-256 is
+   * computed while streaming, then the finished file is hashed again.
+   */
+  private fun copyAndHashFile(
+    src: String,
+    dstPath: String,
+    mtimeSeconds: Long,
+    verify: Boolean
+  ): Map<String, Any> {
+    val dst = File(dstPath)
+    if (dst.exists()) {
+      return mapOf("ok" to false, "error" to "exists", "size" to dst.length(), "sha256" to "")
+    }
+    val dir = dst.parentFile
+      ?: return mapOf("ok" to false, "error" to "no parent folder", "size" to 0L, "sha256" to "")
+    if (!dir.exists() && !dir.mkdirs()) {
+      return mapOf("ok" to false, "error" to "cannot create the destination folder", "size" to 0L, "sha256" to "")
+    }
+
+    val tmp = File(dir, dst.name + ".ocdpart")
+    tmp.delete()
+    val digest = MessageDigest.getInstance("SHA-256")
+    var size = 0L
+    try {
+      openSource(src).use { input ->
+        FileOutputStream(tmp).use { out ->
+          val buf = ByteArray(256 * 1024)
+          while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            digest.update(buf, 0, n)
+            size += n
+          }
+          out.flush()
+          out.fd.sync()
+        }
+      }
+    } catch (e: Exception) {
+      tmp.delete()
+      return mapOf(
+        "ok" to false,
+        "error" to (e.message ?: "copy failed"),
+        "size" to 0L,
+        "sha256" to ""
+      )
+    }
+
+    if (!tmp.renameTo(dst)) {
+      tmp.delete()
+      return mapOf("ok" to false, "error" to "could not finish the copy", "size" to size, "sha256" to "")
+    }
+    if (mtimeSeconds > 0L) {
+      dst.setLastModified(mtimeSeconds * 1000L)
+    }
+
+    val hex = hexOf(digest.digest())
+    if (verify) {
+      val check = try {
+        hashHex(dst)
+      } catch (e: Exception) {
+        ""
+      }
+      if (dst.length() != size || check != hex) {
+        // The source is still on the phone, so a copy that failed its own
+        // read-back is the only file that may be removed here.
+        dst.delete()
+        return mapOf(
+          "ok" to false,
+          "error" to "the copy did not match the original",
+          "size" to size,
+          "sha256" to hex
+        )
+      }
+    }
+    return mapOf("ok" to true, "error" to "", "size" to size, "sha256" to hex)
+  }
+
+  private fun hashHex(f: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    FileInputStream(f).use { input ->
+      val buf = ByteArray(256 * 1024)
+      while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        digest.update(buf, 0, n)
+      }
+    }
+    return hexOf(digest.digest())
+  }
+
+  private fun hexOf(bytes: ByteArray): String {
+    val sb = StringBuilder(bytes.size * 2)
+    for (b in bytes) {
+      val v = b.toInt() and 0xff
+      sb.append(HEX_CHARS[v ushr 4]).append(HEX_CHARS[v and 0x0f])
+    }
+    return sb.toString()
   }
 
   private fun volumePath(v: StorageVolume): String? {
@@ -570,10 +774,12 @@ class OcdDriveModule : Module() {
     )
     private val SKIP_DIRS = setOf(
       "\$RECYCLE.BIN", "System Volume Information", ".Spotlight-V100",
-      ".Trashes", ".fseventsd", "@eaDir", "#recycle", "node_modules", ".git"
+      ".Trashes", ".fseventsd", "@eaDir", "#recycle", "node_modules", ".git",
+      "_OCD Duplicates"
     )
     private val JUNK_FILES = setOf(
       "thumbs.db", "ehthumbs.db", "desktop.ini", ".ds_store", "icon\r"
     )
+    private const val HEX_CHARS = "0123456789abcdef"
   }
 }

@@ -145,6 +145,9 @@ var skipNames = map[string]bool{
 	"$RECYCLE.BIN": true, "System Volume Information": true, ".Spotlight-V100": true,
 	".Trashes": true, ".fseventsd": true, "@eaDir": true, "#recycle": true,
 	"node_modules": true, ".git": true,
+	// The phone's Tidy action moves redundant copies here. It must never be
+	// indexed, or the gallery would show the duplicates again.
+	"_OCD Duplicates": true,
 }
 
 func skipDir(name string) bool {

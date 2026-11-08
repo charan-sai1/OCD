@@ -6,12 +6,13 @@ deleted without verification.
 
 **Download and overview:** <https://charan-sai1.github.io/OCD/>
 
-It does three jobs:
+It does four jobs:
 
 | Job | What it does |
 |-----|--------------|
 | **Browse** | Fast gallery over your drives (via the bundled [Photofield](https://github.com/SmilyOrg/photofield) engine — read-only). Open it from the PC, an Android phone, or an iPhone on the same Wi-Fi. |
 | **Import** | Copies new media off a phone into dated folders, hashes every byte, verifies the copy, and only *then* wipes the verified originals from the phone. |
+| **Back up** | Copies this phone's camera roll straight onto a plugged-in drive, in dated folders, with conditions and a duplicate policy. No computer in the middle. |
 | **Duplicates** | Finds duplicate files by **content** (not filename) and moves redundant copies to a quarantine folder — never a hard delete. |
 
 ---
@@ -247,6 +248,8 @@ previews and no dates.
 | Real file sizes and dates | no | yes |
 | Write a catalog to a drive | no | yes |
 | Build a missing preview on the drive | no | yes |
+| Back up the camera roll onto the drive | no | yes |
+| Move content duplicates into one folder | no | yes |
 
 Build and install it (EAS builds in the cloud, no Android SDK needed):
 
@@ -276,6 +279,7 @@ Only inside `<drive>/.ocd/`, and only when you ask it to:
 | `catalog.gz` | Same format the engine writes. Swapped in atomically; the previous copy is kept as `catalog.bak`. |
 | `thumbs/<hash>.jpg` | A 400px preview, built for the files you actually open. |
 | `volume.json` | Only when the drive exposes no serial. The PC adopts it, so both sides keep one identity. |
+| `audit.jsonl` | Append-only record of every file a backup copied or a tidy moved. |
 
 Preview names are hashed from the drive's serial, the path, the size and the
 mtime, which is why the phone needs real file metadata. A phone-indexed drive
@@ -297,6 +301,62 @@ phone does not degrade a richer catalog.
 If `catalog.gz` is ever damaged, the app opens `catalog.bak` instead of
 pretending the drive was never indexed, and offers to re-index when the drive is
 writable. The damaged file is never copied over the good backup.
+
+### Back up the camera roll from the phone
+
+Connect the drive straight to the phone, open **USB Drive**, pick the volume, and
+press **Back up phone**. No computer, server, or Wi-Fi is involved.
+
+Choose what to copy:
+
+| Condition | Options |
+|-----------|---------|
+| Media | Photos and videos, photos only, or videos only |
+| Taken | All time, last 7/30/90 days, or this year |
+| Source | Any album on the phone, or the whole camera roll |
+| Screenshots | Skip them (default) or include them |
+| Folder layout | `Phone/YYYY/MM` (default), `YYYY/MM`, or one flat folder |
+| If a file is already there | Skip it, keep both, or move the old copy aside |
+
+The duplicate policy is the important one. The app matches an existing drive file
+by **size and file name**:
+
+- **Skip it** (default) — the drive copy stays, nothing is written.
+- **Keep both** — the new copy is written as `name (1).jpg`, so both remain.
+- **Move old copy** — the existing drive file is moved to
+  `_OCD Duplicates/<its original path>`, then the phone copy is written into the
+  dated folder. Nothing is deleted.
+
+Every copy is staged in `.ocd-incoming/`, hashed with SHA-256 while it streams,
+flushed, renamed into place, then read back and hashed again. A copy that does
+not match is removed; the phone original is never touched. The file's capture
+date becomes its modification time, so the drive keeps the date the phone shows
+even on a filesystem that does not preserve it otherwise.
+
+The run checks free space before every file and stops cleanly when the drive
+fills. It keeps the screen awake while it works, updates the catalog at the end
+(merging the new files into the catalog already on the drive), and writes one
+audit row per copied file. If the run is stopped, the files already copied stay
+and the catalog still records them. Running it again simply skips what is
+already there.
+
+This is a foreground-only feature in this build: keep the app open and the drive
+plugged in. The phone originals are never deleted automatically.
+
+### Tidy duplicates on the phone
+
+**Tidy duplicates** finds files whose **bytes** are identical, not merely their
+names. It groups the drive's media by size first, so only the groups that could
+contain a copy are hashed at all. For each match it keeps the oldest copy, then
+the shallowest and shortest path, and moves every other copy to
+`_OCD Duplicates/<original path>`.
+
+The moves are same-volume renames, so nothing is copied and nothing is deleted.
+The preview lists exactly which files will move before you confirm. Each move is
+audited, the catalog is updated so the gallery shows one clean library, and the
+`_OCD Duplicates` folder is excluded from every scan on both the phone and the
+PC. You can restore a file by moving it back, or delete the folder from a
+computer when you are sure.
 
 ## Optional helper tools
 
