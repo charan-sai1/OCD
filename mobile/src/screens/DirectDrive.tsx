@@ -263,7 +263,12 @@ export function DirectDrive() {
   const driveContext = useMemo<DriveContext | null>(
     () =>
       native
-        ? { root: native.root, volumeId: native.volumeId, label: native.label }
+        ? {
+            root: native.root,
+            volumeId: native.volumeId,
+            label: native.label,
+            writable: native.volume.writable,
+          }
         : null,
     [native],
   );
@@ -284,14 +289,32 @@ export function DirectDrive() {
     setIndexing(true);
     try {
       const space = await freeBytes(native.root);
-      if (space < 8 * 1024 * 1024) {
+      // Unknown space is not a reason to refuse: the atomic write still fails
+      // safely if the drive really is full.
+      if (space !== null && space < 8 * 1024 * 1024) {
         setProblem('The drive is too full to write a catalog safely. Free some space and try again.');
         return;
       }
 
-      const { entries, truncated } = await scanVolume(native.root);
+      const { entries, truncated, unreadable } = await scanVolume(native.root);
       if (entries.length === 0) {
         setProblem('No photos or videos were found on this drive.');
+        return;
+      }
+      if (truncated || unreadable.length > 0) {
+        // Rebuilding from a partial walk would drop every entry the walk never
+        // reached. Leave the existing catalog exactly as it is.
+        setProblem(
+          truncated
+            ? 'This drive holds more items than one pass can index. The catalog was left unchanged.'
+            : `Some folders could not be read${
+                unreadable.length
+                  ? ` (${unreadable.slice(0, 3).join(', ')}${
+                      unreadable.length > 3 ? ', …' : ''
+                    })`
+                  : ''
+              }. The catalog was left unchanged.`,
+        );
         return;
       }
 
@@ -337,9 +360,6 @@ export function DirectDrive() {
       setItems(itemsFromCatalog(written.catalog));
       setNeedsIndex(false);
       setRecovered(false);
-      if (truncated) {
-        setProblem('This drive holds more items than one pass can index. The first 500,000 were saved.');
-      }
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not index this drive.');
     } finally {

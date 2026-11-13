@@ -187,7 +187,11 @@ export function mergeCatalogEntries(
     order.push(entry.p);
   }
   for (const a of adds) {
-    if (drop.has(a.p)) continue;
+    // Removals only describe entries that were already in the catalog. An
+    // addition may legitimately reuse a removed path: quarantine moves the old
+    // drive copy aside, then the phone copy lands at that exact path. Dropping
+    // the addition here would leave the new file out of the catalog until the
+    // next full index.
     if (!byPath.has(a.p)) order.push(a.p);
     byPath.set(a.p, a);
   }

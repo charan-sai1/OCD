@@ -448,12 +448,30 @@ export function BackupSheet({
                   : 'Backup finished'}
             </Text>
             <SummaryRow label="Copied" value={summary.copied.toLocaleString()} />
-            <SummaryRow label="Already on the drive" value={summary.skipped.toLocaleString()} />
+            <SummaryRow
+              label="Already on the drive"
+              value={summary.duplicates.toLocaleString()}
+            />
+            {summary.screenshots > 0 ? (
+              <SummaryRow
+                label="Screenshots skipped"
+                value={summary.screenshots.toLocaleString()}
+              />
+            ) : null}
+            {summary.tooSmall > 0 ? (
+              <SummaryRow label="Too small" value={summary.tooSmall.toLocaleString()} />
+            ) : null}
             <SummaryRow
               label={`Moved to ${summary.quarantineFolder}`}
               value={summary.quarantined.toLocaleString()}
             />
             <SummaryRow label="Failed" value={summary.failed.toLocaleString()} />
+            {summary.mtimeFailed > 0 ? (
+              <SummaryRow
+                label="File dates not set"
+                value={summary.mtimeFailed.toLocaleString()}
+              />
+            ) : null}
             <SummaryRow label="Bytes copied" value={bytes(summary.bytes)} />
             <SummaryRow
               label="Catalog"
@@ -482,6 +500,12 @@ export function BackupSheet({
               Nothing was deleted from this phone. Open the drive again to see the whole
               library in one grid.
             </Text>
+            {summary.scanIncomplete ? (
+              <Text style={styles.summaryNote}>
+                The drive scan was incomplete, so existing copies beyond that point were
+                not checked. The catalog kept the entries it already had.
+              </Text>
+            ) : null}
           </View>
         ) : null}
 

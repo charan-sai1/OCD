@@ -18,6 +18,8 @@ export type ScanResult = {
   path: string;
   count: number;
   truncated: boolean;
+  /** Volume-relative folders the walk could not read. */
+  unreadable: string[];
 };
 
 export type MediaMetaResult = {

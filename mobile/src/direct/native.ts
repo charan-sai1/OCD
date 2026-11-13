@@ -255,6 +255,14 @@ export async function driveId(root: string, v: DriveVolume): Promise<string> {
 
 export type ScanEntry = { p: string; s: number; m: number; k: string };
 
+export type ScanResult = {
+  entries: ScanEntry[];
+  /** The item cap was reached before the walk finished. */
+  truncated: boolean;
+  /** Folders the walk could not read, as volume-relative paths. */
+  unreadable: string[];
+};
+
 /**
  * Walks the drive natively and returns real sizes and mtimes. The native side
  * writes the entries to a cache file so tens of thousands of them never have
@@ -263,7 +271,7 @@ export type ScanEntry = { p: string; s: number; m: number; k: string };
 export async function scanVolume(
   root: string,
   maxEntries = 500000,
-): Promise<{ entries: ScanEntry[]; truncated: boolean }> {
+): Promise<ScanResult> {
   const res = await drive().scan(root, maxEntries);
   try {
     const text = await FileSystem.readAsStringAsync(fileUri(res.path), { encoding: 'utf8' });
@@ -284,7 +292,11 @@ export async function scanVolume(
         // A torn final line must not cost the whole scan.
       }
     }
-    return { entries, truncated: res.truncated };
+    return {
+      entries,
+      truncated: res.truncated,
+      unreadable: res.unreadable ?? [],
+    };
   } finally {
     await FileSystem.deleteAsync(fileUri(res.path), { idempotent: true }).catch(() => {});
   }
@@ -477,11 +489,26 @@ async function buildThumb(
   return (await drive().imageThumb(src, dst, THUMB_SIZE, THUMB_QUALITY)) ? dst : null;
 }
 
-export async function freeBytes(root: string): Promise<number> {
+/**
+ * Free bytes on the volume. `null` means the platform could not answer, which
+ * is different from a genuinely full drive (0): callers must not treat an
+ * unknown value as "no space".
+ */
+export async function freeBytes(root: string): Promise<number | null> {
   try {
-    return await drive().freeBytes(root);
+    const n = await drive().freeBytes(root);
+    return n < 0 ? null : n;
   } catch {
-    return 0;
+    return null;
+  }
+}
+
+/** File names directly inside a folder. Empty when it cannot be listed. */
+export async function listNames(path: string): Promise<string[]> {
+  try {
+    return await drive().listNames(path);
+  } catch {
+    return [];
   }
 }
 

@@ -10,6 +10,7 @@ import {
   hashFile,
   incomingDir,
   keepScreenOn,
+  listNames,
   localPath,
   mkdirs,
   readCatalog,
@@ -37,6 +38,8 @@ export type DriveContext = {
   root: string;
   volumeId: string;
   label: string;
+  /** False when the mount is read-only. Unknown is left undefined. */
+  writable?: boolean;
 };
 
 export type BackupMedia = 'image' | 'video' | 'both';
@@ -87,14 +90,25 @@ export type BackupProgress = {
 
 export type BackupSummary = {
   copied: number;
+  /** Total items not copied, kept for progress and older callers. */
   skipped: number;
+  /** Verified content duplicates already on the drive. */
+  duplicates: number;
+  /** Screenshots excluded by the screenshot filter. */
+  screenshots: number;
+  /** Items below the minimum-size threshold. */
+  tooSmall: number;
   quarantined: number;
   failed: number;
   bytes: number;
+  /** Copies whose date could not be restored; the copy itself is valid. */
+  mtimeFailed: number;
   errors: string[];
   cancelled: boolean;
   /** True when the run stopped because the drive filled up. */
   halted: boolean;
+  /** True when the drive scan was truncated or some folders were unreadable. */
+  scanIncomplete: boolean;
   /** Drive-relative folder this run used for old copies. */
   quarantineFolder: string;
   catalogWritten: boolean;
@@ -120,6 +134,8 @@ export type TidyPlan = {
   scanned: number;
   hashed: number;
   scan: ScanEntry[];
+  /** False when the drive walk hit its cap or skipped a folder it could not read. */
+  scanIncomplete: boolean;
   cancelled: boolean;
 };
 
@@ -344,6 +360,47 @@ function assetTakenAt(a: MediaLibrary.Asset): number {
   return Math.round(ms / 1000);
 }
 
+/**
+ * The date range is applied here, not only in the MediaStore query. Android
+ * filters `createdAfter`/`createdBefore` on DATE_TAKEN, so an item whose date
+ * is missing (or only known from its modification time) would be excluded
+ * before `assetTakenAt` could fall back. Listing the roll and filtering in JS
+ * keeps those items in the backup.
+ */
+function assetInRange(a: MediaLibrary.Asset, cond: BackupConditions): boolean {
+  if (!cond.since && !cond.until) return true;
+  const t = assetTakenAt(a);
+  if (cond.since > 0 && t < cond.since) return false;
+  if (cond.until > 0 && t >= cond.until) return false;
+  return true;
+}
+
+/**
+ * A candidate is a duplicate only when its bytes match the phone item. Name
+ * and size alone are not enough: two different photos can share both, and
+ * skipping or moving the wrong drive file is not recoverable by re-running.
+ * Hashing the phone item costs one read but avoids that mistake.
+ */
+async function findVerifiedDuplicate(
+  ctx: DriveContext,
+  index: DriveIndex,
+  name: string,
+  size: number,
+  phonePath: string,
+): Promise<{ size: number; rel: string } | null> {
+  const candidates = (index.get(name.toLowerCase()) ?? []).filter(
+    (e) => e.size === size,
+  );
+  if (!candidates.length) return null;
+  const phoneHash = await hashFile(phonePath);
+  if (!phoneHash) return null;
+  for (const candidate of candidates) {
+    const driveHash = await hashFile(absolutePath(ctx.root, candidate.rel));
+    if (driveHash && driveHash === phoneHash) return candidate;
+  }
+  return null;
+}
+
 async function visitAssetPages(
   cond: BackupConditions,
   visit: (assets: MediaLibrary.Asset[]) => Promise<boolean>,
@@ -360,8 +417,6 @@ async function visitAssetPages(
           : cond.media === 'video'
             ? 'video'
             : 'photo',
-      createdAfter: cond.since ? cond.since * 1000 : undefined,
-      createdBefore: cond.until ? cond.until * 1000 : undefined,
       sortBy: [['creationTime', true]] as [MediaLibrary.SortByKey, boolean][],
     });
     const stop = await visit(page.assets);
@@ -414,11 +469,11 @@ function auditLine(row: Record<string, unknown>): string {
   return JSON.stringify({ at: new Date().toISOString(), ...row }) + '\n';
 }
 
-async function flushAudit(root: string, lines: string[]): Promise<void> {
-  if (!lines.length) return;
+async function flushAudit(root: string, lines: string[]): Promise<boolean> {
+  if (!lines.length) return true;
   const text = lines.join('');
   lines.length = 0;
-  await appendText(auditPath(root), text);
+  return appendText(auditPath(root), text);
 }
 
 type CatalogCommit = { ok: boolean; count: number; error?: string };
@@ -427,20 +482,29 @@ type CatalogCommit = { ok: boolean; count: number; error?: string };
  * Writes the catalog from the drive's current scan plus the organise actions.
  * Everything already catalogued keeps its dates and dimensions; the additions
  * and removals only describe what this run actually touched.
+ *
+ * A scan that hit its entry cap or skipped an unreadable folder is not a
+ * complete picture of the drive. In that case the previous catalog is the base
+ * so entries outside the walk are preserved instead of silently dropped.
  */
 async function commitCatalog(
   ctx: DriveContext,
-  scan: ScanEntry[],
+  scan: ScanEntry[] | null,
+  complete: boolean,
   adds: CatalogWriteEntry[],
   removes: string[],
 ): Promise<CatalogCommit> {
   try {
-    const [previous, meta] = await Promise.all([
-      readCatalog(ctx.root),
-      readMediaMetadata(ctx.root),
-    ]);
-    const record = buildCatalogEntries(scan, meta, previous?.entries ?? []);
-    const merged = mergeCatalogEntries(record, adds, removes);
+    const previous = await readCatalog(ctx.root);
+    const base =
+      complete && scan
+        ? buildCatalogEntries(
+            scan,
+            await readMediaMetadata(ctx.root),
+            previous?.entries ?? [],
+          )
+        : previous?.entries ?? [];
+    const merged = mergeCatalogEntries(base, adds, removes);
 
     const bytes = encodeCatalog(
       {
@@ -531,216 +595,307 @@ export async function runBackup(
   const summary: BackupSummary = {
     copied: 0,
     skipped: 0,
+    duplicates: 0,
+    screenshots: 0,
+    tooSmall: 0,
     quarantined: 0,
     failed: 0,
     bytes: 0,
+    mtimeFailed: 0,
     errors: [],
     cancelled: false,
     halted: false,
+    scanIncomplete: false,
     quarantineFolder: duplicateArchiveRel(cond.duplicateFolder),
     catalogWritten: false,
     catalogCount: 0,
   };
 
+  // Refuse to start on a mount the platform already knows is read-only. The
+  // folder probe below catches the same problem on mounts that report writable
+  // but still reject writes.
+  if (ctx.writable === false) {
+    throw new Error('This drive is read-only, so nothing can be copied to it.');
+  }
+  const incoming = incomingDir(ctx.root);
+  if (!(await mkdirs(incoming))) {
+    throw new Error('Could not write to this drive. It may be read-only or full.');
+  }
+
   keepScreenOn(true);
+
+  let scanEntries: ScanEntry[] | null = null;
+  let scanComplete = false;
+  const additions: CatalogWriteEntry[] = [];
+  const removals: string[] = [];
+  const audit: string[] = [];
+  let auditFailed = false;
+  let seen = 0;
+  let total = 0;
+
+  const flush = async () => {
+    if (!(await flushAudit(ctx.root, audit)) && !auditFailed) {
+      auditFailed = true;
+      summary.errors.push('Some audit entries could not be written to the drive.');
+    }
+  };
+
   try {
-    onProgress(progressOf(summary, 'listing', 0, 0, 'Reading the drive…'));
-    const scan = await scanVolume(ctx.root);
-    const taken = new Set(scan.entries.map((e) => e.p.toLowerCase()));
-    const index = indexDrive(scan.entries);
-    const dupClaimed = new Set<string>();
-    const additions: CatalogWriteEntry[] = [];
-    const removals: string[] = [];
-    const audit: string[] = [];
-
-    let total = 0;
-    await visitAssetPages(cond, async (assets) => {
-      total += assets.length;
-      return false;
-    });
-    onProgress(progressOf(summary, 'listing', 0, total, ''));
-
-    if (cancel.cancelled) {
-      summary.cancelled = true;
-      onProgress(progressOf(summary, 'done', 0, total, ''));
-      return summary;
+    // A previous run killed mid-copy can leave staged files behind. They are
+    // ours (never phone originals or drive library files), so clear them before
+    // the new run starts.
+    for (const name of await listNames(incoming)) {
+      if (/\.(?:ocd)?part$/i.test(name)) await removeFile(`${incoming}/${name}`);
     }
 
-    let seen = 0;
-    await visitAssetPages(cond, async (assets) => {
-      const paths = assets.map((a) => (a.uri ? localPath(a.uri) : ''));
-      const sizes = await statSizes(paths);
-
-      for (let i = 0; i < assets.length; i += 1) {
-        if (cancel.cancelled) {
-          summary.cancelled = true;
-          return true;
-        }
-        seen += 1;
-        const a = assets[i];
-        const name = a.filename || `item-${seen}`;
-        const size = sizes[i] ?? -1;
-
-        if (size < 0) {
-          summary.failed += 1;
-          summary.errors.push(`${name}: could not read this item on the phone.`);
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-        if (cond.minBytes > 0 && size < cond.minBytes) {
-          summary.skipped += 1;
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-        if (cond.skipScreenshots && isScreenshot(name)) {
-          summary.skipped += 1;
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-
-        const kind = assetKind(a);
-        const takenAt = assetTakenAt(a);
-        const key = name.toLowerCase();
-        const same = (index.get(key) ?? []).find((e) => e.size === size);
-
-        if (same && cond.duplicates === 'skip') {
-          summary.skipped += 1;
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-
-        if (same && cond.duplicates === 'quarantine') {
-          const movedTo = await moveExistingToDuplicates(
-            ctx.root,
-            summary.quarantineFolder,
-            same.rel,
-            dupClaimed,
-          );
-          if (!movedTo) {
-            summary.failed += 1;
-            summary.errors.push(
-              `${name}: could not move the existing copy to ${summary.quarantineFolder}.`,
-            );
-            onProgress(progressOf(summary, 'copying', seen, total, name));
-            continue;
-          }
-          removals.push(same.rel);
-          taken.delete(same.rel.toLowerCase());
-          forget(index, name, same.rel);
-          summary.quarantined += 1;
-          audit.push(
-            auditLine({ op: 'dedupe-move', from: same.rel, to: movedTo, size }),
-          );
-        }
-
-        const rel = uniqueRel(
-          destinationRel(cond.layout, takenAt, name),
-          taken,
-        );
-        const dest = absolutePath(ctx.root, rel);
-
-        const free = await freeBytes(ctx.root);
-        if (free < size + FREE_HEADROOM) {
-          summary.halted = true;
-          summary.errors.push(
-            `The drive is full. ${name} and everything after it were not copied.`,
-          );
-          return true;
-        }
-
-        onProgress(progressOf(summary, 'copying', seen, total, name));
-
-        const parent = parentOf(dest);
-        if (parent) await mkdirs(parent);
-        await mkdirs(incomingDir(ctx.root));
-        const staging = `${incomingDir(ctx.root)}/${Date.now()}-${seen}.part`;
-
-        let copied: CopyResult;
-        try {
-          copied = await copyAndHash(a.uri, staging, takenAt, true);
-        } catch (e) {
-          copied = {
-            ok: false,
-            size: 0,
-            sha256: '',
-            error: e instanceof Error ? e.message : 'copy failed',
-          };
-        }
-
-        if (!copied.ok) {
-          summary.failed += 1;
-          summary.errors.push(`${name}: ${copied.error || 'copy failed'}`);
-          await removeFile(staging);
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-
-        if (!(await renameFile(staging, dest))) {
-          // The destination appeared between planning and renaming (or the
-          // drive rejected the rename). Keep the staged copy out of the way.
-          await removeFile(staging);
-          summary.failed += 1;
-          summary.errors.push(`${name}: could not move the copy into its folder.`);
-          onProgress(progressOf(summary, 'copying', seen, total, name));
-          continue;
-        }
-
-        // The rename keeps the mtime set on the staged file, but some exFAT
-        // implementations drop it; setting it again is cheap and exact.
-        await setMtime(dest, takenAt);
-
-        summary.copied += 1;
-        summary.bytes += copied.size;
-        additions.push({
-          p: rel,
-          s: copied.size,
-          m: takenAt,
-          k: kind,
-          w: a.width || undefined,
-          h: a.height || undefined,
-          d: a.duration || undefined,
-          t: takenAt,
-        });
-        remember(index, name, copied.size, rel);
-        audit.push(
-          auditLine({
-            op: 'backup',
-            from: name,
-            to: rel,
-            size: copied.size,
-            sha256: copied.sha256,
-          }),
-        );
-
-        if (audit.length >= AUDIT_BATCH) await flushAudit(ctx.root, audit);
-        onProgress(
-          progressOf(
-            summary,
-            'copying',
-            seen,
-            total,
-            `${name} — ${summary.copied} copied`,
-          ),
+    if (!cancel.cancelled) {
+      onProgress(progressOf(summary, 'listing', 0, 0, 'Reading the drive…'));
+      const scan = await scanVolume(ctx.root);
+      scanEntries = scan.entries;
+      scanComplete = !scan.truncated && scan.unreadable.length === 0;
+      summary.scanIncomplete = !scanComplete;
+      if (!scanComplete) {
+        const where = scan.truncated
+          ? 'The drive holds more files than one scan can read.'
+          : `Some folders on the drive could not be read${
+              scan.unreadable.length
+                ? ` (${scan.unreadable.slice(0, 3).join(', ')}${
+                    scan.unreadable.length > 3 ? ', …' : ''
+                  })`
+                : ''
+            }.`;
+        summary.errors.push(
+          `${where} Existing copies beyond that point were not checked, and the catalog was merged conservatively.`,
         );
       }
-      return false;
-    });
 
-    await flushAudit(ctx.root, audit);
+      const taken = new Set(scan.entries.map((e) => e.p.toLowerCase()));
+      const index = indexDrive(scan.entries);
+      const dupClaimed = new Set<string>();
 
-    if (cond.updateCatalog) {
+      await visitAssetPages(cond, async (assets) => {
+        if (cancel.cancelled) return true;
+        total += assets.filter((a) => assetInRange(a, cond)).length;
+        return false;
+      });
+      onProgress(progressOf(summary, 'listing', 0, total, ''));
+
+      if (cancel.cancelled) {
+        summary.cancelled = true;
+      } else {
+        await visitAssetPages(cond, async (assets) => {
+          const page = assets.filter((a) => assetInRange(a, cond));
+          if (!page.length) return false;
+          const paths = page.map((a) => (a.uri ? localPath(a.uri) : ''));
+          const sizes = await statSizes(paths);
+
+          for (let i = 0; i < page.length; i += 1) {
+            if (cancel.cancelled) {
+              summary.cancelled = true;
+              return true;
+            }
+            seen += 1;
+            const a = page[i];
+            const name = a.filename || `item-${seen}`;
+            const size = sizes[i] ?? -1;
+
+            if (size < 0) {
+              summary.failed += 1;
+              summary.errors.push(`${name}: could not read this item on the phone.`);
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+            if (cond.minBytes > 0 && size < cond.minBytes) {
+              summary.tooSmall += 1;
+              summary.skipped += 1;
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+            if (cond.skipScreenshots && isScreenshot(name)) {
+              summary.screenshots += 1;
+              summary.skipped += 1;
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+
+            const kind = assetKind(a);
+            const takenAt = assetTakenAt(a);
+
+            // "Keep both" never needs a duplicate decision. Skip and quarantine
+            // do, and only after the bytes on both sides agree.
+            const same =
+              cond.duplicates === 'rename'
+                ? null
+                : await findVerifiedDuplicate(ctx, index, name, size, paths[i]);
+
+            if (same && cond.duplicates === 'skip') {
+              summary.duplicates += 1;
+              summary.skipped += 1;
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+
+            if (same && cond.duplicates === 'quarantine') {
+              const movedTo = await moveExistingToDuplicates(
+                ctx.root,
+                summary.quarantineFolder,
+                same.rel,
+                dupClaimed,
+              );
+              if (!movedTo) {
+                summary.failed += 1;
+                summary.errors.push(
+                  `${name}: could not move the existing copy to ${summary.quarantineFolder}.`,
+                );
+                onProgress(progressOf(summary, 'copying', seen, total, name));
+                continue;
+              }
+              removals.push(same.rel);
+              taken.delete(same.rel.toLowerCase());
+              forget(index, name, same.rel);
+              summary.quarantined += 1;
+              audit.push(
+                auditLine({ op: 'dedupe-move', from: same.rel, to: movedTo, size }),
+              );
+            }
+
+            const baseRel = destinationRel(cond.layout, takenAt, name);
+            let rel = uniqueRel(baseRel, taken);
+            // An incomplete scan cannot prove a destination is free. Stat is
+            // cheap next to a copy, and the native rename refuses to overwrite.
+            if (!scanComplete) {
+              for (let n = 1; (await statFile(absolutePath(ctx.root, rel))).exists; n += 1) {
+                rel = uniqueRel(suffixed(baseRel, n), taken);
+              }
+            }
+            const dest = absolutePath(ctx.root, rel);
+
+            const free = await freeBytes(ctx.root);
+            if (free !== null && free < size + FREE_HEADROOM) {
+              summary.halted = true;
+              summary.errors.push(
+                `The drive is full. ${name} and everything after it were not copied.`,
+              );
+              return true;
+            }
+
+            onProgress(progressOf(summary, 'copying', seen, total, name));
+
+            const parent = parentOf(dest);
+            if (parent) await mkdirs(parent);
+            await mkdirs(incoming);
+            const staging = `${incoming}/${Date.now()}-${seen}.part`;
+
+            let copied: CopyResult;
+            try {
+              copied = await copyAndHash(a.uri, staging, takenAt, true);
+            } catch (e) {
+              copied = {
+                ok: false,
+                size: 0,
+                sha256: '',
+                error: e instanceof Error ? e.message : 'copy failed',
+              };
+            }
+
+            if (!copied.ok) {
+              summary.failed += 1;
+              summary.errors.push(`${name}: ${copied.error || 'copy failed'}`);
+              await removeFile(staging);
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+
+            if (!(await renameFile(staging, dest))) {
+              // The destination appeared between planning and renaming (or the
+              // drive rejected the rename). Keep the staged copy out of the way.
+              await removeFile(staging);
+              summary.failed += 1;
+              summary.errors.push(`${name}: could not move the copy into its folder.`);
+              onProgress(progressOf(summary, 'copying', seen, total, name));
+              continue;
+            }
+
+            // The rename keeps the mtime set on the staged file, but some exFAT
+            // implementations drop it; setting it again is cheap and exact. If
+            // even that fails, record the mtime the drive actually reports so
+            // the catalog and thumbnail names stay truthful.
+            let mtime = takenAt;
+            if (!(await setMtime(dest, takenAt))) {
+              summary.mtimeFailed += 1;
+              const info = await statFile(dest);
+              if (info.exists && info.mtime > 0) mtime = info.mtime;
+            }
+
+            summary.copied += 1;
+            summary.bytes += copied.size;
+            additions.push({
+              p: rel,
+              s: copied.size,
+              m: mtime,
+              k: kind,
+              w: a.width || undefined,
+              h: a.height || undefined,
+              d: a.duration || undefined,
+              t: takenAt,
+            });
+            remember(index, name, copied.size, rel);
+            audit.push(
+              auditLine({
+                op: 'backup',
+                from: name,
+                to: rel,
+                size: copied.size,
+                sha256: copied.sha256,
+              }),
+            );
+
+            if (audit.length >= AUDIT_BATCH) await flush();
+            onProgress(
+              progressOf(
+                summary,
+                'copying',
+                seen,
+                total,
+                `${name} — ${summary.copied} copied`,
+              ),
+            );
+          }
+          return false;
+        });
+      }
+    }
+  } catch (e) {
+    // A failed page listing must not discard the copies that already landed:
+    // the finally block still flushes their audit rows and commits the catalog.
+    summary.errors.push(
+      e instanceof Error ? e.message : 'The backup stopped before it finished.',
+    );
+  } finally {
+    await flush();
+
+    if (
+      cond.updateCatalog &&
+      (additions.length > 0 || removals.length > 0)
+    ) {
       onProgress(progressOf(summary, 'cataloguing', seen, total, 'Updating the catalog…'));
-      const committed = await commitCatalog(ctx, scan.entries, additions, removals);
+      const committed = await commitCatalog(
+        ctx,
+        scanEntries,
+        scanComplete,
+        additions,
+        removals,
+      );
       summary.catalogWritten = committed.ok;
       summary.catalogCount = committed.count;
       if (!committed.ok && committed.error) summary.errors.push(committed.error);
     }
 
-    onProgress(progressOf(summary, 'done', seen, total, ''));
-    return summary;
-  } finally {
     keepScreenOn(false);
   }
+
+  onProgress(progressOf(summary, 'done', seen, total, ''));
+  return summary;
 }
 
 /* ------------------------------------------------------------------ */
@@ -775,6 +930,7 @@ export async function scanTidy(
 ): Promise<TidyPlan> {
   onProgress({ phase: 'scanning', done: 0, total: 0, name: '' });
   const scan = await scanVolume(ctx.root);
+  const scanIncomplete = scan.truncated || scan.unreadable.length > 0;
 
   const bySize = new Map<number, ScanEntry[]>();
   for (const e of scan.entries) {
@@ -801,6 +957,7 @@ export async function scanTidy(
         scanned: scan.entries.length,
         hashed,
         scan: scan.entries,
+        scanIncomplete,
         cancelled: true,
       };
     }
@@ -858,6 +1015,7 @@ export async function scanTidy(
     scanned: scan.entries.length,
     hashed,
     scan: scan.entries,
+    scanIncomplete,
     cancelled: cancel.cancelled,
   };
 }
@@ -879,12 +1037,27 @@ export async function applyTidy(
     catalogCount: 0,
   };
 
-  keepScreenOn(true);
-  try {
-    await mkdirs(duplicatesDir(ctx.root));
-    const removes: string[] = [];
-    const audit: string[] = [];
+  if (ctx.writable === false) {
+    throw new Error('This drive is read-only, so duplicates cannot be moved.');
+  }
+  if (!(await mkdirs(duplicatesDir(ctx.root)))) {
+    throw new Error('Could not write to this drive. It may be read-only or full.');
+  }
 
+  keepScreenOn(true);
+
+  const removes: string[] = [];
+  const audit: string[] = [];
+  let auditFailed = false;
+
+  const flush = async () => {
+    if (!(await flushAudit(ctx.root, audit)) && !auditFailed) {
+      auditFailed = true;
+      result.errors.push('Some audit entries could not be written to the drive.');
+    }
+  };
+
+  try {
     for (let i = 0; i < plan.moves.length; i += 1) {
       if (cancel.cancelled) {
         result.cancelled = true;
@@ -920,7 +1093,7 @@ export async function applyTidy(
         }),
       );
 
-      if (audit.length >= AUDIT_BATCH) await flushAudit(ctx.root, audit);
+      if (audit.length >= AUDIT_BATCH) await flush();
       onProgress({
         phase: 'moving',
         done: i + 1,
@@ -928,8 +1101,11 @@ export async function applyTidy(
         name: m.from,
       });
     }
-
-    await flushAudit(ctx.root, audit);
+  } catch (e) {
+    // Moves that already succeeded keep their audit rows and catalog update.
+    result.errors.push(e instanceof Error ? e.message : 'Tidy stopped before it finished.');
+  } finally {
+    await flush();
 
     if (result.moved > 0) {
       onProgress({
@@ -938,17 +1114,25 @@ export async function applyTidy(
         total: plan.moves.length,
         name: 'Updating the catalog…',
       });
-      const committed = await commitCatalog(ctx, plan.scan, [], removes);
+      // An incomplete drive walk must not rebuild the catalog from what it
+      // happened to see; merge into the previous catalog instead.
+      const committed = await commitCatalog(
+        ctx,
+        plan.scan,
+        !plan.scanIncomplete,
+        [],
+        removes,
+      );
       result.catalogWritten = committed.ok;
       result.catalogCount = committed.count;
       if (!committed.ok && committed.error) result.errors.push(committed.error);
     }
 
-    onProgress({ phase: 'done', done: result.moved, total: plan.moves.length, name: '' });
-    return result;
-  } finally {
     keepScreenOn(false);
   }
+
+  onProgress({ phase: 'done', done: result.moved, total: plan.moves.length, name: '' });
+  return result;
 }
 
 /** Kept beside the engine so callers do not re-implement the folder name. */

@@ -130,13 +130,22 @@ class OcdDriveModule : Module() {
       val outFile = File(ctx.cacheDir, "ocd-scan-${System.currentTimeMillis()}.jsonl")
       var count = 0
       var truncated = false
+      // Readable folders are the norm; a folder the walk cannot open means the
+      // scan is incomplete, and the caller must not rebuild a catalog from it.
+      val unreadable = mutableListOf<String>()
 
       FileOutputStream(outFile).buffered().use { out ->
         val stack = java.util.ArrayDeque<Pair<File, String>>()
         stack.addLast(File(root) to "")
         while (stack.isNotEmpty()) {
           val (dir, prefix) = stack.removeLast()
-          val children = dir.listFiles() ?: continue
+          val children = dir.listFiles()
+          if (children == null) {
+            if (unreadable.size < 50) {
+              unreadable.add(prefix.ifEmpty { "." })
+            }
+            continue
+          }
           var stop = false
           for (f in children) {
             val name = f.name
@@ -168,7 +177,8 @@ class OcdDriveModule : Module() {
       mapOf(
         "path" to outFile.absolutePath,
         "count" to count,
-        "truncated" to truncated
+        "truncated" to truncated,
+        "unreadable" to unreadable
       )
     }
 
@@ -323,7 +333,8 @@ class OcdDriveModule : Module() {
 
     AsyncFunction("freeBytes") { path: String ->
       val f = File(path)
-      if (f.exists()) f.usableSpace else 0L
+      // -1 means "unknown", which is different from a real 0 bytes free.
+      if (f.exists()) f.usableSpace else -1L
     }
 
     // Batch stat: the backup engine needs sizes for a whole camera-roll page,
@@ -359,7 +370,17 @@ class OcdDriveModule : Module() {
 
     AsyncFunction("hashFile") { path: String ->
       try {
-        hashHex(File(path))
+        // openSource handles content:// phone assets as well as drive paths.
+        val digest = MessageDigest.getInstance("SHA-256")
+        openSource(path).use { input ->
+          val buf = ByteArray(256 * 1024)
+          while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            digest.update(buf, 0, n)
+          }
+        }
+        hexOf(digest.digest())
       } catch (e: Exception) {
         ""
       }

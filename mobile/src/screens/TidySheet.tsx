@@ -196,6 +196,17 @@ export function TidySheet({
           </View>
         ) : null}
 
+        {phase === 'preview' && plan?.scanIncomplete ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>The scan was incomplete</Text>
+            <Text style={styles.cardText}>
+              OCD could not read every file on this drive. Files outside the completed
+              walk were not compared, so there may be more duplicates than shown. The
+              catalog will keep the entries it already had instead of dropping them.
+            </Text>
+          </View>
+        ) : null}
+
         {phase === 'preview' && plan ? (
           plan.cancelled ? (
             <View style={styles.card}>

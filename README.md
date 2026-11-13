@@ -318,8 +318,10 @@ Choose what to copy:
 | Folder layout | `Phone/YYYY/MM` (default), `YYYY/MM`, or one flat folder |
 | If a file is already there | Skip it, keep both, or move the old copy aside |
 
-The duplicate policy is the important one. The app matches an existing drive file
-by **size and file name**:
+The duplicate policy is the important one. The app first narrows candidates to the
+same **file name and size**, then hashes the bytes on both the phone and the drive.
+Only a content match counts as a duplicate, so two different photos that happen to
+share a name and size are never skipped or moved by mistake.
 
 - **Skip it** (default) — the drive copy stays, nothing is written.
 - **Keep both** — the new copy is written as `name (1).jpg`, so both remain.
@@ -330,18 +332,32 @@ by **size and file name**:
   run. Only the subfolder changes — it always stays inside `_OCD Duplicates`, so
   it is still excluded from the gallery and every drive scan.
 
+Date ranges use the phone's capture date, falling back to the file's modification
+time when the platform has no capture date, so an item is not dropped just because
+MediaStore never recorded one.
+
 Every copy is staged in `.ocd-incoming/`, hashed with SHA-256 while it streams,
 flushed, renamed into place, then read back and hashed again. A copy that does
 not match is removed; the phone original is never touched. The file's capture
 date becomes its modification time, so the drive keeps the date the phone shows
 even on a filesystem that does not preserve it otherwise.
 
-The run checks free space before every file and stops cleanly when the drive
-fills. It keeps the screen awake while it works, updates the catalog at the end
-(merging the new files into the catalog already on the drive), and writes one
-audit row per copied file. If the run is stopped, the files already copied stay
-and the catalog still records them. Running it again simply skips what is
+The run probes the drive before it starts, clears any staged files a killed run
+left behind, and checks free space before every file. It stops cleanly only when
+the drive is known to be full; an unreadable free-space reading is not treated as
+zero. It keeps the screen awake while it works, updates the catalog at the end,
+and writes one audit row per copied file. If a page of the camera roll cannot be
+listed mid-run, the copies already made still get their audit rows and catalog
+entries. If the drive scan hits its item cap or cannot read a folder, the run says
+so and merges conservatively into the catalog it already found instead of
+rebuilding it from a partial walk. If the run is stopped, the files already copied
+stay and the catalog still records them. Running it again simply skips what is
 already there.
+
+The summary separates the reasons an item was not copied: verified duplicates
+already on the drive, screenshots, items below the minimum size, and failures. A
+file whose date could not be restored is still a valid copy and is reported
+separately.
 
 This is a foreground-only feature in this build: keep the app open and the drive
 plugged in. The phone originals are never deleted automatically.
@@ -355,8 +371,10 @@ the shallowest and shortest path, and moves every other copy to
 `_OCD Duplicates/<original path>`.
 
 The moves are same-volume renames, so nothing is copied and nothing is deleted.
-The preview lists exactly which files will move before you confirm. Each move is
-audited, the catalog is updated so the gallery shows one clean library, and the
+The preview lists exactly which files will move before you confirm. If the drive
+walk was incomplete, the preview says so and the catalog is merged into the
+previous one rather than rebuilt from the partial scan. Each move is audited, the
+catalog is updated so the gallery shows one clean library, and the
 `_OCD Duplicates` folder is excluded from every scan on both the phone and the
 PC. You can restore a file by moving it back, or delete the folder from a
 computer when you are sure.
