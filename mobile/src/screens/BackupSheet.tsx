@@ -4,14 +4,17 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import {
   DEFAULT_CONDITIONS,
+  duplicateArchiveRel,
   ensureMediaAccess,
   hasMediaAccess,
   listAlbums,
+  normaliseDuplicateFolder,
   runBackup,
   type AlbumChoice,
   type BackupConditions,
@@ -32,6 +35,12 @@ const PRESETS: { id: Preset; label: string }[] = [
   { id: '30', label: 'Last 30 days' },
   { id: '90', label: 'Last 90 days' },
   { id: 'year', label: 'This year' },
+];
+
+const DUPLICATE_FOLDERS: { id: string; label: string }[] = [
+  { id: '', label: 'Archive root' },
+  { id: 'Old copies', label: 'Old copies' },
+  { id: 'Reviewed', label: 'Reviewed' },
 ];
 
 function sinceFor(preset: Preset): number {
@@ -174,6 +183,8 @@ export function BackupSheet({
     else onClose();
   };
 
+  const duplicateFolder = normaliseDuplicateFolder(cond.duplicateFolder);
+
   const pct = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.index / progress.total))
     : 0;
@@ -295,7 +306,7 @@ export function BackupSheet({
 
             <Section
               title="If a file is already on the drive"
-              note="Skip is the fastest and keeps one copy. Moving an old copy puts it in _OCD Duplicates, never deletes it."
+              note="Skip is the fastest and keeps one copy. Moving an old copy puts it in the duplicate archive, never deletes it."
             >
               <Row>
                 <Chip
@@ -314,6 +325,41 @@ export function BackupSheet({
                   onPress={() => set('duplicates', 'quarantine')}
                 />
               </Row>
+
+              {cond.duplicates === 'quarantine' ? (
+                <View style={styles.destination}>
+                  <Text style={styles.destinationLabel}>Folder for old copies</Text>
+                  <Row>
+                    {DUPLICATE_FOLDERS.map((f) => (
+                      <Chip
+                        key={f.id || 'root'}
+                        label={f.label}
+                        active={duplicateFolder === f.id}
+                        onPress={() => set('duplicateFolder', f.id)}
+                      />
+                    ))}
+                  </Row>
+                  <TextInput
+                    style={styles.input}
+                    value={cond.duplicateFolder}
+                    onChangeText={(text) => set('duplicateFolder', text)}
+                    placeholder="Or type a subfolder, e.g. Old copies"
+                    placeholderTextColor={colors.faint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={120}
+                    returnKeyType="done"
+                    accessibilityLabel="Folder for old copies"
+                  />
+                  <Text style={styles.destinationPreview}>
+                    Old copies move to {duplicateArchiveRel(cond.duplicateFolder)}
+                  </Text>
+                  <Text style={styles.destinationNote}>
+                    This stays inside _OCD Duplicates, so it never appears in the gallery or
+                    the drive scans.
+                  </Text>
+                </View>
+              ) : null}
             </Section>
 
             <Section title="Folder layout">
@@ -403,7 +449,10 @@ export function BackupSheet({
             </Text>
             <SummaryRow label="Copied" value={summary.copied.toLocaleString()} />
             <SummaryRow label="Already on the drive" value={summary.skipped.toLocaleString()} />
-            <SummaryRow label="Moved to _OCD Duplicates" value={summary.quarantined.toLocaleString()} />
+            <SummaryRow
+              label={`Moved to ${summary.quarantineFolder}`}
+              value={summary.quarantined.toLocaleString()}
+            />
             <SummaryRow label="Failed" value={summary.failed.toLocaleString()} />
             <SummaryRow label="Bytes copied" value={bytes(summary.bytes)} />
             <SummaryRow
@@ -469,6 +518,20 @@ const styles = StyleSheet.create({
   },
   sectionNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   row: { paddingRight: space(4), gap: space(2) },
+  destination: { gap: space(2), marginTop: space(1) },
+  destinationLabel: { fontSize: 12, fontWeight: '600', color: colors.text },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    paddingHorizontal: space(3),
+    paddingVertical: space(2.5),
+    fontSize: 14,
+  },
+  destinationPreview: { fontSize: 12, fontWeight: '600', color: colors.text },
+  destinationNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   permissionCard: {
     padding: space(4),
     borderRadius: radius.md,

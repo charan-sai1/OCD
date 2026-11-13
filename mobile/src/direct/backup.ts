@@ -45,8 +45,9 @@ export type BackupLayout = 'phone' | 'year' | 'flat';
 
 /**
  * `skip` leaves the existing drive copy alone, `rename` keeps both with a
- * numbered name, and `quarantine` moves the older drive copy into
- * `_OCD Duplicates/` before writing the phone copy into its dated folder.
+ * numbered name, and `quarantine` moves the older drive copy into the chosen
+ * subfolder of `_OCD Duplicates/` before writing the phone copy into its dated
+ * folder.
  */
 export type DuplicatePolicy = 'skip' | 'rename' | 'quarantine';
 
@@ -63,6 +64,12 @@ export type BackupConditions = {
   minBytes: number;
   layout: BackupLayout;
   duplicates: DuplicatePolicy;
+  /**
+   * Subfolder under `_OCD Duplicates` for old copies moved aside by the
+   * quarantine policy. Empty means the archive root itself. Stored raw so the
+   * text field can be edited freely; normalise it before using it as a path.
+   */
+  duplicateFolder: string;
   updateCatalog: boolean;
 };
 
@@ -88,6 +95,8 @@ export type BackupSummary = {
   cancelled: boolean;
   /** True when the run stopped because the drive filled up. */
   halted: boolean;
+  /** Drive-relative folder this run used for old copies. */
+  quarantineFolder: string;
   catalogWritten: boolean;
   catalogCount: number;
 };
@@ -150,6 +159,7 @@ export const DEFAULT_CONDITIONS: BackupConditions = {
   minBytes: 0,
   layout: 'phone',
   duplicates: 'skip',
+  duplicateFolder: '',
   updateCatalog: true,
 };
 
@@ -167,6 +177,56 @@ function sanitiseName(name: string): string {
     .replace(/[. ]+$/g, '')
     .replace(/^\.+/, '');
   return cleaned || 'file';
+}
+
+/**
+ * The archive root. Every scanner on the phone and the PC skips this whole
+ * tree, so a user-chosen destination stays underneath it instead of becoming
+ * an ordinary folder that would reappear in the gallery.
+ */
+export const DUPLICATE_ARCHIVE = '_OCD Duplicates';
+const DUPLICATE_FOLDER_DEPTH = 3;
+const DUPLICATE_SEGMENT_MAX = 48;
+const WINDOWS_RESERVED = new Set([
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+]);
+
+/**
+ * Turns whatever the user typed into a safe path below the archive root.
+ * Leading/trailing slashes, `..`, and a pasted `_OCD Duplicates/` prefix are
+ * removed rather than rejected, so a typo never escapes the skipped tree.
+ */
+export function normaliseDuplicateFolder(input: string): string {
+  const parts = (input || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '.' && part !== '..');
+
+  while (
+    parts.length &&
+    parts[0].toLowerCase() === DUPLICATE_ARCHIVE.toLowerCase()
+  ) {
+    parts.shift();
+  }
+
+  const cleaned: string[] = [];
+  for (const part of parts.slice(0, DUPLICATE_FOLDER_DEPTH)) {
+    let name = sanitiseName(part).slice(0, DUPLICATE_SEGMENT_MAX).trim();
+    name = name.replace(/[. ]+$/g, '');
+    if (!name || name === '.' || name === '..') continue;
+    if (WINDOWS_RESERVED.has(name.toLowerCase())) name += '_';
+    cleaned.push(name);
+  }
+  return cleaned.join('/');
+}
+
+/** The drive-relative folder where a backup moves old copies. */
+export function duplicateArchiveRel(folder: string): string {
+  const sub = normaliseDuplicateFolder(folder);
+  return sub ? `${DUPLICATE_ARCHIVE}/${sub}` : DUPLICATE_ARCHIVE;
 }
 
 function splitExt(name: string): [string, string] {
@@ -191,7 +251,7 @@ function uniqueRel(rel: string, taken: Set<string>): string {
 }
 
 /**
- * A free path under `_OCD Duplicates`. That folder is excluded from scans, so
+ * A free path under the duplicate archive. That tree is excluded from scans, so
  * unlike the media tree there is no in-memory list to consult; one stat per
  * candidate is cheap because a clash is rare.
  */
@@ -424,11 +484,12 @@ async function commitCatalog(
 
 async function moveExistingToDuplicates(
   root: string,
+  archiveRel: string,
   rel: string,
   claimed: Set<string>,
 ): Promise<string | null> {
   const from = absolutePath(root, rel);
-  const targetRel = await uniqueDuplicateRel(root, `_OCD Duplicates/${rel}`, claimed);
+  const targetRel = await uniqueDuplicateRel(root, `${archiveRel}/${rel}`, claimed);
   const to = absolutePath(root, targetRel);
   const parent = parentOf(to);
   if (parent) await mkdirs(parent);
@@ -476,6 +537,7 @@ export async function runBackup(
     errors: [],
     cancelled: false,
     halted: false,
+    quarantineFolder: duplicateArchiveRel(cond.duplicateFolder),
     catalogWritten: false,
     catalogCount: 0,
   };
@@ -550,13 +612,14 @@ export async function runBackup(
         if (same && cond.duplicates === 'quarantine') {
           const movedTo = await moveExistingToDuplicates(
             ctx.root,
+            summary.quarantineFolder,
             same.rel,
             dupClaimed,
           );
           if (!movedTo) {
             summary.failed += 1;
             summary.errors.push(
-              `${name}: could not move the existing copy to _OCD Duplicates.`,
+              `${name}: could not move the existing copy to ${summary.quarantineFolder}.`,
             );
             onProgress(progressOf(summary, 'copying', seen, total, name));
             continue;

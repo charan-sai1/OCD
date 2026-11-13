@@ -323,9 +323,12 @@ by **size and file name**:
 
 - **Skip it** (default) — the drive copy stays, nothing is written.
 - **Keep both** — the new copy is written as `name (1).jpg`, so both remain.
-- **Move old copy** — the existing drive file is moved to
-  `_OCD Duplicates/<its original path>`, then the phone copy is written into the
-  dated folder. Nothing is deleted.
+- **Move old copy** — the existing drive file is moved to the duplicate archive,
+  then the phone copy is written into the dated folder. Nothing is deleted. You
+  can keep the default `_OCD Duplicates` root or type a subfolder such as
+  `_OCD Duplicates/Old copies`; the app shows the exact destination before the
+  run. Only the subfolder changes — it always stays inside `_OCD Duplicates`, so
+  it is still excluded from the gallery and every drive scan.
 
 Every copy is staged in `.ocd-incoming/`, hashed with SHA-256 while it streams,
 flushed, renamed into place, then read back and hashed again. A copy that does
