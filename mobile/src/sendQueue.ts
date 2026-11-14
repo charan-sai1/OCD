@@ -46,6 +46,27 @@ export type QueuedItem = {
 
 type Stored = { version: number; items: QueuedItem[] };
 
+/**
+ * A send the desktop hashed on arrival. This is the only evidence the free-space
+ * screen will act on: a catalog match is metadata-only, so it is deliberately
+ * not recorded here. Entries outlive the queue, because finished queue rows are
+ * pruned after a day and the delete step can happen much later.
+ */
+export type VerifiedItem = {
+  assetId: string;
+  server: string;
+  libraryId: string;
+  libraryName: string;
+  name: string;
+  size: number;
+  takenAt: number;
+  kind: 'image' | 'video';
+  path?: string;
+  verifiedAt: number;
+};
+
+type VerifiedStored = { version: number; items: VerifiedItem[] };
+
 export type SendProgress = {
   total: number;
   done: number;
@@ -134,14 +155,11 @@ export async function readSendQueue(): Promise<QueuedItem[]> {
   );
 }
 
-async function writeSendQueue(items: QueuedItem[]): Promise<boolean> {
-  const path = queuePath();
-  if (!path) return false;
-  const body = JSON.stringify({ version: QUEUE_VERSION, items } satisfies Stored);
+async function writeJsonAtomic(path: string, body: string): Promise<boolean> {
   const tmp = `${path}.tmp`;
   try {
     // Write beside the target, then copy over it. A kill before the copy leaves
-    // the previous queue intact; a kill during it leaves the temp copy readable.
+    // the previous file intact; a kill during it leaves the temp copy readable.
     await FileSystem.writeAsStringAsync(tmp, body);
     await FileSystem.copyAsync({ from: tmp, to: path });
     await FileSystem.deleteAsync(tmp, { idempotent: true });
@@ -149,6 +167,15 @@ async function writeSendQueue(items: QueuedItem[]): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function writeSendQueue(items: QueuedItem[]): Promise<boolean> {
+  const path = queuePath();
+  if (!path) return false;
+  return writeJsonAtomic(
+    path,
+    JSON.stringify({ version: QUEUE_VERSION, items } satisfies Stored),
+  );
 }
 
 function sameKey(
@@ -160,6 +187,128 @@ function sameKey(
     a.libraryId === b.libraryId &&
     a.assetId === b.assetId
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* the verified store                                                  */
+/* ------------------------------------------------------------------ */
+
+function verifiedPath(): string | null {
+  const dir = FileSystem.documentDirectory;
+  return dir ? `${dir}ocd-verified.json` : null;
+}
+
+function coerceVerified(raw: unknown): VerifiedItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (
+    typeof r.assetId !== 'string' ||
+    typeof r.server !== 'string' ||
+    typeof r.libraryId !== 'string' ||
+    typeof r.name !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    assetId: r.assetId,
+    server: r.server,
+    libraryId: r.libraryId,
+    libraryName: typeof r.libraryName === 'string' ? r.libraryName : 'drive',
+    name: r.name,
+    size: typeof r.size === 'number' && r.size > 0 ? r.size : 0,
+    takenAt: typeof r.takenAt === 'number' ? r.takenAt : 0,
+    kind: r.kind === 'video' ? 'video' : 'image',
+    path: typeof r.path === 'string' ? r.path : undefined,
+    verifiedAt: typeof r.verifiedAt === 'number' ? r.verifiedAt : 0,
+  };
+}
+
+async function readVerifiedStore(): Promise<VerifiedItem[]> {
+  const path = verifiedPath();
+  if (!path) return [];
+  const read = async (file: string): Promise<VerifiedItem[] | null> => {
+    try {
+      const info = await FileSystem.getInfoAsync(file);
+      if (!info.exists) return null;
+      const parsed = JSON.parse(await FileSystem.readAsStringAsync(file)) as unknown;
+      const items = (parsed as VerifiedStored | null)?.items;
+      if (!Array.isArray(items)) return null;
+      const out: VerifiedItem[] = [];
+      for (const it of items) {
+        const item = coerceVerified(it);
+        if (item) out.push(item);
+      }
+      return out;
+    } catch {
+      return null;
+    }
+  };
+  return (await read(path)) ?? (await read(`${path}.tmp`)) ?? [];
+}
+
+async function writeVerifiedStore(items: VerifiedItem[]): Promise<boolean> {
+  const path = verifiedPath();
+  if (!path) return false;
+  return writeJsonAtomic(
+    path,
+    JSON.stringify({ version: 1, items } satisfies VerifiedStored),
+  );
+}
+
+/** Verified sends for one desktop, newest first. */
+export async function readVerified(server: string): Promise<VerifiedItem[]> {
+  return (await readVerifiedStore())
+    .filter((i) => i.server === server)
+    .sort((a, b) => b.verifiedAt - a.verifiedAt);
+}
+
+/**
+ * Records a verified send. Failure to write the store must never fail a send,
+ * so the caller treats this as best-effort.
+ */
+export async function recordVerified(
+  server: string,
+  item: QueuedItem,
+): Promise<void> {
+  if (!item.verified) return;
+  const current = await readVerifiedStore();
+  const next: VerifiedItem = {
+    assetId: item.assetId,
+    server,
+    libraryId: item.libraryId,
+    libraryName: item.libraryName,
+    name: item.name,
+    size: item.size,
+    takenAt: item.takenAt,
+    kind: item.kind,
+    path: item.path,
+    verifiedAt: item.finishedAt ?? Date.now(),
+  };
+  const index = current.findIndex(
+    (c) =>
+      c.server === server &&
+      c.libraryId === item.libraryId &&
+      c.assetId === item.assetId,
+  );
+  if (index >= 0) current[index] = next;
+  else current.push(next);
+  await writeVerifiedStore(current);
+}
+
+/**
+ * Drops the record for items that no longer need freeing. The drive copies are
+ * untouched; this only forgets the phone-side proof.
+ */
+export async function forgetVerified(
+  server: string,
+  assetIds: string[],
+): Promise<void> {
+  if (assetIds.length === 0) return;
+  const drop = new Set(assetIds);
+  const current = (await readVerifiedStore()).filter(
+    (i) => !(i.server === server && drop.has(i.assetId)),
+  );
+  await writeVerifiedStore(current);
 }
 
 /* ------------------------------------------------------------------ */
@@ -334,7 +483,7 @@ export async function localFileFor(
 /* ------------------------------------------------------------------ */
 
 type SendOutcome =
-  | { ok: true; verified: boolean; path?: string }
+  | { ok: true; verified: boolean; path?: string; size?: number }
   | { ok: false; error: string };
 
 async function sendOne(
@@ -362,14 +511,14 @@ async function sendOne(
       kind: item.kind,
     });
     if (start.existingPath) {
-      return { ok: true, verified: false, path: start.existingPath };
+      return { ok: true, verified: false, path: start.existingPath, size: staged.size };
     }
     const uploadId = start.uploadId;
     if (!uploadId) return { ok: false, error: 'The desktop did not start the upload.' };
     try {
       await uploadFile(server, uploadId, staged.uri, onBytes);
       const fin = await api.uploadFinish(server, uploadId);
-      return { ok: true, verified: fin.verified, path: fin.path };
+      return { ok: true, verified: fin.verified, path: fin.path, size: staged.size };
     } catch (e) {
       // Never leave a half-written file among the real ones.
       try {
@@ -440,6 +589,8 @@ export async function runSendQueue(
     const next: QueuedItem = outcome.ok
       ? {
           ...target,
+          // The staged file's size is authoritative; the queued size was a hint.
+          size: outcome.size ?? target.size,
           state: 'done',
           verified: outcome.verified,
           path: outcome.path,
@@ -451,7 +602,11 @@ export async function runSendQueue(
     await saveItem(next);
     if (outcome.ok) {
       result.done += 1;
-      if (outcome.verified) result.verified += 1;
+      if (outcome.verified) {
+        result.verified += 1;
+        // Best-effort: the free-space list is convenience, not the send itself.
+        await recordVerified(server, next).catch(() => undefined);
+      }
     } else {
       result.failed += 1;
     }

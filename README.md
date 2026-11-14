@@ -399,6 +399,25 @@ then pruned. Only waiting work runs; nothing partial is ever treated as sent.
 This is also foreground-only in this build: keep the app open while it sends.
 The phone originals are never deleted automatically.
 
+### Free up space on the phone
+
+Once a copy is verified, the Phone tab shows **Free space**. The screen lists
+only items the desktop answered with `verified` after hashing the bytes on
+arrival; a name-and-size catalog match is not accepted as proof, because it never
+looked inside the file.
+
+The list survives relaunches: the proof is written to the phone (`ocd-verified.json`)
+when the send is verified, so the delete step can happen days later. Each row
+shows the file, its size, its date and the drive folder that holds it. Select
+some or all, and the confirmation states the exact count and byte total. Deleting
+asks the phone's own permission dialog, and only after the phone confirms does
+the app forget the proof. A failed or partial delete leaves the items listed so
+you can try again. Items already removed elsewhere are marked **No longer on
+this phone** and can be forgotten in one tap.
+
+Nothing on the drive is touched by this screen. It is the only destructive
+action in the app, and it acts on the phone copy only.
+
 ### Tidy duplicates on the phone
 
 **Tidy duplicates** finds files whose **bytes** are identical, not merely their

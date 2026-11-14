@@ -25,14 +25,17 @@ import { BottomBar, ScreenHeader, TextAction } from '../layout';
 import {
   clearFinished,
   enqueueSend,
+  forgetVerified,
   pendingCount,
   readSendQueue,
+  readVerified,
   retryFailed,
   runSendQueue,
   type QueuedItem,
 } from '../sendQueue';
 import { colors, duration, radius, space, takenOn } from '../theme';
 import { Chip, PrimaryButton, Wordmark } from '../ui';
+import { FreeSpace } from './FreeSpace';
 
 type PhoneAsset = {
   id: string;
@@ -86,6 +89,8 @@ export function Phone({ server, onChangeServer }: Props) {
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [queue, setQueue] = useState<QueuedItem[]>([]);
+  const [freeCount, setFreeCount] = useState(0);
+  const [freeOpen, setFreeOpen] = useState(false);
 
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
@@ -291,6 +296,7 @@ export function Phone({ server, onChangeServer }: Props) {
   const refreshQueue = useCallback(async () => {
     const all = await readSendQueue();
     setQueue(all.filter((i) => i.server === server));
+    setFreeCount((await readVerified(server)).length);
   }, [server]);
 
   const drainQueue = useCallback(
@@ -447,6 +453,9 @@ export function Phone({ server, onChangeServer }: Props) {
       const ok = await MediaLibrary.deleteAssetsAsync(ids);
       if (!ok) throw new Error('The phone did not delete those items.');
       const idSet = new Set(ids);
+      // The proof is no longer useful once the phone copy is gone, and leaving
+      // it would make the free-space screen offer deleted items.
+      await forgetVerified(server, ids);
       setAssets((prev) => prev.filter((a) => !idSet.has(a.id)));
       setBadges((prev) => {
         const next = { ...prev };
@@ -461,6 +470,7 @@ export function Phone({ server, onChangeServer }: Props) {
       setSentNote(
         `Deleted ${ids.length} ${ids.length === 1 ? 'item' : 'items'} from the phone. The drive copy is still there.`,
       );
+      void refreshQueue();
     } catch (e) {
       const text = e instanceof Error ? e.message : String(e);
       setSendError(text);
@@ -500,6 +510,19 @@ export function Phone({ server, onChangeServer }: Props) {
             }${newCount ? ` · ${newCount} new` : ''}`}
         {checking ? '  ·  Checking drive…' : ''}
       </Text>
+      {!selecting && freeCount > 0 ? (
+        <View style={styles.freeRow}>
+          <Text style={styles.freeText}>
+            {freeCount.toLocaleString()} verified{' '}
+            {freeCount === 1 ? 'item' : 'items'} can be removed from this phone
+          </Text>
+          <TextAction
+            label="Free space"
+            onPress={() => setFreeOpen(true)}
+            accessibilityHint="Delete photos the computer has already verified"
+          />
+        </View>
+      ) : null}
       {selecting ? (
         <View style={styles.selectRow}>
           <Text style={styles.selectCount}>{selected.size} selected</Text>
@@ -830,6 +853,31 @@ export function Phone({ server, onChangeServer }: Props) {
           ) : null}
         </View>
       </Modal>
+
+      <FreeSpace
+        visible={freeOpen}
+        server={server}
+        onClose={() => {
+          setFreeOpen(false);
+          void refreshQueue();
+        }}
+        onDeleted={(ids) => {
+          // The tiles and badges must agree with the phone's camera roll.
+          const drop = new Set(ids);
+          setAssets((prev) => prev.filter((a) => !drop.has(a.id)));
+          setBadges((prev) => {
+            const next = { ...prev };
+            ids.forEach((id) => delete next[id]);
+            return next;
+          });
+          setSelected((prev) => {
+            const next = new Set(prev);
+            ids.forEach((id) => next.delete(id));
+            return next;
+          });
+          setFreeCount((n) => Math.max(0, n - ids.length));
+        }}
+      />
     </View>
   );
 }
@@ -1012,6 +1060,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.muted,
   },
+  freeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space(2),
+    marginTop: space(1),
+  },
+  freeText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.muted },
   filterRow: {
     flexDirection: 'row',
     marginTop: space(3),
