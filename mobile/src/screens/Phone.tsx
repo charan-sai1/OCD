@@ -20,8 +20,17 @@ import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
-import { api, ImportMatch, Library, messageFor, uploadFile } from '../api';
+import { api, ImportMatch, Library, messageFor } from '../api';
 import { BottomBar, ScreenHeader, TextAction } from '../layout';
+import {
+  clearFinished,
+  enqueueSend,
+  pendingCount,
+  readSendQueue,
+  retryFailed,
+  runSendQueue,
+  type QueuedItem,
+} from '../sendQueue';
 import { colors, duration, radius, space, takenOn } from '../theme';
 import { Chip, PrimaryButton, Wordmark } from '../ui';
 
@@ -35,39 +44,6 @@ type PhoneAsset = {
   kind: 'image' | 'video';
   duration: number;
 };
-
-/**
- * `stageForUpload` copies an image or video from the camera-roll container
- * into the app sandbox. NSURLSession upload tasks cannot open Photos
- * resources directly: the upload is aborted before any byte hits the server.
- */
-async function stageForUpload(
-  ready: { uri: string; size: number },
-  ext: string,
-): Promise<{ uri: string; size: number }> {
-  const scratch = `${FileSystem.cacheDirectory}ocd-send/`;
-  if (!scratch) throw new Error('The app cache is not available on this phone.');
-  await FileSystem.makeDirectoryAsync(scratch, { intermediates: true });
-  const suffix = ext && ext.startsWith('.') ? ext : '';
-  const target = `${scratch}${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`;
-  try {
-    await FileSystem.copyAsync({ from: ready.uri, to: target });
-  } catch (e) {
-    throw new Error(`Could not copy the file into the app: ${e instanceof Error ? e.message : String(e)}`);
-  }
-  const info = await FileSystem.getInfoAsync(target);
-  if (!info.exists || info.isDirectory) {
-    await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
-    throw new Error('Could not copy the file into the app.');
-  }
-  return { uri: target, size: info.size ?? ready.size };
-}
-
-async function discardStagedUpload(uri: string): Promise<void> {
-  if (uri.startsWith(FileSystem.cacheDirectory ?? '') && uri.includes('/ocd-send/')) {
-    await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
-  }
-}
 
 type Props = {
   server: string;
@@ -109,9 +85,13 @@ export function Phone({ server, onChangeServer }: Props) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [queue, setQueue] = useState<QueuedItem[]>([]);
 
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
+  const sendStop = useRef(false);
+  const draining = useRef(false);
+  const autoResumed = useRef(false);
 
   const androidExpoGo = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
@@ -260,6 +240,8 @@ export function Phone({ server, onChangeServer }: Props) {
   const selectedItems = assets.filter((a) => selected.has(a.id));
   const selectedNew = selectedItems.filter((a) => !badges[a.id]?.onDrive).length;
   const selectedVerified = selectedItems.filter((a) => badges[a.id]?.verified).length;
+  const waitingCount = pendingCount(queue);
+  const failedCount = queue.filter((i) => i.state === 'failed').length;
 
   const enterSelection = () => {
     if (sending) return;
@@ -306,107 +288,135 @@ export function Phone({ server, onChangeServer }: Props) {
     });
   };
 
-  const markOnDrive = (
-    a: PhoneAsset,
-    res: { path?: string; existingPath?: string; volumeId?: string; label?: string },
-    verified: boolean,
-  ) => {
-    setBadges((prev) => ({
-      ...prev,
-      [a.id]: {
-        onDrive: true,
-        path: res.path ?? res.existingPath,
-        volumeId: res.volumeId,
-        label: res.label,
-        verified,
-      },
-    }));
-  };
+  const refreshQueue = useCallback(async () => {
+    const all = await readSendQueue();
+    setQueue(all.filter((i) => i.server === server));
+  }, [server]);
+
+  const drainQueue = useCallback(
+    async (libraryId: string) => {
+      if (draining.current) return;
+      draining.current = true;
+      sendStop.current = false;
+      setSending(true);
+      setSendError(null);
+      setSentNote(null);
+      setSendTotal(0);
+      setSentCount(0);
+      setSendProgress(0);
+      try {
+        const result = await runSendQueue(server, {
+          libraryId,
+          onProgress: (p) => {
+            if (p.total > 0) {
+              setSendTotal(p.total);
+              setSentCount(p.done + p.failed);
+              setSendProgress(p.totalBytes > 0 ? p.sentBytes / p.totalBytes : 0);
+            }
+            if (p.name) setSendName(p.name);
+          },
+          onItemFinished: (item) => {
+            if (item.state !== 'done') return;
+            setBadges((prev) => ({
+              ...prev,
+              [item.assetId]: {
+                onDrive: true,
+                path: item.path,
+                label: item.libraryName,
+                verified: Boolean(item.verified),
+              },
+            }));
+          },
+          shouldStop: () => sendStop.current,
+        });
+
+        const waiting = pendingCount(await readSendQueue(), libraryId);
+        if (result.stopped) {
+          setSentNote(`Stopped. ${result.done} sent; ${waiting} still queued.`);
+        } else if (result.failed > 0) {
+          setSentNote(
+            `Sent ${result.done} of ${result.done + result.failed}. ${result.failed} could not be sent and stay in the queue.`,
+          );
+        } else if (result.done > 0) {
+          // Show the tiles that just became backed up, so the verify-then-delete
+          // step is right in front of the user.
+          setFilter('all');
+          setSentNote(
+            result.verified > 0
+              ? `Sent ${result.done} ${result.done === 1 ? 'item' : 'items'}. Delete from the phone when you are ready.`
+              : result.done === 1
+                ? 'That item was already on the drive.'
+                : 'Those items were already on the drive.',
+          );
+        }
+      } catch (e) {
+        setSendError(messageFor(e));
+      } finally {
+        setSending(false);
+        setSendName(null);
+        draining.current = false;
+        await refreshQueue();
+      }
+    },
+    [server, refreshQueue],
+  );
 
   const send = async () => {
     if (!dest || sending || deleting) return;
     const list = assets.filter((a) => selected.has(a.id) && !badges[a.id]?.onDrive);
     if (list.length === 0) return;
-    setSending(true);
     setSendError(null);
     setSentNote(null);
-    setSendTotal(list.length);
-    setSentCount(0);
-    setSendProgress(0);
-    let done = 0;
-    let verified = 0;
-    let failed = 0;
-
-    for (const a of list) {
-      setSendName(a.filename);
-      setSendProgress(0);
-      let sendable: { uri: string; size: number } | null = null;
-      try {
-        const ready = await ensureUploadable(a);
-        if (!ready) {
-          throw new Error('This item is only in iCloud and could not be downloaded.');
-        }
-        sendable = await stageForUpload(ready, a.filename.match(/\.[^.]+$/)?.[0] ?? '');
-        const start = await api.uploadStart(server, {
-          libraryId: dest.id,
-          // The server needs the real name, extension and byte count. An Expo
-          // upload task reading the app cache is far more reliable than a
-          // task pointed at a Photos resource file.
+    try {
+      const next = await enqueueSend(
+        server,
+        { id: dest.id, name: dest.name },
+        list.map((a) => ({
+          assetId: a.id,
           name: a.filename,
-          size: sendable.size,
+          size: a.size ?? 0,
           takenAt: a.takenAt,
           kind: a.kind,
-        });
-        if (start.existingPath) {
-          markOnDrive(a, start, false);
-          done++;
-          setSentCount(done);
-          continue;
-        }
-        if (!start.uploadId) throw new Error('The desktop did not start the upload.');
-        try {
-          await uploadFile(server, start.uploadId, sendable.uri, (sentBytes, totalBytes) => {
-            setSendProgress(totalBytes > 0 ? sentBytes / totalBytes : 0);
-          });
-          const fin = await api.uploadFinish(server, start.uploadId);
-          markOnDrive(a, fin, true);
-          done++;
-          verified++;
-          setSentCount(done);
-        } catch (e) {
-          // Never leave a half-written file among the real ones.
-          try {
-            await api.uploadAbort(server, start.uploadId);
-          } catch {
-            // The session may already be gone.
-          }
-          throw e;
-        }
-      } catch (e) {
-        failed++;
-        setSendError(`${a.filename}: ${messageFor(e)}`);
-      } finally {
-        if (sendable) await discardStagedUpload(sendable.uri);
-      }
-    }
-
-    setSending(false);
-    setSendName(null);
-    if (failed === 0) {
-      // Show the tiles that just became backed up, so the verify-then-delete
-      // step is right in front of the user.
-      setFilter('all');
-      setSentNote(
-        verified > 0
-          ? `Sent ${done} ${done === 1 ? 'item' : 'items'} to ${dest.name}. Delete from the phone when you are ready.`
-          : done === 1
-            ? 'That item was already on the drive.'
-            : 'Those items were already on the drive.',
+        })),
       );
-    } else {
-      setSentNote(`Sent ${done} of ${list.length}. ${failed} could not be sent.`);
+      setQueue(next);
+      await drainQueue(dest.id);
+    } catch (e) {
+      setSendError(messageFor(e));
     }
   };
+
+  const retryQueue = async () => {
+    setQueue(await retryFailed(server));
+    if (dest) await drainQueue(dest.id);
+  };
+
+  const clearQueue = async () => {
+    setQueue(await clearFinished(server));
+  };
+
+  useEffect(() => {
+    // The queue lives on disk, so reading it is an external read.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshQueue();
+  }, [refreshQueue]);
+
+  useEffect(() => {
+    autoResumed.current = false;
+  }, [server]);
+
+  useEffect(() => {
+    if (autoResumed.current) return;
+    if (!perm?.granted || sending || deleting) return;
+    if (!dest) return;
+    if (pendingCount(queue, dest.id) === 0) return;
+    autoResumed.current = true;
+    // One frame of visible "resuming" before the first upload starts.
+    const timer = setTimeout(() => {
+      void drainQueue(dest.id);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [perm?.granted, sending, deleting, dest, queue, drainQueue]);
 
   const deleteSelected = () => {
     if (sending || deleting) return;
@@ -562,6 +572,51 @@ export function Phone({ server, onChangeServer }: Props) {
   return (
     <View style={styles.root}>
       {header}
+
+      {waitingCount + failedCount > 0 ? (
+        <View style={styles.queueBar}>
+          <View style={styles.queueTextWrap}>
+            <Text style={styles.queueTitle} numberOfLines={1}>
+              {sending
+                ? sendName ?? 'Sending'
+                : `${waitingCount} waiting to send${
+                    failedCount ? ` · ${failedCount} failed` : ''
+                  }`}
+            </Text>
+            <Text style={styles.queueSub} numberOfLines={1}>
+              {sending
+                ? `${sendTotal ? `${sentCount} of ${sendTotal}` : 'Starting…'}${
+                    sendProgress ? ` · ${Math.round(sendProgress * 100)}%` : ''
+                  }`
+                : failedCount > 0
+                  ? queue.find((i) => i.state === 'failed')?.error ??
+                    'Some items could not be sent'
+                  : 'Survives closing the app'}
+            </Text>
+          </View>
+          <View style={styles.queueActions}>
+            {sending ? (
+              <TextAction
+                label="Stop"
+                onPress={() => {
+                  sendStop.current = true;
+                }}
+                accessibilityHint="Finish the current item, then pause the queue"
+              />
+            ) : (
+              <>
+                {waitingCount > 0 && dest ? (
+                  <TextAction label="Resume" onPress={() => void drainQueue(dest.id)} />
+                ) : null}
+                {failedCount > 0 ? (
+                  <TextAction label="Retry" onPress={() => void retryQueue()} />
+                ) : null}
+                <TextAction label="Clear" onPress={() => void clearQueue()} />
+              </>
+            )}
+          </View>
+        </View>
+      ) : null}
 
       {driveProblem ? (
         <View style={styles.notice} accessibilityRole="alert">
@@ -857,31 +912,6 @@ const Tile = React.memo(function Tile({
   );
 });
 
-// ensureUploadable returns a local file the streaming uploader can read. An
-// iCloud-only item is fetched first; nothing is sent until it exists.
-async function ensureUploadable(
-  a: PhoneAsset,
-): Promise<{ uri: string; size: number } | null> {
-  let uri = a.uri;
-  if (Platform.OS === 'ios') {
-    try {
-      const info = await MediaLibrary.getAssetInfoAsync(a.id, {
-        shouldDownloadFromNetwork: true,
-      });
-      if (info.localUri) uri = info.localUri;
-    } catch {
-      // Fall back to the URI we already have.
-    }
-  }
-  try {
-    const file = await FileSystem.getInfoAsync(uri);
-    if (file.exists && !file.isDirectory) return { uri, size: file.size };
-  } catch {
-    // Missing cache copy or an unreadable URI.
-  }
-  return null;
-}
-
 async function resolveAssets(list: MediaLibrary.Asset[]): Promise<PhoneAsset[]> {
   const out = new Array<PhoneAsset>(list.length);
   let next = 0;
@@ -1048,6 +1078,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#ecfdf3',
   },
   okText: { color: '#027a48', fontSize: 13, lineHeight: 18 },
+  queueBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+    marginHorizontal: space(4),
+    marginBottom: space(2),
+    paddingHorizontal: space(3),
+    paddingVertical: space(2),
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  queueTextWrap: { flex: 1, minWidth: 0 },
+  queueTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  queueSub: { fontSize: 11, color: colors.muted, marginTop: 1 },
+  queueActions: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   more: { paddingVertical: space(7), alignItems: 'center' },
   empty: {
     paddingHorizontal: space(10),

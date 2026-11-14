@@ -250,6 +250,7 @@ previews and no dates.
 | Build a missing preview on the drive | no | yes |
 | Back up the camera roll onto the drive | no | yes |
 | Move content duplicates into one folder | no | yes |
+| Send to a drive folder on the PC over Wi-Fi | yes | yes |
 
 Build and install it (EAS builds in the cloud, no Android SDK needed):
 
@@ -367,6 +368,36 @@ separately.
 
 This is a foreground-only feature in this build: keep the app open and the drive
 plugged in. The phone originals are never deleted automatically.
+
+### Send from the phone to the PC
+
+The other route needs no cable: keep the drive on the computer, start the server,
+and connect the app to it over Wi-Fi. Pick items in the phone's camera roll and
+choose a drive folder on the PC.
+
+A send is a small queue written to the phone's own storage, not just to the
+screen. That matters because the queue is what makes "send, verify, then delete"
+survivable:
+
+- Each item is written as **waiting** before it starts and only becomes **sent**
+  or **failed** after the desktop answers.
+- If the app is closed, killed, or loses Wi-Fi mid-send, the waiting item is
+  still waiting on the next launch. The queue banner offers **Resume**, and
+  resumes once on its own when the same server and drive are still there.
+- Retrying is safe. The desktop keys uploads by file name and content hash and
+  answers `existingPath` when the bytes are already on the drive, so a re-sent
+  item becomes "already there" instead of a second copy. A killed upload never
+  leaves a half-written file among the real ones; the partial file expires.
+- **Stop** finishes the item in progress and then pauses, so a large video is not
+  cut in half. **Retry** re-queues failed items; **Clear** drops finished rows.
+  Failed rows keep their reason so you can see what went wrong.
+- The badge on a tile comes from the desktop's verification answer, so a check
+  mark means the bytes were hashed on arrival, not merely that the upload ended.
+
+Finished rows are kept for a day so the summary is not empty after a relaunch,
+then pruned. Only waiting work runs; nothing partial is ever treated as sent.
+This is also foreground-only in this build: keep the app open while it sends.
+The phone originals are never deleted automatically.
 
 ### Tidy duplicates on the phone
 
