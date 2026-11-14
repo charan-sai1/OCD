@@ -38,6 +38,9 @@ type Server struct {
 	phone      *phoneStore
 	drives     *catalogStore
 	sysRoot    string
+	// rootOf resolves the drive a path lives on. It is a field so tests can
+	// point the audit reader at a temporary directory instead of C:\.
+	rootOf     func(string) string
 	lastDedupe []dedupe.Group
 	pfCmd      *exec.Cmd
 
@@ -90,6 +93,7 @@ func New(cfg Config) *Server {
 	s.phone = newPhoneStore(filepath.Join(cfg.DataDir, "phone.json"))
 	s.drives = newCatalogStore()
 	s.sysRoot = volume.RootOf(cfg.DataDir)
+	s.rootOf = volume.RootOf
 	s.importCache = map[string]*catalogLookup{}
 	s.uploads = map[string]*uploadSession{}
 	return s
@@ -168,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/phone/import", s.phoneImportRun)
 	mux.HandleFunc("/api/net", s.netInfo)
 	mux.HandleFunc("/api/version", s.versionInfo)
+	mux.HandleFunc("/api/activity", s.activity)
 	mux.HandleFunc("/api/update/check", s.updateCheck)
 	mux.HandleFunc("/api/update/apply", s.updateApply)
 	mux.HandleFunc("/", s.static)

@@ -63,16 +63,8 @@ export function FreeSpace({
     setNote(null);
     setPicked(new Set());
     try {
-      const stored = await readVerified(server);
+      const list = await readVerified(server);
       if (token !== run.current) return;
-      // One row per camera-roll asset: sending the same photo to two folders
-      // still frees the phone copy once.
-      const seen = new Set<string>();
-      const list = stored.filter((i) => {
-        if (seen.has(i.assetId)) return false;
-        seen.add(i.assetId);
-        return true;
-      });
       setItems(list);
       setPresence(
         Object.fromEntries(list.map((i) => [i.assetId, 'checking' as Presence])),

@@ -435,6 +435,31 @@ catalog is updated so the gallery shows one clean library, and the
 PC. You can restore a file by moving it back, or delete the folder from a
 computer when you are sure.
 
+### Activity and settings
+
+The app has four tabs on Android (**Drive**, **Phone**, **USB**, **Settings**) and
+three on iPhone (**Drive**, **Phone**, **Settings**). Settings opens without a
+computer connected, so the phone-side counts and cleanup stay reachable even when
+Wi-Fi is off.
+
+Settings shows which computer the phone is talking to and its OCD version, links
+to **Activity**, and summarises this phone's sends: waiting, failed, verified
+items and finished rows. From there you can open **Free up space** or clear the
+finished rows. Clearing rows only forgets the summary; the verified list and the
+drive copies are untouched.
+
+**Activity** is a read-only timeline. It does not record anything new: uploads,
+phone backups and duplicate moves already append one JSON row per file to each
+drive's `.ocd/audit.jsonl`, and uploads to the system drive are logged under the
+computer's data folder. The desktop merges those logs, newest first, labels each
+row with its drive or "This computer", and returns the most recent 120 rows by
+default (500 at most). Each log is read from its tail, at most 2 MiB, so a log
+that has grown for years still opens quickly. A row shows what happened, the file,
+its size, the drive, the device where known, and whether the copy was verified.
+
+Activity needs a reachable desktop, because the logs live with the drives and the
+computer. A drive that is unplugged simply contributes no rows until it is back.
+
 ## Optional helper tools
 
 These make browsing better but are not required:

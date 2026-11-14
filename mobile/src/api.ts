@@ -65,6 +65,27 @@ export type ImportCheck = {
   drives?: string[];
 };
 
+/** One row from the desktop's audit logs, as the activity screen sees it. */
+export type ActivityEntry = {
+  at: string;
+  op: string;
+  from?: string;
+  to?: string;
+  bytes?: number;
+  verified?: boolean;
+  sha256?: string;
+  device?: string;
+  library?: string;
+  libraryId?: string;
+  volumeId?: string;
+};
+
+export type ActivityPage = {
+  items: ActivityEntry[];
+  files: number;
+  rows: number;
+};
+
 export type UploadTarget = {
   libraryId?: string;
   volumeId?: string;
@@ -228,6 +249,9 @@ export async function uploadFile(
 
 export const api = {
   version: (server: string) => request<{ current: string }>(server, '/api/version', { timeoutMs: 6000 }),
+
+  activity: (server: string, limit = 120): Promise<ActivityPage> =>
+    request<ActivityPage>(server, `/api/activity?limit=${limit}`, { timeoutMs: 20000 }),
 
   libraries: async (server: string): Promise<Library[]> => {
     const res = await request<{ items: Library[] }>(server, '/api/libraries');

@@ -24,11 +24,12 @@ import { Connect } from './src/screens/Connect';
 import { DirectDrive } from './src/screens/DirectDrive';
 import { Gallery } from './src/screens/Gallery';
 import { Phone } from './src/screens/Phone';
+import { Settings } from './src/screens/Settings';
 import { isDriveModuleAvailable } from './src/direct/native';
 import { Wordmark } from './src/ui';
 import { colors, space } from './src/theme';
 
-type Tab = 'drive' | 'phone' | 'usb';
+type Tab = 'drive' | 'phone' | 'usb' | 'settings';
 
 export default function App() {
   // Every screen reads its insets from here, so the provider has to sit above
@@ -113,6 +114,8 @@ function Root() {
         <StatusBar style="dark" />
         {tab === 'usb' && Platform.OS === 'android' ? (
           <DirectDrive />
+        ) : tab === 'settings' ? (
+          <Settings server={null} onChangeServer={() => setTab('drive')} />
         ) : (
           <Connect
             initial={initial}
@@ -140,6 +143,15 @@ function Root() {
         />
       ) : tab === 'usb' ? (
         <DirectDrive />
+      ) : tab === 'settings' ? (
+        <Settings
+          server={server}
+          onChangeServer={() => {
+            setServer(null);
+            setProblem(null);
+            setTab('drive');
+          }}
+        />
       ) : (
         <Phone
           server={server}
@@ -158,7 +170,10 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   const insets = useSafeAreaInsets();
   // Only show the USB tab on Android, where SAF browsing is wired up. iOS
   // gets its own route once Dev builds exist.
-  const tabs: readonly Tab[] = Platform.OS === 'android' ? ['drive', 'phone', 'usb'] : ['drive', 'phone'];
+  const tabs: readonly Tab[] =
+    Platform.OS === 'android'
+      ? ['drive', 'phone', 'usb', 'settings']
+      : ['drive', 'phone', 'settings'];
   return (
     <View
       style={[
@@ -179,7 +194,13 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
           >
             <View style={[styles.dot, active && styles.dotActive]} />
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-              {t === 'drive' ? 'Drive' : t === 'phone' ? 'Phone' : 'USB'}
+              {t === 'drive'
+                ? 'Drive'
+                : t === 'phone'
+                  ? 'Phone'
+                  : t === 'usb'
+                    ? 'USB'
+                    : 'Settings'}
             </Text>
           </Pressable>
         );

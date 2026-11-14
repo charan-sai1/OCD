@@ -255,11 +255,22 @@ async function writeVerifiedStore(items: VerifiedItem[]): Promise<boolean> {
   );
 }
 
-/** Verified sends for one desktop, newest first. */
+/**
+ * Verified sends for one desktop, newest first, with one row per camera-roll
+ * asset. Sending the same photo to two folders leaves two store rows (each is
+ * a real verified copy), but the phone copy can only be freed once, so every
+ * screen counts and lists it once.
+ */
 export async function readVerified(server: string): Promise<VerifiedItem[]> {
+  const seen = new Set<string>();
   return (await readVerifiedStore())
     .filter((i) => i.server === server)
-    .sort((a, b) => b.verifiedAt - a.verifiedAt);
+    .sort((a, b) => b.verifiedAt - a.verifiedAt)
+    .filter((i) => {
+      if (seen.has(i.assetId)) return false;
+      seen.add(i.assetId);
+      return true;
+    });
 }
 
 /**
