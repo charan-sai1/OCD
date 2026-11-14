@@ -318,6 +318,12 @@ Choose what to copy:
 | Folder layout | `Phone/YYYY/MM` (default), `YYYY/MM`, or one flat folder |
 | If a file is already there | Skip it, keep both, or move the old copy aside |
 
+To skip the rules entirely, press **Choose items…** and tick exact photos and
+videos. A picked run copies only those items and still applies the duplicate
+policy, folder layout, staging, hashing, read-back verification, catalog update
+and audit; the media, date, album and screenshot conditions stop applying because
+the choice has already been made. **Whole roll (rules)** switches back.
+
 The duplicate policy is the important one. The app first narrows candidates to the
 same **file name and size**, then hashes the bytes on both the phone and the drive.
 Only a content match counts as a duplicate, so two different photos that happen to

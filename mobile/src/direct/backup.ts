@@ -158,6 +158,14 @@ export type TidyResult = {
 
 export type Cancellation = { cancelled: boolean };
 
+/**
+ * An explicit set of camera-roll items the user ticked. When present it
+ * replaces the "what to copy" conditions entirely: the user already decided.
+ * The duplicate policy, folder layout, verification, catalog merge and audit
+ * all still run exactly as they do for a condition-driven backup.
+ */
+export type BackupSelection = { assetIds: string[] };
+
 const ASSET_PAGE = 250;
 /** Keep this much room free beyond the file being copied. */
 const FREE_HEADROOM = 64 * 1024 * 1024;
@@ -425,6 +433,33 @@ async function visitAssetPages(
   }
 }
 
+/** How many ids one selection pre-load resolves at a time. */
+const SELECTION_CHUNK = 50;
+
+/**
+ * Resolves the ticked ids once, in order. A missing asset (deleted between the
+ * picker and the run) is dropped rather than failing the whole backup.
+ */
+async function loadSelection(
+  ids: string[],
+  onPage: (loaded: number, total: number) => void,
+  cancel: Cancellation,
+): Promise<MediaLibrary.Asset[]> {
+  const unique = [...new Set(ids)];
+  const assets: MediaLibrary.Asset[] = [];
+  for (let i = 0; i < unique.length; i += SELECTION_CHUNK) {
+    if (cancel.cancelled) break;
+    const batch = await Promise.all(
+      unique
+        .slice(i, i + SELECTION_CHUNK)
+        .map((id) => MediaLibrary.getAssetInfoAsync(id).catch(() => null)),
+    );
+    for (const a of batch) if (a) assets.push(a);
+    onPage(assets.length, unique.length);
+  }
+  return assets;
+}
+
 /** Albums with at least one item, ready for a condition chip row. */
 export async function listAlbums(): Promise<AlbumChoice[]> {
   try {
@@ -591,6 +626,7 @@ export async function runBackup(
   cond: BackupConditions,
   onProgress: (p: BackupProgress) => void,
   cancel: Cancellation,
+  selection?: BackupSelection,
 ): Promise<BackupSummary> {
   const summary: BackupSummary = {
     copied: 0,
@@ -673,18 +709,44 @@ export async function runBackup(
       const index = indexDrive(scan.entries);
       const dupClaimed = new Set<string>();
 
-      await visitAssetPages(cond, async (assets) => {
-        if (cancel.cancelled) return true;
-        total += assets.filter((a) => assetInRange(a, cond)).length;
-        return false;
-      });
+      // An explicit selection is resolved once, so the counting pass and the
+      // copy pass see the same items even if the camera roll changes under us.
+      const chosen = selection?.assetIds?.length
+        ? await loadSelection(
+            selection.assetIds,
+            (loaded, wanted) =>
+              onProgress(
+                progressOf(summary, 'listing', loaded, wanted, 'Reading your selection…'),
+              ),
+            cancel,
+          )
+        : null;
+
+      if (chosen) {
+        total = chosen.length;
+        if (chosen.length < new Set(selection?.assetIds ?? []).size) {
+          summary.errors.push(
+            'Some chosen items could not be read from the camera roll. They were skipped.',
+          );
+        }
+      } else {
+        await visitAssetPages(cond, async (assets) => {
+          if (cancel.cancelled) return true;
+          total += assets.filter((a) => assetInRange(a, cond)).length;
+          return false;
+        });
+      }
       onProgress(progressOf(summary, 'listing', 0, total, ''));
 
       if (cancel.cancelled) {
         summary.cancelled = true;
       } else {
-        await visitAssetPages(cond, async (assets) => {
-          const page = assets.filter((a) => assetInRange(a, cond));
+        const processAssets = async (
+          assets: MediaLibrary.Asset[],
+        ): Promise<boolean> => {
+          // A ticked item is copied as chosen: the conditions that produced the
+          // set no longer apply, but duplicate policy, layout and verification do.
+          const page = chosen ? assets : assets.filter((a) => assetInRange(a, cond));
           if (!page.length) return false;
           const paths = page.map((a) => (a.uri ? localPath(a.uri) : ''));
           const sizes = await statSizes(paths);
@@ -705,13 +767,13 @@ export async function runBackup(
               onProgress(progressOf(summary, 'copying', seen, total, name));
               continue;
             }
-            if (cond.minBytes > 0 && size < cond.minBytes) {
+            if (!chosen && cond.minBytes > 0 && size < cond.minBytes) {
               summary.tooSmall += 1;
               summary.skipped += 1;
               onProgress(progressOf(summary, 'copying', seen, total, name));
               continue;
             }
-            if (cond.skipScreenshots && isScreenshot(name)) {
+            if (!chosen && cond.skipScreenshots && isScreenshot(name)) {
               summary.screenshots += 1;
               summary.skipped += 1;
               onProgress(progressOf(summary, 'copying', seen, total, name));
@@ -862,7 +924,15 @@ export async function runBackup(
             );
           }
           return false;
-        });
+        };
+
+        if (chosen) {
+          for (let i = 0; i < chosen.length; i += ASSET_PAGE) {
+            if (await processAssets(chosen.slice(i, i + ASSET_PAGE))) break;
+          }
+        } else {
+          await visitAssetPages(cond, processAssets);
+        }
       }
     }
   } catch (e) {

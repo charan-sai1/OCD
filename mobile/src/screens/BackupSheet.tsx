@@ -25,6 +25,7 @@ import {
 } from '../direct/backup';
 import { colors, radius, space, bytes } from '../theme';
 import { Chip, PrimaryButton } from '../ui';
+import { AssetPicker } from './AssetPicker';
 import { Sheet } from './Sheet';
 
 type Preset = 'all' | '7' | '30' | '90' | 'year';
@@ -82,6 +83,11 @@ function Row({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Condition sections that stop applying once exact items are ticked. */
+function Rules({ show, children }: { show: boolean; children: React.ReactNode }) {
+  return show ? <>{children}</> : null;
+}
+
 export function BackupSheet({
   visible,
   ctx,
@@ -101,6 +107,9 @@ export function BackupSheet({
   const [progress, setProgress] = useState<BackupProgress | null>(null);
   const [summary, setSummary] = useState<BackupSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Ticked camera-roll ids; null means "use the conditions below". */
+  const [pickedIds, setPickedIds] = useState<string[] | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const cancelRef = useRef<Cancellation>({ cancelled: false });
   const lastUpdate = useRef(0);
@@ -159,7 +168,13 @@ export function BackupSheet({
 
     setRunning(true);
     try {
-      const result = await runBackup(ctx, cond, pushProgress, cancelRef.current);
+      const result = await runBackup(
+        ctx,
+        cond,
+        pushProgress,
+        cancelRef.current,
+        pickedIds?.length ? { assetIds: pickedIds } : undefined,
+      );
       setSummary(result);
       setProgress(null);
       if (result.copied > 0 || result.quarantined > 0 || result.catalogWritten) {
@@ -199,14 +214,23 @@ export function BackupSheet({
   ) : summary ? (
     <PrimaryButton label="Done" onPress={finish} />
   ) : permission === 'granted' ? (
-    <PrimaryButton label="Back up to this drive" onPress={start} disabled={!ctx} />
+    <PrimaryButton
+      label={
+        pickedIds?.length
+          ? `Back up ${pickedIds.length.toLocaleString()} selected`
+          : 'Back up to this drive'
+      }
+      onPress={start}
+      disabled={!ctx}
+    />
   ) : (
     <PrimaryButton label="Allow photo access" onPress={askPermission} />
   );
 
   return (
+    <>
     <Sheet
-      visible={visible}
+      visible={visible && !pickerOpen}
       title="Back up this phone"
       subtitle={
         ctx
@@ -242,6 +266,36 @@ export function BackupSheet({
           </View>
         ) : (
           <>
+            <Section
+              title="Which items"
+              note="Copy the whole roll using the rules below, or tick exact items yourself."
+            >
+              <Row>
+                <Chip
+                  label="Whole roll (rules)"
+                  active={!pickedIds}
+                  onPress={() => setPickedIds(null)}
+                />
+                <Chip
+                  label={
+                    pickedIds
+                      ? `Change (${pickedIds.length.toLocaleString()} picked)`
+                      : 'Choose items…'
+                  }
+                  active={Boolean(pickedIds)}
+                  onPress={() => setPickerOpen(true)}
+                />
+              </Row>
+              {pickedIds ? (
+                <Text style={styles.pickedNote}>
+                  Exactly these {pickedIds.length.toLocaleString()} item
+                  {pickedIds.length === 1 ? '' : 's'} will be copied. Duplicate handling, folder
+                  layout and verification below still apply.
+                </Text>
+              ) : null}
+            </Section>
+
+            <Rules show={!pickedIds}>
             <Section title="What to copy">
               <Row>
                 <Chip
@@ -303,6 +357,7 @@ export function BackupSheet({
                 </Row>
               </Section>
             ) : null}
+            </Rules>
 
             <Section
               title="If a file is already on the drive"
@@ -382,6 +437,7 @@ export function BackupSheet({
               </Row>
             </Section>
 
+            <Rules show={!pickedIds}>
             <Section title="Screenshots">
               <Row>
                 <Chip
@@ -396,6 +452,7 @@ export function BackupSheet({
                 />
               </Row>
             </Section>
+            </Rules>
 
             <View style={styles.safety}>
               <Text style={styles.safetyText}>
@@ -512,6 +569,19 @@ export function BackupSheet({
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
     </Sheet>
+
+    {pickerOpen ? (
+      <AssetPicker
+        media={cond.media}
+        initial={pickedIds ?? []}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={(ids) => {
+          setPickedIds(ids);
+          setPickerOpen(false);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -541,6 +611,7 @@ const styles = StyleSheet.create({
     color: colors.faint,
   },
   sectionNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
+  pickedNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   row: { paddingRight: space(4), gap: space(2) },
   destination: { gap: space(2), marginTop: space(1) },
   destinationLabel: { fontSize: 12, fontWeight: '600', color: colors.text },
