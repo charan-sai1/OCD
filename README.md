@@ -323,12 +323,13 @@ catalog in place. A failed or interrupted write leaves the previous catalog
 readable, because the new file is only renamed into position after it is
 completely written and flushed.
 
-The phone does not parse EXIF itself. Instead it asks Android's media database
-once for the whole drive: capture date, pixel dimensions and video duration come
-from there, with no per-file reads. Anything Android has not indexed falls back
-to the file's own modification time. Re-indexing on the phone keeps the dates a
-PC already wrote for files that have not changed, so plugging the drive into the
-phone does not degrade a richer catalog.
+For an on-drive index the phone does not parse EXIF itself. Instead it asks
+Android's media database once for the whole drive: capture date, pixel dimensions
+and video duration come from there, with no per-file reads. Anything Android has
+not indexed falls back to the file's own modification time. Re-indexing on the
+phone keeps the dates a PC already wrote for files that have not changed, so
+plugging the drive into the phone does not degrade a richer catalog. Camera-roll
+**backup** is different: it reads each photo's own details, as described below.
 
 If `catalog.gz` is ever damaged, the app opens `catalog.bak` instead of
 pretending the drive was never indexed, and offers to re-index when the drive is
@@ -399,6 +400,47 @@ separately.
 
 This is a foreground-only feature in this build: keep the app open and the drive
 plugged in. The phone originals are never deleted automatically.
+
+### Live Photos and capture details
+
+A Live Photo is one item made of two files: the photo and a short motion video.
+During backup the app keeps them together.
+
+- On iPhone the platform hands back the paired video for a Live Photo. It is
+  copied into the same dated folder with the photo's final name and a video
+  extension, verified with its own SHA-256, and recorded in the catalog's `live`
+  field as a volume-relative path.
+- Android motion photos and sidecar videos arrive as separate assets with no
+  explicit pair. When the catalog is updated, a photo and a video in the same
+  folder with the same stem are linked, so both platforms see one Live item.
+- Both halves must verify. If the photo or its video fails to copy, neither is
+  kept, so the drive never holds half a Live Photo.
+- A photo already on the drive under the duplicate policy is left alone. The run
+  does not add a missing companion to an existing copy; re-run after deleting
+  the drive copy if you want the pair completed.
+
+For every photo it copies, the backup reads the item's own metadata once:
+
+| Field | Used for |
+|-------|----------|
+| Capture date | Folder layout and the drive file's modification time |
+| Orientation | Showing the photo upright on both phone and computer |
+| Make, model | Camera details in the catalog |
+| ISO, aperture, exposure, focal length | Camera details in the catalog |
+| Latitude, longitude | Place in the catalog, when the file has it |
+
+The EXIF date wins over the phone's creation time, because it is when the shutter
+fired rather than when the item landed on this phone. EXIF has no timezone, so it
+is read as local time, the same way the camera and the phone treat it. A position
+at 0,0 is kept as a real position; a `gps` flag in the catalog records that a
+position exists instead of inferring it from the numbers. Values that cannot be
+read are left out rather than guessed.
+
+All of these details travel in the drive catalog, so the computer does not have
+to re-read every file to show them. Adoption treats a zero field as "not recorded
+here", not "cleared", and a later phone re-index keeps them for files whose size
+and timestamp have not changed. A file whose bytes changed loses the old details
+until the next scan reads them again.
 
 ### Send from the phone to the PC
 

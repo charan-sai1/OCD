@@ -272,9 +272,19 @@ func itemsFromCatalog(snap catalog.Snapshot, libID, prefix string) []media.Item 
 			ShotAt:   e.ShotAt,
 			W:        e.Width,
 			H:        e.Height,
+			Orient:   e.Orient,
 			Duration: e.Duration,
 			Hash:     e.Hash,
 			Live:     live,
+			Make:     e.Make,
+			Model:    e.Model,
+			ISO:      e.ISO,
+			FNumber:  e.FNumber,
+			Exposure: e.Exposure,
+			Focal:    e.Focal,
+			Lat:      e.Lat,
+			Lon:      e.Lon,
+			HasGPS:   e.HasGPS,
 		})
 	}
 	return out

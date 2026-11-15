@@ -17,7 +17,7 @@ func sample() Snapshot {
 			IndexVersion: 4,
 		},
 		Entries: []Entry{
-			{Path: "Photos/2024/IMG_0001.HEIC", Size: 4213948, MTime: 1712345678, ShotAt: 1712340000, Kind: "image", Width: 5712, Height: 4284},
+			{Path: "Photos/2024/IMG_0001.HEIC", Size: 4213948, MTime: 1712345678, ShotAt: 1712340000, Kind: "image", Width: 5712, Height: 4284, Orient: 6, Make: "Apple", Model: "iPhone 15 Pro", ISO: 64, FNumber: 1.78, Exposure: 0.008, Focal: 6.86, Lat: 12.9716, Lon: 77.5946, HasGPS: true},
 			{Path: "Photos/2024/IMG_0001.MOV", Size: 90123456, MTime: 1712345679, ShotAt: 1712340000, Kind: "video", Duration: 3.2},
 			{Path: "Videos/Clip.mp4", Size: 130472027, MTime: 1712345680, ShotAt: 1712340000, Kind: "video", Duration: 49.5},
 		},

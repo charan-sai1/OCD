@@ -41,7 +41,7 @@ func TestMirrorRoundTripAndRejectsAnotherVolume(t *testing.T) {
 	s := New(Config{DataDir: t.TempDir(), Version: "test"})
 	info := volume.Info{ID: "win:ABCD", Label: "Elements", Root: `E:\`}
 	snap := catalog.Snapshot{Entries: []catalog.Entry{
-		{Path: "Photos/a.jpg", Size: 10, MTime: 100, ShotAt: 90, Kind: "image", Hash: "sha256:aa", Width: 4000, Height: 3000},
+		{Path: "Photos/a.jpg", Size: 10, MTime: 100, ShotAt: 90, Kind: "image", Hash: "sha256:aa", Width: 4000, Height: 3000, Orient: 6, Make: "Apple", Model: "iPhone 15", ISO: 64, FNumber: 1.78, Exposure: 0.008, Focal: 6.86, Lat: 12.97, Lon: 77.59, HasGPS: true},
 		{Path: "Photos/a.mov", Size: 20, Kind: "video", Duration: 1.5},
 	}}
 	if err := s.writeMirror(info, snap); err != nil {
@@ -60,6 +60,12 @@ func TestMirrorRoundTripAndRejectsAnotherVolume(t *testing.T) {
 	}
 	if got.Entries[0].Hash != "sha256:aa" || got.Entries[0].ShotAt != 90 || got.Entries[1].Duration != 1.5 {
 		t.Fatalf("mirror lost entry metadata: %+v", got.Entries)
+	}
+	photo := got.Entries[0]
+	if photo.Orient != 6 || photo.Make != "Apple" || photo.Model != "iPhone 15" ||
+		photo.ISO != 64 || photo.FNumber != 1.78 || photo.Exposure != 0.008 ||
+		photo.Focal != 6.86 || !photo.HasGPS || photo.Lat != 12.97 || photo.Lon != 77.59 {
+		t.Fatalf("mirror lost EXIF/GPS metadata: %+v", photo)
 	}
 
 	// A mirror named for one volume but stamped with another is a hand-copied
@@ -85,7 +91,7 @@ func TestAdoptSeedsMapsVolumePathsOntoTheLibrary(t *testing.T) {
 	snap := catalog.Snapshot{
 		Header: catalog.Header{VolumeID: "win:ADOPT", Label: "Elements"},
 		Entries: []catalog.Entry{
-			{Path: "Photos/2024/a.jpg", Size: 10, ShotAt: 1700000000, Kind: "image", Hash: "sha256:bb", Live: "Photos/2024/a.mov", Width: 4000, Height: 3000},
+			{Path: "Photos/2024/a.jpg", Size: 10, ShotAt: 1700000000, Kind: "image", Hash: "sha256:bb", Live: "Photos/2024/a.mov", Width: 4000, Height: 3000, Orient: 8, Make: "Samsung", Model: "SM-S918", ISO: 50, FNumber: 2.2, Exposure: 0.004, Focal: 7.0, Lat: -33.86, Lon: 151.2, HasGPS: true},
 			{Path: "Photos/2024/a.mov", Size: 20, Kind: "video", Duration: 2},
 			// Outside the library, and a name that only starts with the prefix.
 			{Path: "Other/b.jpg", Size: 30, Kind: "image"},
@@ -123,6 +129,11 @@ func TestAdoptSeedsMapsVolumePathsOntoTheLibrary(t *testing.T) {
 	}
 	if photo.Hash != "sha256:bb" || photo.Live != "2024/a.mov" || photo.ShotAt != 1700000000 {
 		t.Fatalf("photo metadata = %+v", photo)
+	}
+	if photo.Orient != 8 || photo.Make != "Samsung" || photo.Model != "SM-S918" ||
+		photo.ISO != 50 || photo.FNumber != 2.2 || photo.Exposure != 0.004 ||
+		photo.Focal != 7.0 || !photo.HasGPS || photo.Lat != -33.86 || photo.Lon != 151.2 {
+		t.Fatalf("photo EXIF/GPS = %+v", photo)
 	}
 	motion, ok := byRel["2024/a.mov"]
 	if !ok || motion.Kind != media.KindVideo || motion.Duration != 2 {
@@ -185,7 +196,7 @@ func TestWriteCatalogsWritesMirrorAndKeepsHashAndLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := []map[string]any{
-		{"lib": rec.ID, "rel": "2024/one.jpg", "name": "one.jpg", "kind": "image", "size": 111, "mtime": 1700000000, "shot": 1699990000, "w": 4000, "h": 3000, "hash": "sha256:dd", "live": "2024/one.mov"},
+		{"lib": rec.ID, "rel": "2024/one.jpg", "name": "one.jpg", "kind": "image", "size": 111, "mtime": 1700000000, "shot": 1699990000, "w": 4000, "h": 3000, "hash": "sha256:dd", "live": "2024/one.mov", "orient": 6, "make": "Apple", "model": "iPhone 15", "iso": 64, "fnumber": 1.78, "exposure": 0.008, "focal": 6.86, "lat": 12.97, "lon": 77.59, "gps": true},
 		{"lib": rec.ID, "rel": "2024/one.mov", "name": "one.mov", "kind": "video", "size": 222, "mtime": 1700000001},
 	}
 	var buf bytes.Buffer
@@ -232,6 +243,11 @@ func TestWriteCatalogsWritesMirrorAndKeepsHashAndLive(t *testing.T) {
 	}
 	if photo.Hash != "sha256:dd" || photo.Live != "Photos/2024/one.mov" || photo.Width != 4000 {
 		t.Fatalf("mirror lost metadata: %+v", photo)
+	}
+	if photo.Orient != 6 || photo.Make != "Apple" || photo.Model != "iPhone 15" ||
+		photo.ISO != 64 || photo.FNumber != 1.78 || photo.Exposure != 0.008 ||
+		photo.Focal != 6.86 || !photo.HasGPS || photo.Lat != 12.97 || photo.Lon != 77.59 {
+		t.Fatalf("mirror lost EXIF/GPS: %+v", photo)
 	}
 }
 

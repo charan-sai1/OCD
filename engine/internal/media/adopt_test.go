@@ -12,13 +12,15 @@ func TestAdoptMergesCatalogMetadataWithoutLosingWalkFields(t *testing.T) {
 	ix.Put(Item{
 		Lib: "lib1", Rel: "2026/a.jpg", Name: "a.jpg", Ext: ".jpg", Kind: KindImage,
 		Size: 10, ModTime: 100, ShotAt: 50, W: 100, H: 80,
-		Make: "Canon", Model: "EOS", ISO: 200, Lat: 12.5, Lon: 77.5, HasGPS: true,
+		Make: "Canon", Model: "EOS", ISO: 200, FNumber: 2.8, Exposure: 0.01,
+		Focal: 50, Lat: 12.5, Lon: 77.5, HasGPS: true,
 	})
 
 	added, updated := ix.Adopt([]Item{{
 		Lib: "lib1", Rel: "2026/a.jpg", Kind: KindImage,
 		Size: 10, ModTime: 100, ShotAt: 60, W: 120, H: 90,
-		Hash: "sha256:abc", Live: "2026/a.mov",
+		Hash: "sha256:abc", Live: "2026/a.mov", Orient: 8,
+		Make: "Apple", ISO: 64, FNumber: 1.78, Lat: 1.5, Lon: 2.5, HasGPS: true,
 	}})
 	if added != 0 || updated != 1 {
 		t.Fatalf("added = %d, updated = %d, want 0/1", added, updated)
@@ -33,8 +35,14 @@ func TestAdoptMergesCatalogMetadataWithoutLosingWalkFields(t *testing.T) {
 	if got.Hash != "sha256:abc" || got.Live != "2026/a.mov" {
 		t.Fatalf("hash/live was lost: %+v", got)
 	}
-	if got.Make != "Canon" || got.Model != "EOS" || got.ISO != 200 || !got.HasGPS || got.Lat != 12.5 {
-		t.Fatalf("walk-only fields were overwritten by a zero in the catalog: %+v", got)
+	// A field the catalog records wins; a field it leaves at zero keeps what
+	// the walk learned.
+	if got.Orient != 8 || got.Make != "Apple" || got.ISO != 64 || got.FNumber != 1.78 ||
+		!got.HasGPS || got.Lat != 1.5 || got.Lon != 2.5 {
+		t.Fatalf("catalog EXIF/GPS did not win: %+v", got)
+	}
+	if got.Model != "EOS" || got.Exposure != 0.01 || got.Focal != 50 {
+		t.Fatalf("walk-only EXIF was cleared by a zero: %+v", got)
 	}
 
 	// A catalog entry that carries only a path still becomes a usable item.

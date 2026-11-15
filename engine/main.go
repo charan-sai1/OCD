@@ -477,7 +477,17 @@ func catalogCmd(args []string) {
 				Width:    it.W,
 				Height:   it.H,
 				Duration: it.Duration,
+				Orient:   it.Orient,
 				Live:     live,
+				Make:     it.Make,
+				Model:    it.Model,
+				ISO:      it.ISO,
+				FNumber:  it.FNumber,
+				Exposure: it.Exposure,
+				Focal:    it.Focal,
+				Lat:      it.Lat,
+				Lon:      it.Lon,
+				HasGPS:   it.HasGPS,
 			}
 			added++
 		}

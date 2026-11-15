@@ -390,6 +390,27 @@ func mergeAdopted(old, seed Item) Item {
 	if seed.Live != "" {
 		out.Live = seed.Live
 	}
+	if seed.Make != "" {
+		out.Make = seed.Make
+	}
+	if seed.Model != "" {
+		out.Model = seed.Model
+	}
+	if seed.ISO > 0 {
+		out.ISO = seed.ISO
+	}
+	if seed.FNumber > 0 {
+		out.FNumber = seed.FNumber
+	}
+	if seed.Exposure > 0 {
+		out.Exposure = seed.Exposure
+	}
+	if seed.Focal > 0 {
+		out.Focal = seed.Focal
+	}
+	if seed.HasGPS {
+		out.Lat, out.Lon, out.HasGPS = seed.Lat, seed.Lon, true
+	}
 	return out
 }
 

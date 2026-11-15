@@ -32,6 +32,7 @@ import {
   mergeCatalogEntries,
   type CatalogWriteEntry,
 } from './catalog';
+import { assetExif } from './exif';
 
 /** A mounted drive the phone has opened. */
 export type DriveContext = {
@@ -366,6 +367,77 @@ function assetKind(a: MediaLibrary.Asset): 'image' | 'video' {
 function assetTakenAt(a: MediaLibrary.Asset): number {
   const ms = a.creationTime || a.modificationTime || Date.now();
   return Math.round(ms / 1000);
+}
+
+/**
+ * A photo's platform info carries EXIF, GPS and, on iOS, the video half of a
+ * Live Photo. Videos are skipped: their creation time is enough and asking for
+ * EXIF would only add a bridge round trip per clip.
+ */
+async function assetInfoFor(
+  a: MediaLibrary.Asset,
+): Promise<MediaLibrary.AssetInfo | null> {
+  if (assetKind(a) !== 'image') return null;
+  try {
+    return await MediaLibrary.getAssetInfoAsync(a.id, {
+      shouldDownloadFromNetwork: false,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The paired motion file of a Live Photo, when the platform exposes it. The
+ * file lives in the app's temporary folder until it is copied, so it is read
+ * exactly once.
+ */
+function pairedVideo(info: MediaLibrary.AssetInfo | null): MediaLibrary.Asset | null {
+  const v = info?.pairedVideoAsset;
+  return v && v.uri ? v : null;
+}
+
+function splitName(name: string): [string, string] {
+  const slash = name.lastIndexOf('/');
+  const dir = slash >= 0 ? name.slice(0, slash + 1) : '';
+  const base = slash >= 0 ? name.slice(slash + 1) : name;
+  const [stem, ext] = splitExt(base);
+  return [dir + stem, ext];
+}
+
+/** Same folder and stem as the photo, so both platforms still see one item. */
+function companionRel(photoRel: string, companionName: string): string {
+  const [stem] = splitName(photoRel);
+  const [, ext] = splitExt(sanitiseName(companionName));
+  return `${stem}${ext || '.MOV'}`;
+}
+
+/** A photo and its motion part are stored under the same folder and stem. */
+function stemKey(rel: string): string {
+  const [stem] = splitName(rel);
+  return stem.toLowerCase();
+}
+
+/**
+ * Links a photo to a video copied in the same run when they share a folder and
+ * stem. This is what pairs Android motion photos and Samsung-style sidecars,
+ * whose platform info does not expose a paired asset. An explicit iOS pair
+ * already carries `live`, so it is left alone.
+ */
+function linkLivePairs(additions: CatalogWriteEntry[]): void {
+  const photos = new Map<string, CatalogWriteEntry>();
+  const videos = new Map<string, CatalogWriteEntry>();
+  for (const e of additions) {
+    if (e.k === 'image') photos.set(stemKey(e.p), e);
+  }
+  for (const e of additions) {
+    if (e.k === 'video') videos.set(stemKey(e.p), e);
+  }
+  for (const [key, photo] of photos) {
+    if (photo.live) continue;
+    const video = videos.get(key);
+    if (video) photo.live = video.p;
+  }
 }
 
 /**
@@ -781,7 +853,26 @@ export async function runBackup(
             }
 
             const kind = assetKind(a);
-            const takenAt = assetTakenAt(a);
+            // The file's own EXIF is the best date: the camera wrote it when
+            // the shutter fired, while the media store's creation time records
+            // when the item landed on this phone. GPS, camera and exposure come
+            // from the same read, so they cost nothing extra.
+            const info = kind === 'image' ? await assetInfoFor(a) : null;
+            const exif = assetExif(info);
+            const takenAt = exif.shot ?? assetTakenAt(a);
+            const motion = pairedVideo(info);
+            const exifEntry: Partial<CatalogWriteEntry> = {
+              make: exif.make,
+              model: exif.model,
+              iso: exif.iso,
+              fnumber: exif.fnumber,
+              exposure: exif.exposure,
+              focal: exif.focal,
+              lat: exif.lat,
+              lon: exif.lon,
+              gps: exif.gps,
+              orient: exif.orient,
+            };
 
             // "Keep both" never needs a duplicate decision. Skip and quarantine
             // do, and only after the bytes on both sides agree.
@@ -822,18 +913,39 @@ export async function runBackup(
             }
 
             const baseRel = destinationRel(cond.layout, takenAt, name);
-            let rel = uniqueRel(baseRel, taken);
-            // An incomplete scan cannot prove a destination is free. Stat is
-            // cheap next to a copy, and the native rename refuses to overwrite.
-            if (!scanComplete) {
-              for (let n = 1; (await statFile(absolutePath(ctx.root, rel))).exists; n += 1) {
-                rel = uniqueRel(suffixed(baseRel, n), taken);
+            // A Live Photo's motion file shares the photo's folder and stem, so
+            // the photo's name is only free when the companion name is free too.
+            // Bumping the photo and trying again keeps the pair together.
+            let rel = '';
+            let motionRel = '';
+            for (let n = 0; ; n += 1) {
+              rel = uniqueRel(n ? suffixed(baseRel, n) : baseRel, taken);
+              motionRel = motion ? companionRel(rel, motion.filename) : '';
+              // An incomplete scan cannot prove a destination is free. Stat is
+              // cheap next to a copy, and the native rename refuses to overwrite.
+              let clash = false;
+              if (!scanComplete) {
+                clash = (await statFile(absolutePath(ctx.root, rel))).exists;
               }
+              if (!clash && motionRel) {
+                clash =
+                  taken.has(motionRel.toLowerCase()) ||
+                  (!scanComplete &&
+                    (await statFile(absolutePath(ctx.root, motionRel))).exists);
+              }
+              if (!clash) break;
             }
             const dest = absolutePath(ctx.root, rel);
 
+            // A Live Photo needs room for both halves before either is started.
+            let liveSize = 0;
+            if (motion) {
+              const livePath = motion.uri ? localPath(motion.uri) : '';
+              if (livePath) liveSize = Math.max(0, (await statFile(livePath)).size);
+            }
+
             const free = await freeBytes(ctx.root);
-            if (free !== null && free < size + FREE_HEADROOM) {
+            if (free !== null && free < size + liveSize + FREE_HEADROOM) {
               summary.halted = true;
               summary.errors.push(
                 `The drive is full. ${name} and everything after it were not copied.`,
@@ -885,8 +997,51 @@ export async function runBackup(
             let mtime = takenAt;
             if (!(await setMtime(dest, takenAt))) {
               summary.mtimeFailed += 1;
-              const info = await statFile(dest);
-              if (info.exists && info.mtime > 0) mtime = info.mtime;
+              const destInfo = await statFile(dest);
+              if (destInfo.exists && destInfo.mtime > 0) mtime = destInfo.mtime;
+            }
+
+            // A Live Photo is one item made of two files. Both must land, or
+            // neither is kept, so the pair can never be left half-copied.
+            let liveCopy: CopyResult | null = null;
+            let liveMtime = 0;
+            if (motion && motionRel) {
+              const liveDest = absolutePath(ctx.root, motionRel);
+              const liveParent = parentOf(liveDest);
+              if (liveParent) await mkdirs(liveParent);
+              const liveStaging = `${incoming}/${Date.now()}-${seen}-live.part`;
+              const liveAt = Math.round(
+                (motion.creationTime || motion.modificationTime || takenAt * 1000) /
+                  1000,
+              );
+              try {
+                liveCopy = await copyAndHash(motion.uri, liveStaging, liveAt, true);
+              } catch {
+                liveCopy = {
+                  ok: false,
+                  size: 0,
+                  sha256: '',
+                  error: 'copy failed',
+                };
+              }
+              const kept =
+                liveCopy.ok && (await renameFile(liveStaging, liveDest));
+              if (!kept) {
+                await removeFile(liveStaging);
+                await removeFile(dest);
+                summary.failed += 1;
+                summary.errors.push(
+                  `${name}: the Live Photo's video could not be copied, so the photo was not kept either.`,
+                );
+                onProgress(progressOf(summary, 'copying', seen, total, name));
+                continue;
+              }
+              liveMtime = liveAt;
+              if (!(await setMtime(liveDest, liveAt))) {
+                summary.mtimeFailed += 1;
+                const liveInfo = await statFile(liveDest);
+                if (liveInfo.exists && liveInfo.mtime > 0) liveMtime = liveInfo.mtime;
+              }
             }
 
             summary.copied += 1;
@@ -900,7 +1055,36 @@ export async function runBackup(
               h: a.height || undefined,
               d: a.duration || undefined,
               t: takenAt,
+              live: liveCopy ? motionRel : undefined,
+              hash: copied.sha256 || undefined,
+              ...exifEntry,
             });
+            if (liveCopy) {
+              additions.push({
+                p: motionRel,
+                s: liveCopy.size,
+                m: liveMtime,
+                k: 'video',
+                t: liveMtime,
+                hash: liveCopy.sha256 || undefined,
+              });
+              summary.bytes += liveCopy.size;
+              remember(
+                index,
+                motion?.filename ?? motionRel,
+                liveCopy.size,
+                motionRel,
+              );
+              audit.push(
+                auditLine({
+                  op: 'backup',
+                  from: motion?.filename ?? motionRel,
+                  to: motionRel,
+                  size: liveCopy.size,
+                  sha256: liveCopy.sha256,
+                }),
+              );
+            }
             remember(index, name, copied.size, rel);
             audit.push(
               auditLine({
@@ -948,6 +1132,10 @@ export async function runBackup(
       cond.updateCatalog &&
       (additions.length > 0 || removals.length > 0)
     ) {
+      // Android motion photos and other same-stem sidecars arrive as two
+      // separate assets with no explicit pair. Join them now, while the whole
+      // run's additions are in hand, so the catalog records the pairing.
+      linkLivePairs(additions);
       onProgress(progressOf(summary, 'cataloguing', seen, total, 'Updating the catalog…'));
       const committed = await commitCatalog(
         ctx,

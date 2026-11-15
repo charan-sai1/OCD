@@ -53,7 +53,22 @@ type Entry struct {
 	Width    int     `json:"width,omitempty"`
 	Height   int     `json:"height,omitempty"`
 	Duration float64 `json:"duration,omitempty"`
+	Orient   int     `json:"orient,omitempty"`
 	Live     string  `json:"live,omitempty"`
+
+	// Camera and location details, read from the file's own EXIF by whichever
+	// machine wrote the entry. Keeping them in the catalog means a phone can
+	// show a date and place without opening the file, and a second computer
+	// does not have to re-read a whole drive to learn them.
+	Make     string  `json:"make,omitempty"`
+	Model    string  `json:"model,omitempty"`
+	ISO      int     `json:"iso,omitempty"`
+	FNumber  float64 `json:"fnumber,omitempty"`
+	Exposure float64 `json:"exposure,omitempty"`
+	Focal    float64 `json:"focal,omitempty"`
+	Lat      float64 `json:"lat,omitempty"`
+	Lon      float64 `json:"lon,omitempty"`
+	HasGPS   bool    `json:"gps,omitempty"`
 }
 
 // Snapshot is a whole catalog in memory.

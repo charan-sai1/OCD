@@ -21,6 +21,17 @@ export type CatalogEntry = {
   h?: number;
   d?: number; // duration
   live?: string;
+  hash?: string;
+  make?: string;
+  model?: string;
+  iso?: number;
+  fnumber?: number;
+  exposure?: number; // seconds
+  focal?: number; // mm
+  lat?: number;
+  lon?: number;
+  gps?: boolean;
+  orient?: number;
 };
 
 export type Catalog = {
@@ -78,6 +89,17 @@ export function parseCatalog(bytes: Uint8Array): Catalog {
         height?: number;
         duration?: number;
         live?: string;
+        hash?: string;
+        make?: string;
+        model?: string;
+        iso?: number;
+        fnumber?: number;
+        exposure?: number;
+        focal?: number;
+        lat?: number;
+        lon?: number;
+        gps?: boolean;
+        orient?: number;
       };
       if (!e.path) continue;
       entries.push({
@@ -90,6 +112,17 @@ export function parseCatalog(bytes: Uint8Array): Catalog {
         h: e.height,
         d: e.duration,
         live: e.live,
+        hash: e.hash,
+        make: e.make,
+        model: e.model,
+        iso: e.iso,
+        fnumber: e.fnumber,
+        exposure: e.exposure,
+        focal: e.focal,
+        lat: e.lat,
+        lon: e.lon,
+        gps: e.gps,
+        orient: e.orient,
       });
     } catch {
       // A half-written final line must not cost a 25,000-item catalogue.
@@ -121,7 +154,55 @@ export type CatalogWriteEntry = {
   h?: number;
   d?: number;
   t?: number;
+  live?: string;
+  hash?: string;
+  make?: string;
+  model?: string;
+  iso?: number;
+  fnumber?: number;
+  exposure?: number;
+  focal?: number;
+  lat?: number;
+  lon?: number;
+  gps?: boolean;
+  orient?: number;
 };
+
+/** Fields that describe the file's content rather than its place on the drive. */
+const CONTENT_KEYS = [
+  'live',
+  'hash',
+  'make',
+  'model',
+  'iso',
+  'fnumber',
+  'exposure',
+  'focal',
+  'lat',
+  'lon',
+  'gps',
+  'orient',
+] as const;
+
+/**
+ * contentFields copies the optional content metadata from an entry. A phone
+ * rewrite only refreshes path, size and mtime; everything the computer or the
+ * phone worked out about the bytes has to travel through untouched, or the next
+ * catalog write would erase hashes, Live pairs, camera details and GPS.
+ */
+function contentFields(
+  e: CatalogEntry | CatalogWriteEntry,
+): Partial<CatalogWriteEntry> {
+  const out: Partial<CatalogWriteEntry> = {};
+  const src = e as Record<string, unknown>;
+  for (const key of CONTENT_KEYS) {
+    const v = src[key];
+    if (v !== undefined && v !== null && v !== '') {
+      (out as Record<string, unknown>)[key] = v;
+    }
+  }
+  return out;
+}
 
 /**
  * buildCatalogEntries merges three sources for one file, in authority order:
@@ -155,6 +236,9 @@ export function buildCatalogEntries(
     if (h) entry.h = h;
     const d = (unchanged && old ? old.d : undefined) ?? m?.d;
     if (d) entry.d = d;
+    // Unchanged bytes keep what an earlier writer learned about them. A file
+    // whose size or mtime moved is a different file until proven otherwise.
+    if (unchanged && old) Object.assign(entry, contentFields(old));
     out.push(entry);
   }
   return out;
@@ -181,8 +265,18 @@ export function mergeCatalogEntries(
     // both accepted so a merge can start from either side of a re-index.
     const entry: CatalogWriteEntry =
       'size' in e
-        ? { p: e.p, s: e.size, m: e.m, k: e.k, w: e.w, h: e.h, d: e.d, t: e.t }
-        : { p: e.p, s: e.s, m: e.m, k: e.k, w: e.w, h: e.h, d: e.d, t: e.t };
+        ? {
+            p: e.p,
+            s: e.size,
+            m: e.m,
+            k: e.k,
+            w: e.w,
+            h: e.h,
+            d: e.d,
+            t: e.t,
+            ...contentFields(e),
+          }
+        : { ...e };
     byPath.set(entry.p, entry);
     order.push(entry.p);
   }
@@ -233,6 +327,21 @@ export function encodeCatalog(
     if (e.h) o.height = e.h;
     if (e.d) o.duration = e.d;
     if (e.t) o.shot = e.t;
+    if (e.orient) o.orient = e.orient;
+    if (e.live) o.live = e.live;
+    if (e.hash) o.hash = e.hash;
+    if (e.make) o.make = e.make;
+    if (e.model) o.model = e.model;
+    if (e.iso) o.iso = e.iso;
+    if (e.fnumber) o.fnumber = e.fnumber;
+    if (e.exposure) o.exposure = e.exposure;
+    if (e.focal) o.focal = e.focal;
+    // A position at 0,0 is real, so the presence flag decides, not the value.
+    if (e.gps) {
+      o.lat = e.lat ?? 0;
+      o.lon = e.lon ?? 0;
+      o.gps = true;
+    }
     gz.push(strToU8(JSON.stringify(o) + '\n'), false);
   }
   gz.push(new Uint8Array(0), true);
