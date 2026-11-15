@@ -117,7 +117,6 @@ export function Settings({
       <ScreenHeader style={styles.header}>
         <View style={styles.brandRow}>
           <Wordmark />
-          <Text style={styles.tag}>Settings</Text>
         </View>
         <Text style={styles.title} accessibilityRole="header">
           Settings
@@ -162,7 +161,11 @@ export function Settings({
 
         <Section
           title="Activity"
-          note="Sends, phone backups and duplicate moves, read from each drive's own record."
+          note={
+            server
+              ? "Sends, phone backups and duplicate moves, read from each drive's own record."
+              : 'Connect a computer to read its activity record.'
+          }
         >
           <Pressable
             onPress={() => {
@@ -297,7 +300,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     height: 34,
   },
-  tag: { fontSize: 12, fontWeight: '600', color: colors.faint },
   title: {
     fontSize: 32,
     lineHeight: 38,

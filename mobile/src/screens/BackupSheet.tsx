@@ -287,10 +287,14 @@ export function BackupSheet({
           : 'Open a drive first'
       }
       onClose={requestClose}
-      closeLabel={running ? 'Working' : 'Close'}
+      hideClose={running}
       footer={footer}
     >
-      <ScrollView contentContainerStyle={styles.wrap}>
+      <ScrollView
+        contentContainerStyle={styles.wrap}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         <Text style={styles.lead}>
           Copies photos and videos from this phone onto the drive, in dated folders. Every
           copy is hashed and read back. Your phone originals are never deleted.
@@ -571,10 +575,12 @@ export function BackupSheet({
                   : 'Backup finished'}
             </Text>
             <SummaryRow label="Copied" value={summary.copied.toLocaleString()} />
-            <SummaryRow
-              label="Already on the drive"
-              value={summary.duplicates.toLocaleString()}
-            />
+            {summary.duplicates > 0 ? (
+              <SummaryRow
+                label="Already on the drive"
+                value={summary.duplicates.toLocaleString()}
+              />
+            ) : null}
             {summary.screenshots > 0 ? (
               <SummaryRow
                 label="Screenshots skipped"
@@ -584,18 +590,24 @@ export function BackupSheet({
             {summary.tooSmall > 0 ? (
               <SummaryRow label="Too small" value={summary.tooSmall.toLocaleString()} />
             ) : null}
-            <SummaryRow
-              label={`Moved to ${summary.quarantineFolder}`}
-              value={summary.quarantined.toLocaleString()}
-            />
-            <SummaryRow label="Failed" value={summary.failed.toLocaleString()} />
+            {summary.quarantined > 0 ? (
+              <SummaryRow
+                label={`Moved to ${summary.quarantineFolder}`}
+                value={summary.quarantined.toLocaleString()}
+              />
+            ) : null}
+            {summary.failed > 0 ? (
+              <SummaryRow label="Failed" value={summary.failed.toLocaleString()} />
+            ) : null}
             {summary.mtimeFailed > 0 ? (
               <SummaryRow
                 label="File dates not set"
                 value={summary.mtimeFailed.toLocaleString()}
               />
             ) : null}
-            <SummaryRow label="Bytes copied" value={bytes(summary.bytes)} />
+            {summary.bytes > 0 ? (
+              <SummaryRow label="Bytes copied" value={bytes(summary.bytes)} />
+            ) : null}
             <SummaryRow
               label="Catalog"
               value={

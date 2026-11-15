@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, space } from '../theme';
-import { TOUCH } from '../layout';
 import { PrimaryButton, Wordmark } from '../ui';
 
 type Props = {
@@ -90,15 +89,6 @@ export function Connect({ initial, busy, problem, onConnect, onUseDrive }: Props
               </Text>
             </Pressable>
           ) : null}
-
-          <Pressable
-            onPress={() => setValue('http://localhost:8090')}
-            style={styles.debug}
-            accessibilityRole="button"
-            accessibilityLabel="Simulator? Use localhost:8090"
-          >
-            <Text style={styles.debugText}>Simulator? Use localhost:8090</Text>
-          </Pressable>
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + space(4) }]}>
           <Wordmark />
@@ -192,13 +182,6 @@ const styles = StyleSheet.create({
   },
   driveTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
   driveText: { fontSize: 13, lineHeight: 19, color: colors.muted },
-  debug: {
-    marginTop: space(4),
-    alignSelf: 'flex-start',
-    minHeight: TOUCH,
-    justifyContent: 'center',
-  },
-  debugText: { fontSize: 12, color: colors.faint },
   footer: {
     paddingHorizontal: space(6),
     gap: 2,

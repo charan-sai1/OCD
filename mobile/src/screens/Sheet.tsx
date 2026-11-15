@@ -1,6 +1,8 @@
 import React, { ReactNode } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -21,6 +23,7 @@ export function Sheet({
   subtitle,
   onClose,
   closeLabel = 'Close',
+  hideClose,
   children,
   footer,
 }: {
@@ -29,6 +32,8 @@ export function Sheet({
   subtitle?: string;
   onClose: () => void;
   closeLabel?: string;
+  /** Hide the top-right action while the sheet is doing something it cannot stop. */
+  hideClose?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -41,20 +46,30 @@ export function Sheet({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <View style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.head}>
-          <View style={styles.headText}>
-            <Text style={styles.title}>{title}</Text>
-            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {/* A full-screen modal does not inherit the window's keyboard resize on
+          iOS, so the footer and the field being typed into would slide under
+          the keyboard. On Android the window already resizes. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.root}
+      >
+        <View style={{ paddingTop: insets.top }}>
+          <View style={styles.head}>
+            <View style={styles.headText}>
+              <Text style={styles.title}>{title}</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </View>
+            {hideClose ? null : (
+              <Pressable
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel={closeLabel}
+                style={styles.closeHit}
+              >
+                <Text style={styles.close}>{closeLabel}</Text>
+              </Pressable>
+            )}
           </View>
-          <Pressable
-            onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel={closeLabel}
-            style={styles.closeHit}
-          >
-            <Text style={styles.close}>{closeLabel}</Text>
-          </Pressable>
         </View>
 
         <View style={styles.body}>{children}</View>
@@ -69,7 +84,7 @@ export function Sheet({
             {footer}
           </View>
         ) : null}
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
