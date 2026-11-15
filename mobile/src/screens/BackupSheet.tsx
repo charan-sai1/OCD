@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,8 @@ import {
   type Cancellation,
   type DriveContext,
 } from '../direct/backup';
+import { resumeConditions, type ResumeRecord } from '../direct/resume';
+import { clearResume, readResume } from '../direct/resumeStore';
 import { colors, radius, space, bytes } from '../theme';
 import { Chip, PrimaryButton } from '../ui';
 import { AssetPicker } from './AssetPicker';
@@ -110,6 +113,8 @@ export function BackupSheet({
   /** Ticked camera-roll ids; null means "use the conditions below". */
   const [pickedIds, setPickedIds] = useState<string[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** A marker left by a run the OS killed, if one belongs to this drive. */
+  const [resume, setResume] = useState<ResumeRecord | null>(null);
 
   const cancelRef = useRef<Cancellation>({ cancelled: false });
   const lastUpdate = useRef(0);
@@ -127,6 +132,21 @@ export function BackupSheet({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshPermission();
   }, [refreshPermission]);
+
+  // One marker is kept at a time. Read it when the sheet opens, and again if
+  // the mounted drive changes; only the drive it names can continue the run.
+  useEffect(() => {
+    let alive = true;
+    void readResume().then((record) => {
+      if (alive) setResume(record);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ctx?.volumeId]);
+
+  const resumeHere =
+    resume && ctx && resume.volumeId === ctx.volumeId ? resume : null;
 
   const set = useCallback(<K extends keyof BackupConditions>(key: K, value: BackupConditions[K]) => {
     setCond((prev) => ({ ...prev, [key]: value }));
@@ -152,7 +172,7 @@ export function BackupSheet({
     }
   }, []);
 
-  const start = async () => {
+  const startRun = async (from: ResumeRecord | null) => {
     if (!ctx || running) return;
     setError(null);
     setSummary(null);
@@ -166,14 +186,24 @@ export function BackupSheet({
       return;
     }
 
+    // A resume uses the rules the killed run started with, except that
+    // duplicates are forced to skip so already-copied items are not duplicated.
+    const runConditions = from ? resumeConditions(from) : cond;
+    const assetIds = from
+      ? from.assetIds
+      : pickedIds?.length
+        ? pickedIds
+        : undefined;
+
     setRunning(true);
     try {
       const result = await runBackup(
         ctx,
-        cond,
+        runConditions,
         pushProgress,
         cancelRef.current,
-        pickedIds?.length ? { assetIds: pickedIds } : undefined,
+        assetIds?.length ? { assetIds } : undefined,
+        from ? { resumed: true } : undefined,
       );
       setSummary(result);
       setProgress(null);
@@ -183,8 +213,27 @@ export function BackupSheet({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The backup could not finish.');
     } finally {
+      // The attempt is over, whichever way it ended. A kill would not reach
+      // here, which is exactly when the marker should stay for the next launch.
+      if (from) {
+        setResume(null);
+        await clearResume();
+      }
       setRunning(false);
     }
+  };
+
+  const start = () => {
+    void startRun(null);
+  };
+
+  const continueRun = () => {
+    if (resumeHere) void startRun(resumeHere);
+  };
+
+  const dismissResume = () => {
+    setResume(null);
+    void clearResume();
   };
 
   const finish = () => {
@@ -246,6 +295,21 @@ export function BackupSheet({
           Copies photos and videos from this phone onto the drive, in dated folders. Every
           copy is hashed and read back. Your phone originals are never deleted.
         </Text>
+
+        {resumeHere && !running && !summary ? (
+          <View style={styles.resumeCard}>
+            <Text style={styles.resumeTitle}>The last backup did not finish</Text>
+            <Text style={styles.resumeText}>
+              {startedLabel(resumeHere.startedAt)} It was copying to{' '}
+              {ctx?.label || 'this drive'}. Continuing uses the same rules and skips
+              files that are already on the drive.
+            </Text>
+            <Row>
+              <Chip label="Continue" active onPress={continueRun} />
+              <Chip label="Dismiss" active={false} onPress={dismissResume} />
+            </Row>
+          </View>
+        ) : null}
 
         {permission !== 'granted' ? (
           <View style={styles.permissionCard}>
@@ -457,8 +521,10 @@ export function BackupSheet({
             <View style={styles.safety}>
               <Text style={styles.safetyText}>
                 The catalog on the drive is updated after the copy, so the files come back
-                in the same gallery on this phone and on the computer. Keep the drive
-                plugged in and the screen on while this runs.
+                in the same gallery on this phone and on the computer.{' '}
+                {Platform.OS === 'android'
+                  ? 'You can lock the screen: the copy keeps running in the background. Keep the drive plugged in.'
+                  : 'Keep the app open and the drive plugged in while this runs.'}
               </Text>
             </View>
           </>
@@ -585,6 +651,17 @@ export function BackupSheet({
   );
 }
 
+function startedLabel(startedAt: number): string {
+  if (!startedAt) return 'An earlier run was interrupted.';
+  const when = new Date(startedAt * 1000).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `Started ${when}.`;
+}
+
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.summaryRow}>
@@ -648,6 +725,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   safetyText: { fontSize: 12, lineHeight: 18, color: colors.muted },
+  resumeCard: {
+    padding: space(3),
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    gap: space(2),
+  },
+  resumeTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  resumeText: { fontSize: 13, lineHeight: 19, color: colors.muted },
   progressCard: {
     padding: space(3),
     borderRadius: radius.md,

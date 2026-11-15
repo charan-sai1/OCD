@@ -20,8 +20,11 @@ import {
   renameFile,
   scanVolume,
   setMtime,
+  startBackground,
   statFile,
   statSizes,
+  stopBackground,
+  updateBackground,
   writeCatalog,
   type CopyResult,
   type ScanEntry,
@@ -33,6 +36,7 @@ import {
   type CatalogWriteEntry,
 } from './catalog';
 import { assetExif } from './exif';
+import { writeResume, clearResume } from './resumeStore';
 
 /** A mounted drive the phone has opened. */
 export type DriveContext = {
@@ -166,6 +170,14 @@ export type Cancellation = { cancelled: boolean };
  * all still run exactly as they do for a condition-driven backup.
  */
 export type BackupSelection = { assetIds: string[] };
+
+/**
+ * Switches only the code sets, never the screen. `resumed` marks a run that
+ * continues one the OS killed; the copy loop is identical, but the catalog is
+ * written even when nothing new was copied so a kill during the previous
+ * catalog commit cannot leave it stale.
+ */
+export type BackupRunOptions = { resumed?: boolean };
 
 const ASSET_PAGE = 250;
 /** Keep this much room free beyond the file being copied. */
@@ -688,6 +700,22 @@ function progressOf(
   };
 }
 
+/** One short line for the foreground notification, not the full UI card. */
+function backgroundText(p: BackupProgress): string {
+  switch (p.phase) {
+    case 'listing':
+      return 'Checking what is already on the drive…';
+    case 'cataloguing':
+      return 'Updating the catalog…';
+    case 'done':
+      return 'Finishing up…';
+    default:
+      return p.total > 0
+        ? `${p.copied.toLocaleString()} copied · ${Math.min(p.index, p.total).toLocaleString()} of ${p.total.toLocaleString()}`
+        : `${p.copied.toLocaleString()} copied`;
+  }
+}
+
 /**
  * Copies the phone's camera roll onto the drive. Every file is staged on the
  * drive, hashed while streaming, renamed into place, then read back and hashed
@@ -696,9 +724,10 @@ function progressOf(
 export async function runBackup(
   ctx: DriveContext,
   cond: BackupConditions,
-  onProgress: (p: BackupProgress) => void,
+  report: (p: BackupProgress) => void,
   cancel: Cancellation,
   selection?: BackupSelection,
+  options?: BackupRunOptions,
 ): Promise<BackupSummary> {
   const summary: BackupSummary = {
     copied: 0,
@@ -717,6 +746,17 @@ export async function runBackup(
     quarantineFolder: duplicateArchiveRel(cond.duplicateFolder),
     catalogWritten: false,
     catalogCount: 0,
+  };
+
+  // The UI gets every tick; the notification is throttled so a fast run does
+  // not queue hundreds of service updates. Both are best effort.
+  let lastNotice = 0;
+  const onProgress = (p: BackupProgress) => {
+    report(p);
+    const now = Date.now();
+    if (now - lastNotice < 1000) return;
+    lastNotice = now;
+    updateBackground('Backing up to your drive', backgroundText(p));
   };
 
   // Refuse to start on a mount the platform already knows is read-only. The
@@ -749,6 +789,23 @@ export async function runBackup(
   };
 
   try {
+    // Android keeps a long copy alive with the screen off only through a
+    // foreground service. On iOS and in Expo Go this is a no-op, and the run
+    // proceeds exactly as before.
+    await startBackground('Backing up to your drive', 'Preparing your photos…');
+
+    // If the process is killed before `finally` runs, this marker survives and
+    // the backup screen offers to continue. It records the rules, not a list of
+    // finished files, so a resumed run can reuse the normal duplicate check.
+    await writeResume({
+      volumeId: ctx.volumeId,
+      label: ctx.label,
+      conditions: { ...cond },
+      assetIds:
+        selection?.assetIds?.length ? [...selection.assetIds] : undefined,
+      startedAt: Math.round(Date.now() / 1000),
+    });
+
     // A previous run killed mid-copy can leave staged files behind. They are
     // ours (never phone originals or drive library files), so clear them before
     // the new run starts.
@@ -1130,7 +1187,7 @@ export async function runBackup(
 
     if (
       cond.updateCatalog &&
-      (additions.length > 0 || removals.length > 0)
+      (additions.length > 0 || removals.length > 0 || options?.resumed)
     ) {
       // Android motion photos and other same-stem sidecars arrive as two
       // separate assets with no explicit pair. Join them now, while the whole
@@ -1150,6 +1207,11 @@ export async function runBackup(
     }
 
     keepScreenOn(false);
+    // The service and marker are only needed while copying. Clearing here means
+    // a finished run leaves nothing to "resume"; a killed process never gets
+    // this far, which is exactly when the marker should remain.
+    stopBackground();
+    await clearResume();
   }
 
   onProgress(progressOf(summary, 'done', seen, total, ''));

@@ -384,9 +384,9 @@ even on a filesystem that does not preserve it otherwise.
 The run probes the drive before it starts, clears any staged files a killed run
 left behind, and checks free space before every file. It stops cleanly only when
 the drive is known to be full; an unreadable free-space reading is not treated as
-zero. It keeps the screen awake while it works, updates the catalog at the end,
-and writes one audit row per copied file. If a page of the camera roll cannot be
-listed mid-run, the copies already made still get their audit rows and catalog
+zero. It keeps the screen awake while the app is open, updates the catalog at the
+end, and writes one audit row per copied file. If a page of the camera roll cannot
+be listed mid-run, the copies already made still get their audit rows and catalog
 entries. If the drive scan hits its item cap or cannot read a folder, the run says
 so and merges conservatively into the catalog it already found instead of
 rebuilding it from a partial walk. If the run is stopped, the files already copied
@@ -398,8 +398,20 @@ already on the drive, screenshots, items below the minimum size, and failures. A
 file whose date could not be restored is still a valid copy and is reported
 separately.
 
-This is a foreground-only feature in this build: keep the app open and the drive
-plugged in. The phone originals are never deleted automatically.
+On Android the run continues with the screen locked: a foreground service and a
+low-importance progress notification keep the copy alive while the drive stays
+plugged in. iOS has no equivalent in this build, so keep the app open there.
+
+Before copying starts, the app writes a small resume marker in its own folder and
+removes it when the run ends, however it ends. If Android kills the process, the
+marker is what survives, and the backup screen offers to continue on that same
+drive. A resumed run reuses the original rules and ticked items, and forces the
+duplicate policy to skip, so a file copied just before the kill is not stored
+twice. If the kill landed during the catalog write, the resumed run writes the
+catalog again even when nothing new was copied, so the index catches up with the
+files already on the drive.
+
+The phone originals are never deleted automatically.
 
 ### Live Photos and capture details
 

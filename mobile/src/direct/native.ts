@@ -590,6 +590,58 @@ export function keepScreenOn(on: boolean): void {
   }
 }
 
+/**
+ * Starts the Android foreground service that keeps a long copy alive with the
+ * screen off. Android 13+ needs the notification permission before the service
+ * has a notification to show; the copy still runs without it, but the system is
+ * far more likely to kill the process. Returns whether the service started.
+ */
+export async function startBackground(
+  title: string,
+  text: string,
+): Promise<boolean> {
+  if (!isDriveModuleAvailable || Platform.OS !== 'android') return false;
+  if (Platform.Version >= 33) {
+    try {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      if (!granted) {
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        );
+      }
+    } catch {
+      // A shell without the constant: still try to start the service.
+    }
+  }
+  try {
+    return drive().startBackground(title, text);
+  } catch {
+    return false;
+  }
+}
+
+/** Replaces the foreground notification's text. A no-op when none is showing. */
+export function updateBackground(title: string, text: string): void {
+  if (!isDriveModuleAvailable || Platform.OS !== 'android') return;
+  try {
+    drive().updateBackground(title, text);
+  } catch {
+    // The notification is progress only; losing it must not fail a backup.
+  }
+}
+
+/** Removes the foreground notification and releases the wake lock. */
+export function stopBackground(): void {
+  if (!isDriveModuleAvailable || Platform.OS !== 'android') return;
+  try {
+    drive().stopBackground();
+  } catch {
+    // Nothing to do: the service will stop with the process anyway.
+  }
+}
+
 export async function mkdirs(path: string): Promise<boolean> {
   try {
     return await drive().mkdirs(path);

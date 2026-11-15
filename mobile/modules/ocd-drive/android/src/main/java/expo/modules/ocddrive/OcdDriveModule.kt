@@ -409,8 +409,9 @@ class OcdDriveModule : Module() {
       }
     }
 
-    // A backup can run for many minutes. The screen staying on is the only
-    // thing keeping Android from throttling the app in the foreground build.
+    // The screen staying on remains useful in the foreground: it prevents the
+    // display from sleeping while the user watches a run. The foreground
+    // service below is what keeps the copy alive once the screen is off.
     Function("keepScreenOn") { on: Boolean ->
       runCatching {
         appContext.currentActivity?.let { activity ->
@@ -423,6 +424,25 @@ class OcdDriveModule : Module() {
           }
         }
       }
+      true
+    }
+
+    // A backup can run for many minutes. The screen staying on is one guard;
+    // the other is a foreground service, which lets the copy continue when the
+    // screen is locked. Android may still kill the process, so the app also
+    // writes a resume marker before it starts.
+    Function("startBackground") { title: String, text: String ->
+      runCatching { BackupService.start(ctx, title, text) }
+      true
+    }
+
+    Function("updateBackground") { title: String, text: String ->
+      runCatching { BackupService.update(ctx, title, text) }
+      true
+    }
+
+    Function("stopBackground") {
+      runCatching { BackupService.stop(ctx) }
       true
     }
 

@@ -73,6 +73,14 @@ type OcdDriveNative = {
   hashFile(path: string): Promise<string>;
   setMtime(path: string, seconds: number): Promise<boolean>;
   keepScreenOn(on: boolean): boolean;
+  /**
+   * A foreground service that keeps a long copy alive with the screen off.
+   * `start` shows a low-importance notification; `update` replaces its text
+   * only while the service is already running; `stop` removes both.
+   */
+  startBackground(title: string, text: string): boolean;
+  updateBackground(title: string, text: string): boolean;
+  stopBackground(): boolean;
   imageThumb(src: string, dst: string, maxSize: number, quality: number): Promise<boolean>;
   videoDuration(src: string): Promise<number>;
   videoThumb(
