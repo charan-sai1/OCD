@@ -42,6 +42,12 @@ type Item struct {
 	H        int     `json:"h"`
 	Orient   int     `json:"orient,omitempty"`
 	Duration float64 `json:"dur,omitempty"`
+	// Hash and Live come from a drive catalog written elsewhere (a phone or
+	// another computer). The desktop does not compute them during a walk, but
+	// it must carry them through, or a scan would strip the pairing the phone
+	// worked out.
+	Hash string `json:"hash,omitempty"`
+	Live string `json:"live,omitempty"`
 
 	Make     string  `json:"make,omitempty"`
 	Model    string  `json:"model,omitempty"`
@@ -292,6 +298,117 @@ func (ix *Index) Put(it Item) {
 	ix.ready()
 }
 
+// Adopt merges entries read from a drive catalog into the index. This is how a
+// second computer, or a fresh install, learns what is on a drive without
+// walking it. Entries already indexed keep the fields a walk discovered (camera,
+// GPS) while the catalog's own metadata wins, because the drive is the source of
+// truth and may have been updated by a phone since this machine last looked.
+//
+// The whole batch is written once, so adopting 60,000 entries costs one index
+// save rather than 60,000.
+func (ix *Index) Adopt(items []Item) (added, updated int) {
+	if len(items) == 0 {
+		return 0, 0
+	}
+	ix.mu.Lock()
+	for _, it := range items {
+		if it.Lib == "" || it.Rel == "" {
+			continue
+		}
+		if it.Name == "" {
+			it.Name = pathBase(it.Rel)
+		}
+		if it.Ext == "" {
+			it.Ext = strings.ToLower(pathExt(it.Name))
+		}
+		if it.Kind == "" {
+			it.Kind = KindOf(it.Ext)
+		}
+		if i, ok := ix.pos[it.Key()]; ok {
+			merged := mergeAdopted(ix.items[i], it)
+			if merged != ix.items[i] {
+				ix.items[i] = merged
+				updated++
+			}
+			continue
+		}
+		ix.items = append(ix.items, it)
+		added++
+	}
+	ix.ready()
+	ix.mu.Unlock()
+	if added+updated > 0 {
+		_ = ix.Save()
+	}
+	return added, updated
+}
+
+// mergeAdopted keeps what the walk knows and takes what the catalog knows. A
+// zero field in the catalog means "not recorded there", not "cleared here", so
+// it never overwrites a value the desktop worked out.
+func mergeAdopted(old, seed Item) Item {
+	out := old
+	if seed.Lib != "" {
+		out.Lib = seed.Lib
+	}
+	if seed.Rel != "" {
+		out.Rel = seed.Rel
+	}
+	if seed.Name != "" {
+		out.Name = seed.Name
+	}
+	if seed.Ext != "" {
+		out.Ext = seed.Ext
+	}
+	if seed.Kind != "" {
+		out.Kind = seed.Kind
+	}
+	if seed.Size > 0 {
+		out.Size = seed.Size
+	}
+	if seed.ModTime > 0 {
+		out.ModTime = seed.ModTime
+	}
+	if seed.ShotAt > 0 {
+		out.ShotAt = seed.ShotAt
+	}
+	if seed.W > 0 {
+		out.W = seed.W
+	}
+	if seed.H > 0 {
+		out.H = seed.H
+	}
+	if seed.Orient > 0 {
+		out.Orient = seed.Orient
+	}
+	if seed.Duration > 0 {
+		out.Duration = seed.Duration
+	}
+	if seed.Hash != "" {
+		out.Hash = seed.Hash
+	}
+	if seed.Live != "" {
+		out.Live = seed.Live
+	}
+	return out
+}
+
+// pathBase and pathExt work on the slash-separated relative paths an index item
+// carries, independent of the host's separator.
+func pathBase(rel string) string {
+	if i := strings.LastIndex(rel, "/"); i >= 0 {
+		return rel[i+1:]
+	}
+	return rel
+}
+
+func pathExt(name string) string {
+	if i := strings.LastIndex(name, "."); i > 0 {
+		return name[i:]
+	}
+	return ""
+}
+
 // write persists a set of items atomically. The scan uses it to checkpoint part
 // way through, so a drive unplugged in the middle of a long first scan does not
 // throw the work away.
@@ -430,15 +547,22 @@ func (ix *Index) snapshot() map[string]Item {
 // a scan interrupted by an unplugged drive resumes instead of starting over.
 func (ix *Index) Build(libs []Library, progress func(Progress)) error {
 	prev := ix.snapshot()
-	if ix.storedVersion() != indexVersion {
-		// Written by an older build: re-read everything rather than trust it.
-		prev = nil
-	}
 
 	scanning := map[string]bool{}
 	for _, l := range libs {
 		if l.ID != "" && l.Path != "" {
 			scanning[l.ID] = true
+		}
+	}
+	if ix.storedVersion() != indexVersion {
+		// Written by an older build: re-read the libraries in this scan rather
+		// than trust their cached metadata. Items from folders that are not
+		// part of the scan have no newer copy to fall back on, so they are
+		// kept instead of being dropped by the upgrade.
+		for k, it := range prev {
+			if scanning[it.Lib] {
+				delete(prev, k)
+			}
 		}
 	}
 	// Items belonging to folders that are not part of this scan are kept as

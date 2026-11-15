@@ -167,6 +167,70 @@ func TestHeaderOf(t *testing.T) {
 	}
 }
 
+func TestWriteFileStampsHeaderAndRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog", "win_1.jsonl.gz")
+	snap := sample()
+	snap.Header.Format = ""
+	snap.Header.Version = 99
+	snap.Header.Generated = time.Time{}
+	if err := WriteFile(path, snap); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	got, err := ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if got.Header.Format != Format || got.Header.Version != Version {
+		t.Fatalf("header was not stamped: %+v", got.Header)
+	}
+	if got.Header.Count != 3 || got.Header.VolumeID != "win:1A2B3C4D" {
+		t.Fatalf("header = %+v", got.Header)
+	}
+	if got.Header.Generated.IsZero() {
+		t.Fatal("generation time was not filled in")
+	}
+	if len(got.Entries) != 3 || got.Entries[1].Path != "Photos/2024/IMG_0001.MOV" {
+		t.Fatalf("entries = %+v", got.Entries)
+	}
+
+	// Unlike a drive catalog, a mirror has no previous version to fall back
+	// on, so a damaged file must be reported rather than silently empty.
+	if err := os.WriteFile(path, []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFile(path); err == nil {
+		t.Fatal("a damaged mirror was accepted")
+	}
+
+	// A snapshot without a volume id cannot be filed under a drive.
+	if err := WriteFile(filepath.Join(t.TempDir(), "x.gz"), Snapshot{}); err == nil {
+		t.Fatal("a snapshot without a volume id was written")
+	}
+}
+
+func TestVolumeRelMapsOnlyPathsInsideTheVolume(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "drive")
+	lib := filepath.Join(root, "Photos")
+	cases := []struct {
+		rel  string
+		want string
+		ok   bool
+	}{
+		{"2024/a.jpg", "Photos/2024/a.jpg", true},
+		{"a.jpg", "Photos/a.jpg", true},
+		{"", "", false},
+		{"../outside.jpg", "", false},
+		{"../../etc/passwd", "", false},
+	}
+	for _, c := range cases {
+		got, ok := VolumeRel(root, lib, c.rel)
+		if ok != c.ok || got != c.want {
+			t.Fatalf("VolumeRel(%q) = %q, %v; want %q, %v", c.rel, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestRejectNewerVersion(t *testing.T) {
 	dir := t.TempDir()
 	writeRaw(t, Path(dir), Header{

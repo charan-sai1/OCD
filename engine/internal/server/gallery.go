@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -327,11 +328,20 @@ func (s *Server) startScan(reason string) bool {
 		}()
 
 		libs := s.libMedia()
+		// Read the drives' catalogs first. Adopting them means the walk only
+		// has to confirm size and timestamp; it never probes an unchanged file
+		// again, and a phone's dates and Live pairs survive.
+		seeds := s.adoptSeeds(libs)
 		s.emitIndex("index", 0, 0, 0, reason)
 
 		// Serialize with phone imports: an upload must never write the index or
 		// a drive catalog at the same moment a scan is writing them.
 		s.saveMu.Lock()
+		if len(seeds) > 0 {
+			if added, updated := s.index.Adopt(seeds); added+updated > 0 {
+				log.Printf("catalog adopt: %d new entries, %d refreshed from the drives", added, updated)
+			}
+		}
 		err := s.index.Build(libs, func(p media.Progress) {
 			s.scanMu.Lock()
 			s.scanProg = p

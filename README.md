@@ -230,6 +230,37 @@ after the verified import.
 Then on the phone open `http://<PC-IP>:8090` (find the IP with `ipconfig`).
 The gallery itself is on port **8080**.
 
+## The drive's catalog is the main index
+
+Each drive carries its own index in `.ocd/catalog.gz`: a header plus one line per
+photo or video, with paths relative to the **drive root** so a drive-letter
+change cannot orphan anything. That file travels with the drive. A phone can
+read it to badge the camera roll, and another computer can open the drive
+without walking every folder.
+
+When OCD scans a drive it does three things in order:
+
+1. **Reads the drive's catalog first** and adopts its entries. A file whose size
+   and timestamp match is taken as already known, so the walk only has to list
+   names instead of probing every image. Phone-written dates, hashes and Live
+   Photo pairs survive, because a zero field in the catalog means "not recorded"
+   rather than "cleared".
+2. **Walks the drive** and re-reads only what is new or changed.
+3. **Writes the catalog back**, then writes the same snapshot to a local mirror
+   at `<data>/catalog/<volume>.jsonl.gz`.
+
+The local mirror is what keeps the gallery populated when the drive is
+unplugged, and it is the fallback if the catalog on the drive is damaged or
+unreadable. It uses the same gzipped JSON-lines format, so a mirror can be copied
+onto a drive without conversion. A mirror is only accepted for the volume it was
+written for; a file that names a different drive is ignored rather than mixed in.
+
+Existing folders on the computer are left alone: the machine's own volume never
+gets a `.ocd` folder.
+
+`GET /api/catalogs` reports, per drive, whether the catalog came from the drive
+or the mirror, how many entries each holds, and whether the drive is connected.
+
 ## Phone app: on-drive browsing and indexing
 
 `mobile/` is the Expo companion. It works two ways: it talks to the PC over

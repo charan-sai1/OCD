@@ -183,6 +183,100 @@ func Read(root string) (Snapshot, Source, error) {
 	return Snapshot{}, "", fmt.Errorf("catalog: primary: %v; backup: %v", err, bakErr)
 }
 
+// WriteFile saves a snapshot to an arbitrary path, atomically. It is used for
+// the computer's local mirror, which is a catalog copy that is not on the drive
+// and therefore has no previous version to rotate.
+func WriteFile(path string, snap Snapshot) error {
+	if strings.TrimSpace(snap.Header.VolumeID) == "" {
+		return errors.New("catalog: missing volume id")
+	}
+	snap.Header.Format = Format
+	snap.Header.Version = Version
+	snap.Header.Count = len(snap.Entries)
+	if snap.Header.Generated.IsZero() {
+		snap.Header.Generated = time.Now().UTC()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tmp)
+		}
+	}()
+	gz, err := gzip.NewWriterLevel(f, gzip.BestSpeed)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	enc := json.NewEncoder(gz)
+	if err := enc.Encode(&snap.Header); err != nil {
+		gz.Close()
+		f.Close()
+		return err
+	}
+	for i := range snap.Entries {
+		if err := enc.Encode(&snap.Entries[i]); err != nil {
+			gz.Close()
+			f.Close()
+			return err
+		}
+	}
+	if err := gz.Close(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	ok = true
+	return nil
+}
+
+// ReadFile loads a catalog from an arbitrary path without a backup fallback.
+// The local mirror uses it when the drive itself cannot be read.
+func ReadFile(path string) (Snapshot, error) {
+	return readFile(path)
+}
+
+// VolumeRel maps a slash-separated path inside a library to the
+// volume-relative path the catalog stores. It reports false when the path is
+// not inside the volume, so a drive that holds a library through a link or a
+// junction never gets an entry that cannot be found again.
+func VolumeRel(root, libPath, rel string) (string, bool) {
+	if strings.TrimSpace(rel) == "" {
+		return "", false
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		if seg == ".." {
+			return "", false
+		}
+	}
+	abs := filepath.Join(libPath, filepath.FromSlash(rel))
+	r, err := filepath.Rel(root, abs)
+	if err != nil || r == "." {
+		return "", false
+	}
+	r = filepath.ToSlash(r)
+	if r == ".." || strings.HasPrefix(r, "../") {
+		return "", false
+	}
+	return r, true
+}
+
 // HeaderOf reads only the first line of the catalog. Listing drives should not
 // pay for decompressing tens of thousands of entries.
 func HeaderOf(root string) (Header, Source, error) {

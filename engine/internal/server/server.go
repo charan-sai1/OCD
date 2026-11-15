@@ -96,6 +96,10 @@ func New(cfg Config) *Server {
 	s.rootOf = volume.RootOf
 	s.importCache = map[string]*catalogLookup{}
 	s.uploads = map[string]*uploadSession{}
+	// The drives' own catalogs are the source of truth. Seed the index from
+	// their local copies before anything can ask for a photo, so an unplugged
+	// drive still lists its contents.
+	s.LoadMirrors()
 	return s
 }
 
@@ -139,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/drives/refresh", s.drivesRefresh)
 	mux.HandleFunc("/api/export", s.exportThumbs)
 	mux.HandleFunc("/api/catalog", s.catalogDownload)
+	mux.HandleFunc("/api/catalogs", s.catalogStatus)
 	mux.HandleFunc("/api/import/check", s.importCheck)
 	mux.HandleFunc("/api/upload/start", s.uploadStart)
 	mux.HandleFunc("/api/upload/", s.uploadItem)

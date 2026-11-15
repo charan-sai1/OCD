@@ -210,24 +210,30 @@ func (s *Server) writeCatalogs(libs []media.Library) {
 			groups[info.Root] = g
 		}
 		for _, it := range s.index.ItemsFor(l.ID) {
-			abs := filepath.Join(l.Path, filepath.FromSlash(it.Rel))
-			rel, err := filepath.Rel(info.Root, abs)
-			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			p, ok := catalog.VolumeRel(info.Root, l.Path, it.Rel)
+			if !ok {
 				continue
 			}
-			p := filepath.ToSlash(rel)
 			if _, seen := g.entries[p]; seen {
 				continue
+			}
+			// Live is stored the same way as Path: relative to the volume, so
+			// it still resolves after a drive letter change.
+			live := ""
+			if it.Live != "" {
+				live, _ = catalog.VolumeRel(info.Root, l.Path, it.Live)
 			}
 			g.entries[p] = catalog.Entry{
 				Path:     p,
 				Size:     it.Size,
 				MTime:    it.ModTime,
 				ShotAt:   it.ShotAt,
+				Hash:     it.Hash,
 				Kind:     string(it.Kind),
 				Width:    it.W,
 				Height:   it.H,
 				Duration: it.Duration,
+				Live:     live,
 			}
 		}
 	}
@@ -244,6 +250,12 @@ func (s *Server) writeCatalogs(libs []media.Library) {
 				IndexVersion: media.FormatVersion(),
 			},
 			Entries: entries,
+		}
+		// Keep the local copy before touching the drive. A read-only or
+		// unplugged-at-the-wrong-moment drive must not cost the computer its
+		// offline gallery.
+		if err := s.writeMirror(g.info, snap); err != nil {
+			log.Printf("mirror %s: %v", g.info.ID, err)
 		}
 		if err := catalog.Write(g.info.Root, snap); err != nil {
 			log.Printf("catalog %s: %v", g.info.Root, err)

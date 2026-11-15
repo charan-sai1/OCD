@@ -456,24 +456,28 @@ func catalogCmd(args []string) {
 		}
 		added := 0
 		for _, it := range items {
-			abs := filepath.Join(l.Path, filepath.FromSlash(it.Rel))
-			rel, err := filepath.Rel(info.Root, abs)
-			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			p, ok := catalog.VolumeRel(info.Root, l.Path, it.Rel)
+			if !ok {
 				continue
 			}
-			p := filepath.ToSlash(rel)
 			if _, seen := g.entries[p]; seen {
 				continue
+			}
+			live := ""
+			if it.Live != "" {
+				live, _ = catalog.VolumeRel(info.Root, l.Path, it.Live)
 			}
 			g.entries[p] = catalog.Entry{
 				Path:     p,
 				Size:     it.Size,
 				MTime:    it.ModTime,
 				ShotAt:   it.ShotAt,
+				Hash:     it.Hash,
 				Kind:     string(it.Kind),
 				Width:    it.W,
 				Height:   it.H,
 				Duration: it.Duration,
+				Live:     live,
 			}
 			added++
 		}
