@@ -54,7 +54,7 @@ import type { DriveContext } from '../direct/backup';
 
 import { ScreenHeader, TextAction } from '../layout';
 import { colors, radius, space } from '../theme';
-import { ErrorBanner, Wordmark } from '../ui';
+import { ErrorBanner } from '../ui';
 import { BackupSheet } from './BackupSheet';
 import { TidySheet } from './TidySheet';
 import { Viewer } from './Viewer';
@@ -598,8 +598,8 @@ export function DirectDrive() {
   return (
     <View style={styles.root}>
       <ScreenHeader style={styles.header}>
-        <View style={styles.brandRow}>
-          <Wordmark />
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>This phone</Text>
           <TextAction
             label={stored || native ? 'Disconnect' : 'Choose drive'}
             onPress={stored || native ? disconnect : chooseDrive}
@@ -610,8 +610,6 @@ export function DirectDrive() {
             }
           />
         </View>
-
-        <Text style={styles.title}>USB Drive</Text>
 
         {stored || native ? (
           <View style={styles.statsRow}>
@@ -646,8 +644,8 @@ export function DirectDrive() {
           </View>
           <Text style={styles.pickTitle}>Copy from your drive</Text>
           <Text style={styles.pickText}>
-            Plug the drive into this phone, then choose it. OCD reads the catalogue already on
-            the drive and shows your photos and videos here — no computer involved.
+            Plug the drive into this phone, then choose it. OCD reads the catalog
+            already on the drive and shows your photos and videos here.
           </Text>
 
           {isDriveModuleAvailable ? (
@@ -944,11 +942,11 @@ const styles = StyleSheet.create({
     paddingBottom: space(2),
     backgroundColor: colors.bg,
   },
-  brandRow: {
+  titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    minHeight: 44,
+    gap: space(3),
   },
   title: {
     fontSize: 32,

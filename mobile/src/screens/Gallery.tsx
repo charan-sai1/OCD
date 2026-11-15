@@ -21,7 +21,7 @@ import {
 import { api, Cursor, GridItem, Library, messageFor } from '../api';
 import { ScreenHeader, TextAction } from '../layout';
 import { colors, radius, space } from '../theme';
-import { Chip, ErrorBanner, Wordmark } from '../ui';
+import { Chip, ErrorBanner } from '../ui';
 import { shareRemoteFiles } from '../share';
 import { Viewer } from './Viewer';
 import { Tile } from './GalleryTile';
@@ -32,10 +32,8 @@ const PAGE = 200;
 
 type Props = {
   server: string;
-  onChangeServer: () => void;
 };
-
-export function Gallery({ server, onChangeServer }: Props) {
+export function Gallery({ server }: Props) {
   const { width } = useWindowDimensions();
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
 
@@ -195,16 +193,8 @@ export function Gallery({ server, onChangeServer }: Props) {
   return (
     <View style={styles.root}>
       <ScreenHeader style={styles.header}>
-        <View style={styles.brandRow}>
-          <Wordmark />
-          <TextAction
-            label="Change server"
-            onPress={onChangeServer}
-            accessibilityHint="Enter a different computer address"
-          />
-        </View>
-
         <Text style={styles.title}>Photos</Text>
+        <Text style={styles.sub}>From your computer</Text>
 
         <View style={styles.search}>
           <View style={styles.mag}>
@@ -409,13 +399,7 @@ const styles = StyleSheet.create({
     paddingBottom: space(2),
     backgroundColor: colors.bg,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
-  change: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  sub: { marginTop: space(1), fontSize: 13, lineHeight: 18, color: colors.muted },
   clearHit: {
     width: 44,
     height: 44,

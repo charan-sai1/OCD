@@ -21,7 +21,6 @@ import {
   type VerifiedItem,
 } from '../sendQueue';
 import { colors, radius, space } from '../theme';
-import { Wordmark } from '../ui';
 import { Activity } from './Activity';
 import { FreeSpace } from './FreeSpace';
 
@@ -115,15 +114,10 @@ export function Settings({
   return (
     <View style={styles.root}>
       <ScreenHeader style={styles.header}>
-        <View style={styles.brandRow}>
-          <Wordmark />
-        </View>
         <Text style={styles.title} accessibilityRole="header">
           Settings
         </Text>
-        <Text style={styles.sub}>
-          What this phone talks to, what it has done, and what it can clean up.
-        </Text>
+        <Text style={styles.sub}>The computer it talks to, and what this phone has sent.</Text>
       </ScreenHeader>
 
       <ScrollView
@@ -192,25 +186,38 @@ export function Settings({
         </Section>
 
         <Section title="This phone">
-          <Row label="Waiting to send" value={loading ? '…' : waiting.toLocaleString()} />
-          <Row label="Failed sends" value={loading ? '…' : failed.toLocaleString()} />
-          <Row
-            label="Verified items"
-            value={loading ? '…' : verified.length.toLocaleString()}
-          />
-          <Row label="Finished sends" value={loading ? '…' : finished.toLocaleString()} />
-          <TextAction
-            label="Free up space"
-            onPress={() => setFreeOpen(true)}
-            disabled={!server || verified.length === 0}
-            accessibilityHint="Choose items the computer has verified and delete them from this phone"
-          />
-          <TextAction
-            label={clearing ? 'Clearing…' : 'Clear finished sends'}
-            onPress={() => void clear()}
-            disabled={!server || finished === 0 || clearing}
-            accessibilityHint="Forgets rows for sends that already finished"
-          />
+          {waiting > 0 ? <Row label="Waiting to send" value={waiting.toLocaleString()} /> : null}
+          {failed > 0 ? (
+            <Row label="Failed sends" value={failed.toLocaleString()} />
+          ) : null}
+          {verified.length > 0 ? (
+            <Row label="Checked by the computer" value={verified.length.toLocaleString()} />
+          ) : null}
+          {finished > 0 ? (
+            <Row label="Finished sends" value={finished.toLocaleString()} />
+          ) : null}
+
+          {!loading && waiting === 0 && failed === 0 && finished === 0 && verified.length === 0 ? (
+            <Text style={styles.blank}>
+              Nothing waiting. Sent photos appear here once the computer checks them.
+            </Text>
+          ) : null}
+
+          {verified.length > 0 ? (
+            <TextAction
+              label="Free up space"
+              onPress={() => setFreeOpen(true)}
+              accessibilityHint="Choose items the computer has checked and delete them from this phone"
+            />
+          ) : null}
+          {finished > 0 ? (
+            <TextAction
+              label={clearing ? 'Clearing…' : 'Clear finished sends'}
+              onPress={() => void clear()}
+              disabled={!server || clearing}
+              accessibilityHint="Forgets rows for sends that already finished"
+            />
+          ) : null}
           {error ? (
             <Text style={styles.error} accessibilityRole="alert">
               {error}
@@ -222,9 +229,8 @@ export function Settings({
         <Section title="About">
           <Row label="App version" value={appVersion} />
           <Text style={styles.about}>
-            OCD Manager keeps every original. Copies are verified by content before
-            you are ever offered the delete step, and redundant drive copies are
-            quarantined rather than hard-deleted.
+            Nothing is deleted from this phone without a checked copy elsewhere.
+            Duplicate drive copies are quarantined, never erased.
           </Text>
         </Section>
       </ScrollView>
@@ -294,12 +300,6 @@ function Row({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   header: { paddingBottom: space(2) },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 34,
-  },
   title: {
     fontSize: 32,
     lineHeight: 38,
@@ -374,6 +374,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: colors.danger,
+  },
+  blank: {
+    paddingHorizontal: space(3.5),
+    paddingVertical: space(3),
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.muted,
   },
   note: {
     paddingHorizontal: space(3.5),

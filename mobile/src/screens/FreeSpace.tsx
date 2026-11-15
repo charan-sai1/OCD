@@ -145,7 +145,7 @@ export function FreeSpace({
     const count = selected.length;
     Alert.alert(
       `Delete ${count.toLocaleString()} ${count === 1 ? 'item' : 'items'} from this phone?`,
-      `${bytes(selectedBytes)} will be freed. The desktop already hashed and kept a copy of every one of these, and those copies stay exactly as they are. This cannot be undone.`,
+      `${bytes(selectedBytes)} will be freed. The computer checked and kept a copy of every one of these, and those copies stay exactly as they are. This cannot be undone.`,
       [
         { text: 'Keep', style: 'cancel' },
         {
@@ -199,7 +199,7 @@ export function FreeSpace({
     <Sheet
       visible={visible}
       title="Free up space"
-      subtitle="Only items the computer has checked by content appear here. The drive copies are never touched."
+      subtitle="Only items the computer checked appear here. The drive copies are never touched."
       onClose={onClose}
       footer={footer}
     >
@@ -208,15 +208,15 @@ export function FreeSpace({
           {checking
             ? 'Checking what is still on this phone…'
             : present.length > 0
-              ? `${present.length.toLocaleString()} ${present.length === 1 ? 'item' : 'items'} · ${bytes(freeableBytes)}`
+              ? `${bytes(freeableBytes)} can be freed`
               : 'Nothing to free right now'}
         </Text>
         <Text style={styles.summarySub}>
           {picked.size > 0
-            ? `${picked.size.toLocaleString()} selected · ${bytes(selectedBytes)}`
+            ? `${picked.size.toLocaleString()} of ${present.length.toLocaleString()} selected · ${bytes(selectedBytes)}`
             : present.length > 0
-              ? 'Pick some, or select all.'
-              : 'Send photos from the Phone tab first; a check mark means the bytes were verified.'}
+              ? `${present.length.toLocaleString()} ${present.length === 1 ? 'item' : 'items'} checked by the computer. Pick some, or select all.`
+              : 'Send photos from the Camera roll tab first, then check back here.'}
         </Text>
         {present.length > 0 ? (
           <View style={styles.actions}>
@@ -299,8 +299,8 @@ export function FreeSpace({
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No verified items yet</Text>
               <Text style={styles.emptyText}>
-                Send photos from the Phone tab. Once the desktop has hashed a copy,
-                it shows up here so you can delete it from the phone.
+                Send photos from the Camera roll tab. Once the computer has checked a
+                copy, it shows up here so you can delete it from the phone.
               </Text>
             </View>
           )

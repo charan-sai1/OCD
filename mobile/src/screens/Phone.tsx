@@ -34,7 +34,7 @@ import {
   type QueuedItem,
 } from '../sendQueue';
 import { colors, duration, radius, space, takenOn } from '../theme';
-import { Chip, PrimaryButton, Wordmark } from '../ui';
+import { Chip, PrimaryButton } from '../ui';
 import { FreeSpace } from './FreeSpace';
 
 type PhoneAsset = {
@@ -50,14 +50,13 @@ type PhoneAsset = {
 
 type Props = {
   server: string;
-  onChangeServer: () => void;
 };
 
 const COLS = 3;
 const GAP = 2;
 const PAGE = 60;
 
-export function Phone({ server, onChangeServer }: Props) {
+export function Phone({ server }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
@@ -481,14 +480,6 @@ export function Phone({ server, onChangeServer }: Props) {
 
   const header = (
     <ScreenHeader style={styles.header}>
-      <View style={styles.brandRow}>
-        <Wordmark />
-        <TextAction
-          label="Change server"
-          onPress={onChangeServer}
-          accessibilityHint="Enter a different computer address"
-        />
-      </View>
       <View style={styles.titleRow}>
         <Text style={styles.title} accessibilityRole="header">
           {selecting ? 'Select photos' : 'Camera roll'}
@@ -1031,12 +1022,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space(4),
     paddingBottom: space(2),
     backgroundColor: colors.bg,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 34,
   },
   titleRow: {
     flexDirection: 'row',

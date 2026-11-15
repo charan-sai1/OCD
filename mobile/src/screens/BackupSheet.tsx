@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -113,6 +114,7 @@ export function BackupSheet({
   /** Ticked camera-roll ids; null means "use the conditions below". */
   const [pickedIds, setPickedIds] = useState<string[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   /** A marker left by a run the OS killed, if one belongs to this drive. */
   const [resume, setResume] = useState<ResumeRecord | null>(null);
 
@@ -249,6 +251,36 @@ export function BackupSheet({
 
   const duplicateFolder = normaliseDuplicateFolder(cond.duplicateFolder);
 
+  const mediaLabel =
+    cond.media === 'image'
+      ? 'Photos'
+      : cond.media === 'video'
+        ? 'Videos'
+        : 'Photos + videos';
+  const timeLabel = PRESETS.find((p) => p.id === preset)?.label ?? 'All time';
+  const duplicateLabel =
+    cond.duplicates === 'skip'
+      ? 'Skip duplicates'
+      : cond.duplicates === 'rename'
+        ? 'Keep both'
+        : 'Move old copies';
+  const layoutLabel =
+    cond.layout === 'phone'
+      ? 'Phone / year / month'
+      : cond.layout === 'year'
+        ? 'Year / month'
+        : 'One folder';
+  const optionsSummary = [
+    mediaLabel,
+    timeLabel,
+    cond.albumTitle ? `Album: ${cond.albumTitle}` : '',
+    duplicateLabel,
+    layoutLabel,
+    cond.skipScreenshots ? 'Screenshots skipped' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   const pct = progress && progress.total > 0
     ? Math.max(0, Math.min(1, progress.index / progress.total))
     : 0;
@@ -267,7 +299,7 @@ export function BackupSheet({
       label={
         pickedIds?.length
           ? `Back up ${pickedIds.length.toLocaleString()} selected`
-          : 'Back up to this drive'
+          : 'Back up everything new'
       }
       onPress={start}
       disabled={!ctx}
@@ -296,8 +328,8 @@ export function BackupSheet({
         automaticallyAdjustKeyboardInsets
       >
         <Text style={styles.lead}>
-          Copies photos and videos from this phone onto the drive, in dated folders. Every
-          copy is hashed and read back. Your phone originals are never deleted.
+          Copies from this phone to the drive. Every file is verified, and phone originals
+          are never deleted.
         </Text>
 
         {resumeHere && !running && !summary ? (
@@ -335,12 +367,12 @@ export function BackupSheet({
         ) : (
           <>
             <Section
-              title="Which items"
-              note="Copy the whole roll using the rules below, or tick exact items yourself."
+              title="What to copy"
+              note="Everything new, or choose exact items yourself."
             >
               <Row>
                 <Chip
-                  label="Whole roll (rules)"
+                  label="Everything new"
                   active={!pickedIds}
                   onPress={() => setPickedIds(null)}
                 />
@@ -363,164 +395,185 @@ export function BackupSheet({
               ) : null}
             </Section>
 
-            <Rules show={!pickedIds}>
-            <Section title="What to copy">
-              <Row>
-                <Chip
-                  label="Photos + videos"
-                  active={cond.media === 'both'}
-                  onPress={() => set('media', 'both')}
-                />
-                <Chip
-                  label="Photos only"
-                  active={cond.media === 'image'}
-                  onPress={() => set('media', 'image')}
-                />
-                <Chip
-                  label="Videos only"
-                  active={cond.media === 'video'}
-                  onPress={() => set('media', 'video')}
-                />
-              </Row>
-            </Section>
-
-            <Section title="When they were taken">
-              <Row>
-                {PRESETS.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.label}
-                    active={preset === p.id}
-                    onPress={() => {
-                      setPreset(p.id);
-                      set('since', sinceFor(p.id));
-                    }}
-                  />
-                ))}
-              </Row>
-            </Section>
-
-            {albums.length > 0 ? (
-              <Section title="From which album">
-                <Row>
-                  <Chip
-                    label="All albums"
-                    active={!cond.albumId}
-                    onPress={() => {
-                      set('albumId', '');
-                      set('albumTitle', '');
-                    }}
-                  />
-                  {albums.slice(0, 30).map((a) => (
-                    <Chip
-                      key={a.id}
-                      label={a.title}
-                      active={cond.albumId === a.id}
-                      onPress={() => {
-                        set('albumId', a.id);
-                        set('albumTitle', a.title);
-                      }}
-                    />
-                  ))}
-                </Row>
-              </Section>
-            ) : null}
-            </Rules>
-
-            <Section
-              title="If a file is already on the drive"
-              note="Skip is the fastest and keeps one copy. Moving an old copy puts it in the duplicate archive, never deletes it."
+            <Pressable
+              onPress={() => setOptionsOpen((open) => !open)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: optionsOpen }}
+              accessibilityLabel="Backup options"
+              style={({ pressed }) => [
+                styles.optionsRow,
+                pressed && styles.optionsPressed,
+              ]}
             >
-              <Row>
-                <Chip
-                  label="Skip it"
-                  active={cond.duplicates === 'skip'}
-                  onPress={() => set('duplicates', 'skip')}
-                />
-                <Chip
-                  label="Keep both"
-                  active={cond.duplicates === 'rename'}
-                  onPress={() => set('duplicates', 'rename')}
-                />
-                <Chip
-                  label="Move old copy"
-                  active={cond.duplicates === 'quarantine'}
-                  onPress={() => set('duplicates', 'quarantine')}
-                />
-              </Row>
+              <View style={styles.optionsText}>
+                <Text style={styles.optionsTitle}>Options</Text>
+                <Text style={styles.optionsSub}>{optionsSummary}</Text>
+              </View>
+              <Text style={styles.optionsChevron}>{optionsOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
 
-              {cond.duplicates === 'quarantine' ? (
-                <View style={styles.destination}>
-                  <Text style={styles.destinationLabel}>Folder for old copies</Text>
-                  <Row>
-                    {DUPLICATE_FOLDERS.map((f) => (
+            {optionsOpen ? (
+              <>
+                <Rules show={!pickedIds}>
+                  <Section title="Photos or videos">
+                    <Row>
                       <Chip
-                        key={f.id || 'root'}
-                        label={f.label}
-                        active={duplicateFolder === f.id}
-                        onPress={() => set('duplicateFolder', f.id)}
+                        label="Photos + videos"
+                        active={cond.media === 'both'}
+                        onPress={() => set('media', 'both')}
                       />
-                    ))}
+                      <Chip
+                        label="Photos only"
+                        active={cond.media === 'image'}
+                        onPress={() => set('media', 'image')}
+                      />
+                      <Chip
+                        label="Videos only"
+                        active={cond.media === 'video'}
+                        onPress={() => set('media', 'video')}
+                      />
+                    </Row>
+                  </Section>
+
+                  <Section title="When they were taken">
+                    <Row>
+                      {PRESETS.map((p) => (
+                        <Chip
+                          key={p.id}
+                          label={p.label}
+                          active={preset === p.id}
+                          onPress={() => {
+                            setPreset(p.id);
+                            set('since', sinceFor(p.id));
+                          }}
+                        />
+                      ))}
+                    </Row>
+                  </Section>
+
+                  {albums.length > 0 ? (
+                    <Section title="From which album">
+                      <Row>
+                        <Chip
+                          label="All albums"
+                          active={!cond.albumId}
+                          onPress={() => {
+                            set('albumId', '');
+                            set('albumTitle', '');
+                          }}
+                        />
+                        {albums.slice(0, 30).map((a) => (
+                          <Chip
+                            key={a.id}
+                            label={a.title}
+                            active={cond.albumId === a.id}
+                            onPress={() => {
+                              set('albumId', a.id);
+                              set('albumTitle', a.title);
+                            }}
+                          />
+                        ))}
+                      </Row>
+                    </Section>
+                  ) : null}
+                </Rules>
+
+                <Section
+                  title="If a file is already on the drive"
+                  note="Skip is the fastest and keeps one copy. Moving an old copy puts it in the duplicate archive, never deletes it."
+                >
+                  <Row>
+                    <Chip
+                      label="Skip it"
+                      active={cond.duplicates === 'skip'}
+                      onPress={() => set('duplicates', 'skip')}
+                    />
+                    <Chip
+                      label="Keep both"
+                      active={cond.duplicates === 'rename'}
+                      onPress={() => set('duplicates', 'rename')}
+                    />
+                    <Chip
+                      label="Move old copy"
+                      active={cond.duplicates === 'quarantine'}
+                      onPress={() => set('duplicates', 'quarantine')}
+                    />
                   </Row>
-                  <TextInput
-                    style={styles.input}
-                    value={cond.duplicateFolder}
-                    onChangeText={(text) => set('duplicateFolder', text)}
-                    placeholder="Or type a subfolder, e.g. Old copies"
-                    placeholderTextColor={colors.faint}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    maxLength={120}
-                    returnKeyType="done"
-                    accessibilityLabel="Folder for old copies"
-                  />
-                  <Text style={styles.destinationPreview}>
-                    Old copies move to {duplicateArchiveRel(cond.duplicateFolder)}
-                  </Text>
-                  <Text style={styles.destinationNote}>
-                    This stays inside _OCD Duplicates, so it never appears in the gallery or
-                    the drive scans.
-                  </Text>
-                </View>
-              ) : null}
-            </Section>
 
-            <Section title="Folder layout">
-              <Row>
-                <Chip
-                  label="Phone / year / month"
-                  active={cond.layout === 'phone'}
-                  onPress={() => set('layout', 'phone')}
-                />
-                <Chip
-                  label="Year / month"
-                  active={cond.layout === 'year'}
-                  onPress={() => set('layout', 'year')}
-                />
-                <Chip
-                  label="One folder"
-                  active={cond.layout === 'flat'}
-                  onPress={() => set('layout', 'flat')}
-                />
-              </Row>
-            </Section>
+                  {cond.duplicates === 'quarantine' ? (
+                    <View style={styles.destination}>
+                      <Text style={styles.destinationLabel}>Folder for old copies</Text>
+                      <Row>
+                        {DUPLICATE_FOLDERS.map((f) => (
+                          <Chip
+                            key={f.id || 'root'}
+                            label={f.label}
+                            active={duplicateFolder === f.id}
+                            onPress={() => set('duplicateFolder', f.id)}
+                          />
+                        ))}
+                      </Row>
+                      <TextInput
+                        style={styles.input}
+                        value={cond.duplicateFolder}
+                        onChangeText={(text) => set('duplicateFolder', text)}
+                        placeholder="Or type a subfolder, e.g. Old copies"
+                        placeholderTextColor={colors.faint}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        maxLength={120}
+                        returnKeyType="done"
+                        accessibilityLabel="Folder for old copies"
+                      />
+                      <Text style={styles.destinationPreview}>
+                        Old copies move to {duplicateArchiveRel(cond.duplicateFolder)}
+                      </Text>
+                      <Text style={styles.destinationNote}>
+                        This stays inside _OCD Duplicates, so it never appears in the
+                        gallery or the drive scans.
+                      </Text>
+                    </View>
+                  ) : null}
+                </Section>
 
-            <Rules show={!pickedIds}>
-            <Section title="Screenshots">
-              <Row>
-                <Chip
-                  label="Skip screenshots"
-                  active={cond.skipScreenshots}
-                  onPress={() => set('skipScreenshots', true)}
-                />
-                <Chip
-                  label="Include them"
-                  active={!cond.skipScreenshots}
-                  onPress={() => set('skipScreenshots', false)}
-                />
-              </Row>
-            </Section>
-            </Rules>
+                <Section title="Folder layout">
+                  <Row>
+                    <Chip
+                      label="Phone / year / month"
+                      active={cond.layout === 'phone'}
+                      onPress={() => set('layout', 'phone')}
+                    />
+                    <Chip
+                      label="Year / month"
+                      active={cond.layout === 'year'}
+                      onPress={() => set('layout', 'year')}
+                    />
+                    <Chip
+                      label="One folder"
+                      active={cond.layout === 'flat'}
+                      onPress={() => set('layout', 'flat')}
+                    />
+                  </Row>
+                </Section>
+
+                <Rules show={!pickedIds}>
+                  <Section title="Screenshots">
+                    <Row>
+                      <Chip
+                        label="Skip screenshots"
+                        active={cond.skipScreenshots}
+                        onPress={() => set('skipScreenshots', true)}
+                      />
+                      <Chip
+                        label="Include them"
+                        active={!cond.skipScreenshots}
+                        onPress={() => set('skipScreenshots', false)}
+                      />
+                    </Row>
+                  </Section>
+                </Rules>
+              </>
+            ) : null}
 
             <View style={styles.safety}>
               <Text style={styles.safetyText}>
@@ -701,6 +754,19 @@ const styles = StyleSheet.create({
   },
   sectionNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   pickedNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(3),
+    padding: space(3.5),
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  optionsPressed: { backgroundColor: colors.surfacePressed },
+  optionsText: { flex: 1, minWidth: 0 },
+  optionsTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  optionsSub: { marginTop: 2, fontSize: 12, lineHeight: 17, color: colors.muted },
+  optionsChevron: { fontSize: 18, color: colors.faint },
   row: { paddingRight: space(4), gap: space(2) },
   destination: { gap: space(2), marginTop: space(1) },
   destinationLabel: { fontSize: 12, fontWeight: '600', color: colors.text },

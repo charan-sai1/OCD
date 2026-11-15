@@ -35,12 +35,31 @@ export function Connect({ initial, busy, problem, onConnect, onUseDrive }: Props
           <View style={styles.mark}>
             <Text style={styles.markText}>OCD</Text>
           </View>
-          <Text style={styles.title}>Your drives, on your phone.</Text>
+          <Text style={styles.title}>Your library, on your phone.</Text>
           <Text style={styles.subtitle}>
-            Browse every photo and video on your portable drive without copying it.
+            Open a drive plugged into this phone, or browse your computer’s library
+            over Wi-Fi.
           </Text>
 
-          <View style={styles.card}>
+          {onUseDrive ? (
+            <Pressable
+              onPress={onUseDrive}
+              style={styles.drive}
+              accessibilityRole="button"
+              accessibilityLabel="Open this phone's drive"
+            >
+              <Text style={styles.driveTitle}>Open this phone’s drive</Text>
+              <Text style={styles.driveText}>
+                No computer needed. Plug in the drive and OCD reads it here.
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {onUseDrive ? (
+            <Text style={styles.sectionLabel}>Or connect to a computer</Text>
+          ) : null}
+
+          <View style={[styles.card, !onUseDrive && styles.cardSolo]}>
             <Text style={styles.label}>Desktop address</Text>
             <TextInput
               value={value}
@@ -74,21 +93,6 @@ export function Connect({ initial, busy, problem, onConnect, onUseDrive }: Props
             <Text style={styles.hintStrong}>Phone</Text> in its window to see this
             address. Both devices need to be on the same Wi-Fi.
           </Text>
-
-          {onUseDrive ? (
-            <Pressable
-              onPress={onUseDrive}
-              style={styles.drive}
-              accessibilityRole="button"
-              accessibilityLabel="No computer? Open the drive plugged into this phone"
-            >
-              <Text style={styles.driveTitle}>No computer needed</Text>
-              <Text style={styles.driveText}>
-                Plug the drive into this phone and open it directly — OCD reads and
-                indexes it here.
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + space(4) }]}>
           <Wordmark />
@@ -138,8 +142,17 @@ const styles = StyleSheet.create({
     maxWidth: 330,
   },
   card: {
-    marginTop: space(9),
+    marginTop: space(2),
     gap: space(3),
+  },
+  cardSolo: { marginTop: space(9) },
+  sectionLabel: {
+    marginTop: space(7),
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: colors.muted,
   },
   label: {
     fontSize: 12,

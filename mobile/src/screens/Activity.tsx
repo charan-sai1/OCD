@@ -175,7 +175,7 @@ export function Activity({
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>Nothing recorded yet</Text>
               <Text style={styles.emptyText}>
-                Send photos from the Phone tab, back up a drive from the phone, or
+                Send photos from the Camera roll tab, back up a drive from the phone, or
                 tidy duplicates. Each action leaves a row here.
               </Text>
             </View>

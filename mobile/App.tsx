@@ -23,6 +23,7 @@ import {
 import { Connect } from './src/screens/Connect';
 import { DirectDrive } from './src/screens/DirectDrive';
 import { Gallery } from './src/screens/Gallery';
+import { NeedsComputer } from './src/screens/NeedsComputer';
 import { Phone } from './src/screens/Phone';
 import { Settings } from './src/screens/Settings';
 import { isDriveModuleAvailable } from './src/direct/native';
@@ -116,6 +117,11 @@ function Root() {
           <DirectDrive />
         ) : tab === 'settings' ? (
           <Settings server={null} onChangeServer={() => setTab('drive')} />
+        ) : tab === 'phone' ? (
+          <NeedsComputer
+            onConnect={() => setTab('drive')}
+            onUseDrive={canBrowseDrive ? () => setTab('usb') : undefined}
+          />
         ) : (
           <Connect
             initial={initial}
@@ -134,13 +140,7 @@ function Root() {
     <View style={styles.shell}>
       <StatusBar style="dark" />
       {tab === 'drive' ? (
-        <Gallery
-          server={server}
-          onChangeServer={() => {
-            setServer(null);
-            setProblem(null);
-          }}
-        />
+        <Gallery server={server} />
       ) : tab === 'usb' ? (
         <DirectDrive />
       ) : tab === 'settings' ? (
@@ -153,13 +153,7 @@ function Root() {
           }}
         />
       ) : (
-        <Phone
-          server={server}
-          onChangeServer={() => {
-            setServer(null);
-            setProblem(null);
-          }}
-        />
+        <Phone server={server} />
       )}
       <TabBar tab={tab} onChange={setTab} />
     </View>
@@ -195,11 +189,11 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
             <View style={[styles.dot, active && styles.dotActive]} />
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
               {t === 'drive'
-                ? 'Drive'
+                ? 'Computer'
                 : t === 'phone'
-                  ? 'Phone'
+                  ? 'Camera roll'
                   : t === 'usb'
-                    ? 'USB'
+                    ? 'This phone'
                     : 'Settings'}
             </Text>
           </Pressable>
