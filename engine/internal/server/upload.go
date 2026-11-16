@@ -3,7 +3,6 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -460,17 +459,10 @@ func (s *Server) flushPersist() {
 }
 
 func (s *Server) auditImport(r *http.Request, sess *uploadSession, rel, sum string, size int64) {
-	device := strings.TrimSpace(r.Header.Get("X-OCD-Device"))
-	if device == "" {
-		device = r.UserAgent()
-	}
-	if len(device) > 120 {
-		device = device[:120]
-	}
 	rec := map[string]any{
 		"ts":        time.Now().UTC().Format(time.RFC3339),
 		"op":        "import",
-		"device":    device,
+		"device":    deviceName(r),
 		"volumeId":  sess.volumeID,
 		"libraryId": sess.libraryID,
 		"src":       sess.name,
@@ -479,29 +471,9 @@ func (s *Server) auditImport(r *http.Request, sess *uploadSession, rel, sum stri
 		"sha256":    sum,
 		"verified":  true,
 	}
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return
-	}
-	dir := filepath.Join(sess.volumeRoot, ".ocd")
-	if s.sysRoot != "" && strings.EqualFold(filepath.Clean(sess.volumeRoot), filepath.Clean(s.sysRoot)) {
-		dir = s.cfg.DataDir
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := s.appendAudit(sess.volumeRoot, rec); err != nil {
 		log.Printf("audit %s: %v", sess.volumeRoot, err)
-		return
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "audit.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		log.Printf("audit %s: %v", sess.volumeRoot, err)
-		return
-	}
-	defer f.Close()
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		log.Printf("audit %s: %v", sess.volumeRoot, err)
-		return
-	}
-	_ = f.Sync()
 }
 
 /* ---------- helpers ---------- */

@@ -39,6 +39,7 @@ type activityEntry struct {
 	From      string `json:"from,omitempty"`
 	To        string `json:"to,omitempty"`
 	Bytes     int64  `json:"bytes,omitempty"`
+	Count     int    `json:"count,omitempty"`
 	Verified  bool   `json:"verified,omitempty"`
 	SHA256    string `json:"sha256,omitempty"`
 	Device    string `json:"device,omitempty"`
@@ -236,6 +237,7 @@ func parseAuditLine(line []byte) (activityEntry, bool) {
 		From:      first(str(raw["src"]), str(raw["from"])),
 		To:        first(str(raw["dst"]), str(raw["to"])),
 		Bytes:     firstInt(raw["bytes"], raw["size"]),
+		Count:     int(firstInt(raw["count"])),
 		Verified:  raw["verified"] == true,
 		SHA256:    str(raw["sha256"]),
 		Device:    trimLabel(str(raw["device"])),

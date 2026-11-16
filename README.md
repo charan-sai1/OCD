@@ -312,7 +312,7 @@ Only inside `<drive>/.ocd/`, and only when you ask it to:
 | `catalog.gz` | Same format the engine writes. Swapped in atomically; the previous copy is kept as `catalog.bak`. |
 | `thumbs/<hash>.jpg` | A 400px preview, built for the files you actually open. |
 | `volume.json` | Only when the drive exposes no serial. The PC adopts it, so both sides keep one identity. |
-| `audit.jsonl` | Append-only record of every file a backup copied or a tidy moved. |
+| `audit.jsonl` | Append-only record of every file a backup copied, a tidy moved, or a verified delete freed from the phone. |
 
 Preview names are hashed from the drive's serial, the path, the size and the
 mtime, which is why the phone needs real file metadata. A phone-indexed drive
@@ -399,6 +399,15 @@ already on the drive, screenshots, items below the minimum size, and failures. A
 file whose date could not be restored is still a valid copy and is reported
 separately.
 
+Before the run starts, a small panel works out the job while you choose options:
+how many items match, their total size, how much room the drive has now and how
+much it would have afterwards, and that the phone itself is left unchanged. If
+the drive is known to be too full for the copy, the panel says so before anything
+starts. The figure is an estimate: Live Photo clips and files already on the drive
+are only known as the run reads each item, so the real total can be a little
+lower. An unreadable free-space reading is shown as unknown, never as zero, and
+does not refuse the run.
+
 On Android the run continues with the screen locked: a foreground service and a
 low-importance progress notification keep the copy alive while the drive stays
 plugged in. iOS has no equivalent in this build, so keep the app open there.
@@ -470,10 +479,16 @@ survivable:
 - If the app is closed, killed, or loses Wi-Fi mid-send, the waiting item is
   still waiting on the next launch. The queue banner offers **Resume**, and
   resumes once on its own when the same server and drive are still there.
+- An interrupted upload continues where it stopped. The phone asks the desktop
+  how many bytes it already has and sends only the rest, so a dropped connection
+  does not resend a whole video. The upload session is saved before the first
+  byte, so even a kill mid-file can pick up again. A file with a different size
+  starts a fresh session rather than appending two different photos.
 - Retrying is safe. The desktop keys uploads by file name and content hash and
   answers `existingPath` when the bytes are already on the drive, so a re-sent
   item becomes "already there" instead of a second copy. A killed upload never
-  leaves a half-written file among the real ones; the partial file expires.
+  leaves a half-written file among the real ones; an abandoned session expires
+  after 30 minutes and its partial file is removed.
 - **Stop** finishes the item in progress and then pauses, so a large video is not
   cut in half. **Retry** re-queues failed items; **Clear** drops finished rows.
   Failed rows keep their reason so you can see what went wrong.
@@ -494,15 +509,23 @@ it never looked inside the file.
 
 The list survives relaunches: the proof is written to the phone (`ocd-verified.json`)
 when the send is verified, so the delete step can happen days later. Each row
-shows the file, its size, its date and the drive folder that holds it. Select
-some or all, and the confirmation states the exact count and byte total. Deleting
-asks the phone's own permission dialog, and only after the phone confirms does
+shows the file, its size, its date and the drive folder that holds it. The header
+shows this phone's free space now, and how much would be free after the items you
+have picked are removed. Select some or all, and the confirmation states the exact
+count and byte total. Deleting asks the phone's own permission dialog, and only
+after the phone confirms does
 the app forget the proof. A failed or partial delete leaves the items listed so
 you can try again. Items already removed elsewhere are marked **No longer on
 this phone** and can be forgotten in one tap.
 
 Nothing on the drive is touched by this screen. It is the only destructive
 action in the app, and it acts on the phone copy only.
+
+After a verified delete, the phone adds one row per drive folder to that drive's
+audit log with the item count and bytes freed, so **Activity** shows "Removed from
+a phone" beside the sends and backups. If the drive is unplugged, the deletion
+still succeeds and the screen says the log could not be updated; the drive copies
+are unchanged either way.
 
 ### Tidy duplicates on the phone
 
@@ -535,13 +558,15 @@ finished rows. Clearing rows only forgets the summary; the verified list and the
 drive copies are untouched.
 
 **Activity** is a read-only timeline. It does not record anything new: uploads,
-phone backups and duplicate moves already append one JSON row per file to each
-drive's `.ocd/audit.jsonl`, and uploads to the system drive are logged under the
+phone backups, duplicate moves and verified phone deletions already append one
+JSON row per file (or one row with a count for a batch delete) to each drive's
+`.ocd/audit.jsonl`, and uploads to the system drive are logged under the
 computer's data folder. The desktop merges those logs, newest first, labels each
 row with its drive or "This computer", and returns the most recent 120 rows by
 default (500 at most). Each log is read from its tail, at most 2 MiB, so a log
 that has grown for years still opens quickly. A row shows what happened, the file,
-its size, the drive, the device where known, and whether the copy was verified.
+its size, the drive, the device where known, how many items a batch covers, and
+whether the copy was verified.
 
 Activity needs a reachable desktop, because the logs live with the drives and the
 computer. A drive that is unplugged simply contributes no rows until it is back.

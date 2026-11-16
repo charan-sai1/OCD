@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { Platform } from 'react-native';
 
-import { api, messageFor, uploadFile } from './api';
+import { api, ApiError, messageFor, uploadFile } from './api';
 
 /**
  * The send queue is the phone side of "upload, verify, then you may delete".
@@ -42,6 +42,14 @@ export type QueuedItem = {
   /** True only when this upload's bytes were hashed by the server. */
   verified?: boolean;
   path?: string;
+  /**
+   * The desktop's session for an interrupted upload. A retry asks the server
+   * how many bytes it already has and continues from there, so a dropped
+   * Wi-Fi connection does not resend a whole video.
+   */
+  uploadId?: string;
+  /** Bytes the desktop had confirmed when the last attempt stopped. */
+  sent?: number;
 };
 
 type Stored = { version: number; items: QueuedItem[] };
@@ -120,6 +128,8 @@ function coerceItem(raw: unknown): QueuedItem | null {
     finishedAt: typeof r.finishedAt === 'number' ? r.finishedAt : undefined,
     verified: r.verified === true,
     path: typeof r.path === 'string' ? r.path : undefined,
+    uploadId: typeof r.uploadId === 'string' ? r.uploadId : undefined,
+    sent: typeof r.sent === 'number' && r.sent > 0 ? r.sent : undefined,
   };
 }
 
@@ -495,14 +505,16 @@ export async function localFileFor(
 
 type SendOutcome =
   | { ok: true; verified: boolean; path?: string; size?: number }
-  | { ok: false; error: string };
+  | { ok: false; error: string; uploadId?: string; sent?: number };
 
 async function sendOne(
   server: string,
   item: QueuedItem,
   onBytes: (sent: number, total: number) => void,
+  onSession: (uploadId: string) => Promise<void>,
 ): Promise<SendOutcome> {
   let staged: { uri: string; size: number } | null = null;
+  let uploadId = item.uploadId;
   try {
     const ready = await localFileFor(item.assetId);
     if (!ready) {
@@ -513,34 +525,69 @@ async function sendOne(
       };
     }
     staged = await stageForUpload(ready, extensionOf(item.name));
-    const start = await api.uploadStart(server, {
-      libraryId: item.libraryId,
-      // The staged size is the truth; the queued size was only a hint.
-      name: item.name,
-      size: staged.size,
-      takenAt: item.takenAt,
-      kind: item.kind,
-    });
-    if (start.existingPath) {
-      return { ok: true, verified: false, path: start.existingPath, size: staged.size };
+
+    // A stored session is only usable for a file with the same size. The
+    // server treats a mismatch as a different file, so start over rather than
+    // appending two different photos into one upload.
+    let offset = 0;
+    if (uploadId) {
+      try {
+        const status = await api.uploadStatus(server, uploadId);
+        if (status.size === staged.size) {
+          offset = Math.max(0, status.received);
+        } else {
+          uploadId = undefined;
+        }
+      } catch (e) {
+        // A 404 means the desktop expired the session, so a new one is needed.
+        // Any other failure is the network; keep the session for the retry.
+        if (e instanceof ApiError && e.status === 404) {
+          uploadId = undefined;
+        } else {
+          return { ok: false, error: messageFor(e), uploadId, sent: item.sent };
+        }
+      }
     }
-    const uploadId = start.uploadId;
-    if (!uploadId) return { ok: false, error: 'The desktop did not start the upload.' };
+
+    if (!uploadId) {
+      const start = await api.uploadStart(server, {
+        libraryId: item.libraryId,
+        // The staged size is the truth; the queued size was only a hint.
+        name: item.name,
+        size: staged.size,
+        takenAt: item.takenAt,
+        kind: item.kind,
+      });
+      if (start.existingPath) {
+        return { ok: true, verified: false, path: start.existingPath, size: staged.size };
+      }
+      uploadId = start.uploadId;
+      if (!uploadId) return { ok: false, error: 'The desktop did not start the upload.' };
+      offset = 0;
+      // Save the session before the first byte, so a kill mid-upload can
+      // resume instead of sending the file again.
+      await onSession(uploadId);
+    }
+
     try {
-      await uploadFile(server, uploadId, staged.uri, onBytes);
+      await uploadFile(server, uploadId, staged.uri, offset, onBytes);
       const fin = await api.uploadFinish(server, uploadId);
       return { ok: true, verified: fin.verified, path: fin.path, size: staged.size };
     } catch (e) {
-      // Never leave a half-written file among the real ones.
-      try {
-        await api.uploadAbort(server, uploadId);
-      } catch {
-        // The session may already be gone.
-      }
-      throw e;
+      // Never leave a half-written file among the real ones, but keep the
+      // session when there is something left to resume. A finished or
+      // hash-mismatched session answers 404 here and is dropped.
+      const status = await api.uploadStatus(server, uploadId).catch(() => null);
+      if (!status) return { ok: false, error: messageFor(e), uploadId, sent: item.sent };
+      return {
+        ok: false,
+        error: messageFor(e),
+        uploadId,
+        sent: status.received,
+      };
     }
   } catch (e) {
-    return { ok: false, error: messageFor(e) };
+    return { ok: false, error: messageFor(e), uploadId, sent: item.sent };
   } finally {
     if (staged) await discardStagedUpload(staged.uri);
   }
@@ -585,16 +632,25 @@ export async function runSendQueue(
       totalBytes: 0,
     });
 
-    const outcome = await sendOne(server, target, (sentBytes, totalBytes) =>
-      opts.onProgress({
-        total: targets.length,
-        done: result.done,
-        verified: result.verified,
-        failed: result.failed,
-        name: target.name,
-        sentBytes,
-        totalBytes,
-      }),
+    const outcome = await sendOne(
+      server,
+      target,
+      (sentBytes, totalBytes) =>
+        opts.onProgress({
+          total: targets.length,
+          done: result.done,
+          verified: result.verified,
+          failed: result.failed,
+          name: target.name,
+          sentBytes,
+          totalBytes,
+        }),
+      async (uploadId) => {
+        target.uploadId = uploadId;
+        target.sent = 0;
+        // Persist the session at once: a kill after this point can resume.
+        await saveItem({ ...target, state: 'pending', uploadId, sent: undefined });
+      },
     );
 
     const next: QueuedItem = outcome.ok
@@ -607,8 +663,17 @@ export async function runSendQueue(
           path: outcome.path,
           error: undefined,
           finishedAt: Date.now(),
+          uploadId: undefined,
+          sent: undefined,
         }
-      : { ...target, state: 'failed', error: outcome.error, finishedAt: Date.now() };
+      : {
+          ...target,
+          state: 'failed',
+          error: outcome.error,
+          finishedAt: Date.now(),
+          uploadId: outcome.uploadId,
+          sent: outcome.sent,
+        };
 
     await saveItem(next);
     if (outcome.ok) {

@@ -14,12 +14,15 @@ import {
   DEFAULT_CONDITIONS,
   duplicateArchiveRel,
   ensureMediaAccess,
+  estimateBackup,
+  FREE_HEADROOM,
   hasMediaAccess,
   listAlbums,
   normaliseDuplicateFolder,
   runBackup,
   type AlbumChoice,
   type BackupConditions,
+  type BackupEstimate,
   type BackupProgress,
   type BackupSummary,
   type Cancellation,
@@ -27,6 +30,9 @@ import {
 } from '../direct/backup';
 import { resumeConditions, type ResumeRecord } from '../direct/resume';
 import { clearResume, readResume } from '../direct/resumeStore';
+import { phoneFreeBytes } from '../direct/deviceSpace';
+import { freeBytes } from '../direct/native';
+import { remainingAfter, roomFor } from '../direct/spacePlan';
 import { colors, radius, space, bytes } from '../theme';
 import { Chip, PrimaryButton } from '../ui';
 import { AssetPicker } from './AssetPicker';
@@ -117,9 +123,17 @@ export function BackupSheet({
   const [optionsOpen, setOptionsOpen] = useState(false);
   /** A marker left by a run the OS killed, if one belongs to this drive. */
   const [resume, setResume] = useState<ResumeRecord | null>(null);
+  /** The preflight numbers shown before a run starts. */
+  const [estimate, setEstimate] = useState<BackupEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const [driveFree, setDriveFree] = useState<number | null>(null);
+  const [phoneFree, setPhoneFree] = useState<number | null>(null);
+  const estimateRun = useRef<Cancellation>({ cancelled: true });
+  const estimateKeyRef = useRef('');
 
   const cancelRef = useRef<Cancellation>({ cancelled: false });
   const lastUpdate = useRef(0);
+  const ctxRoot = ctx?.root ?? '';
 
   const refreshPermission = useCallback(async () => {
     const granted = await hasMediaAccess();
@@ -146,6 +160,70 @@ export function BackupSheet({
       alive = false;
     };
   }, [ctx?.volumeId]);
+
+  /**
+   * Only the rules that change what gets copied are part of the estimate key.
+   * Folder layout and duplicate policy change where files land, not how large
+   * they are, so changing those must not start another camera-roll walk.
+   */
+  const estimateKey = [
+    cond.media,
+    cond.albumId,
+    cond.since,
+    cond.until,
+    cond.skipScreenshots ? 'shots-skipped' : 'shots-kept',
+    cond.minBytes,
+    pickedIds ? pickedIds.join(',') : 'whole-roll',
+  ].join('|');
+
+  useEffect(() => {
+    if (!visible || permission !== 'granted' || running || summary || !ctxRoot) {
+      // A run or summary replaces the preflight card; closing the sheet must not
+      // leave "Working out the size…" behind for the next open.
+      if (!visible) estimateKeyRef.current = '';
+      return;
+    }
+    if (estimateKeyRef.current === estimateKey) return;
+    estimateKeyRef.current = estimateKey;
+    estimateRun.current.cancelled = true;
+    const cancel: Cancellation = { cancelled: false };
+    estimateRun.current = cancel;
+    setEstimating(true);
+    setEstimate(null);
+
+    // A short pause keeps a chip tap from starting a walk that the next tap
+    // immediately replaces.
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const [next, drive, phone] = await Promise.all([
+            estimateBackup(cond, {
+              selection: pickedIds?.length ? { assetIds: pickedIds } : undefined,
+              cancel,
+            }),
+            freeBytes(ctxRoot),
+            phoneFreeBytes(),
+          ]);
+          if (cancel.cancelled) return;
+          setEstimate(next);
+          setDriveFree(drive);
+          setPhoneFree(phone);
+        } catch {
+          if (!cancel.cancelled) setEstimate(null);
+        } finally {
+          if (!cancel.cancelled) setEstimating(false);
+        }
+      })();
+    }, 350);
+
+    return () => {
+      cancel.cancelled = true;
+      clearTimeout(timer);
+    };
+    // `cond` and `pickedIds` are read inside; the key decides whether a walk
+    // is actually needed, so their identity alone does not start one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, permission, estimateKey, ctxRoot, running, summary]);
 
   const resumeHere =
     resume && ctx && resume.volumeId === ctx.volumeId ? resume : null;
@@ -289,6 +367,11 @@ export function BackupSheet({
     ? Math.max(0, Math.min(1, progress.index / progress.total))
     : 0;
 
+  const driveAfter = estimate ? remainingAfter(driveFree, estimate.bytes) : null;
+  const enoughRoom = estimate
+    ? roomFor(driveFree, estimate.bytes, FREE_HEADROOM)
+    : null;
+
   const footer = running ? (
     <PrimaryButton
       label="Stop backup"
@@ -398,6 +481,58 @@ export function BackupSheet({
                 </Text>
               ) : null}
             </Section>
+
+            {estimating && !running && !summary ? (
+              <View style={styles.spaceCard}>
+                <Text style={styles.spaceTitle}>Working out the size…</Text>
+                <Text style={styles.spaceNote}>
+                  Counting what would be copied. Nothing is copied yet.
+                </Text>
+              </View>
+            ) : estimate ? (
+              <View style={styles.spaceCard}>
+                <Text style={styles.spaceTitle}>
+                  {estimate.count.toLocaleString()}{' '}
+                  {estimate.count === 1 ? 'item' : 'items'} · {bytes(estimate.bytes)}
+                </Text>
+                {estimate.count === 0 ? (
+                  <Text style={styles.spaceNote}>
+                    Nothing matches these rules, so this backup would copy nothing.
+                  </Text>
+                ) : (
+                  <>
+                    <Text style={styles.spaceLine}>
+                      Drive free now {driveFree !== null ? bytes(driveFree) : 'unknown'}
+                      {driveAfter !== null
+                        ? ` → ${bytes(driveAfter)} after copying`
+                        : ''}
+                    </Text>
+                    <Text style={styles.spaceLine}>
+                      This phone stays unchanged
+                      {phoneFree !== null ? ` · ${bytes(phoneFree)} free` : ''}
+                    </Text>
+                    {estimate.skipped > 0 ? (
+                      <Text style={styles.spaceNote}>
+                        {estimate.skipped.toLocaleString()} skipped by the rules above.
+                      </Text>
+                    ) : null}
+                    {enoughRoom === false ? (
+                      <Text style={styles.spaceWarn}>
+                        This drive does not have enough free space for the copy. Free
+                        some space on the drive, or copy fewer items.
+                      </Text>
+                    ) : null}
+                    {estimate.approximate ? (
+                      <Text style={styles.spaceNote}>
+                        This is an estimate. Live Photo clips and files already on the
+                        drive are checked as the copy runs, so the real total can be a
+                        little lower.
+                      </Text>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            ) : null}
 
             <Pressable
               onPress={() => setOptionsOpen((open) => !open)}
@@ -758,6 +893,16 @@ const styles = StyleSheet.create({
   },
   sectionNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   pickedNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
+  spaceCard: {
+    padding: space(3),
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    gap: space(1),
+  },
+  spaceTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  spaceLine: { fontSize: 13, lineHeight: 19, color: colors.text },
+  spaceWarn: { fontSize: 13, lineHeight: 19, fontWeight: '600', color: colors.danger },
+  spaceNote: { fontSize: 12, lineHeight: 17, color: colors.muted },
   optionsRow: {
     flexDirection: 'row',
     alignItems: 'center',

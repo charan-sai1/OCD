@@ -37,6 +37,7 @@ import {
 } from './catalog';
 import { assetExif } from './exif';
 import { writeResume, clearResume } from './resumeStore';
+import { addItem, emptyEstimate, type SpaceEstimate } from './spacePlan';
 
 /** A mounted drive the phone has opened. */
 export type DriveContext = {
@@ -172,6 +173,25 @@ export type Cancellation = { cancelled: boolean };
 export type BackupSelection = { assetIds: string[] };
 
 /**
+ * What a backup would copy, before it starts. `approximate` is true for a
+ * whole-roll estimate: Live Photo motion files and duplicate matches are only
+ * known once the run reads each item, so the real total can be slightly lower.
+ */
+export type BackupEstimate = SpaceEstimate & { approximate: boolean };
+
+export type BackupEstimateProgress = {
+  phase: 'listing' | 'sizing';
+  done: number;
+  total: number;
+};
+
+export type BackupEstimateOptions = {
+  selection?: BackupSelection;
+  cancel?: Cancellation;
+  onProgress?: (p: BackupEstimateProgress) => void;
+};
+
+/**
  * Switches only the code sets, never the screen. `resumed` marks a run that
  * continues one the OS killed; the copy loop is identical, but the catalog is
  * written even when nothing new was copied so a kill during the previous
@@ -181,7 +201,7 @@ export type BackupRunOptions = { resumed?: boolean };
 
 const ASSET_PAGE = 250;
 /** Keep this much room free beyond the file being copied. */
-const FREE_HEADROOM = 64 * 1024 * 1024;
+export const FREE_HEADROOM = 64 * 1024 * 1024;
 /** Flush audit rows in batches: every append fsyncs the drive. */
 const AUDIT_BATCH = 20;
 const TIDY_MIN_BYTES = 1024;
@@ -542,6 +562,68 @@ async function loadSelection(
     onPage(assets.length, unique.length);
   }
   return assets;
+}
+
+/**
+ * Counts what a run would copy and how large it is. It reads sizes in the same
+ * order the backup does, applies the same screenshot and minimum-size rules,
+ * and never hashes or writes anything. Cancelling stops the walk early.
+ */
+export async function estimateBackup(
+  cond: BackupConditions,
+  options: BackupEstimateOptions = {},
+): Promise<BackupEstimate> {
+  const cancel = options.cancel ?? { cancelled: false };
+  const onProgress = options.onProgress;
+  const estimate = emptyEstimate();
+  let total = 0;
+
+  const addPage = async (
+    assets: MediaLibrary.Asset[],
+    applyRules: boolean,
+  ): Promise<void> => {
+    const paths = assets.map((a) => (a.uri ? localPath(a.uri) : ''));
+    const sizes = await statSizes(paths);
+    for (let i = 0; i < assets.length; i += 1) {
+      if (cancel.cancelled) return;
+      const size = sizes[i] ?? -1;
+      const name = assets[i].filename || '';
+      const skip =
+        size < 0 ||
+        (applyRules &&
+          ((cond.minBytes > 0 && size < cond.minBytes) ||
+            (cond.skipScreenshots && isScreenshot(name))));
+      addItem(estimate, size, skip);
+    }
+    onProgress?.({ phase: 'sizing', done: estimate.count, total });
+  };
+
+  const selection = options.selection;
+  if (selection?.assetIds?.length) {
+    const chosen = await loadSelection(
+      selection.assetIds,
+      (loaded, wanted) =>
+        onProgress?.({ phase: 'listing', done: loaded, total: wanted }),
+      cancel,
+    );
+    total = chosen.length;
+    for (let i = 0; i < chosen.length; i += ASSET_PAGE) {
+      if (cancel.cancelled) break;
+      // A ticked item is copied as chosen, so the conditions do not filter it.
+      await addPage(chosen.slice(i, i + ASSET_PAGE), false);
+    }
+    return { ...estimate, approximate: false };
+  }
+
+  await visitAssetPages(cond, async (assets) => {
+    if (cancel.cancelled) return true;
+    const page = assets.filter((a) => assetInRange(a, cond));
+    total += page.length;
+    onProgress?.({ phase: 'sizing', done: estimate.count, total });
+    await addPage(page, true);
+    return cancel.cancelled;
+  });
+  return { ...estimate, approximate: true };
 }
 
 /** Albums with at least one item, ready for a condition chip row. */

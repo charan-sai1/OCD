@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/import/check", s.importCheck)
 	mux.HandleFunc("/api/upload/start", s.uploadStart)
 	mux.HandleFunc("/api/upload/", s.uploadItem)
+	mux.HandleFunc("/api/free/record", s.freeRecord)
 	mux.HandleFunc("/api/item", s.itemInfo)
 	mux.HandleFunc("/api/fav", s.favToggle)
 	mux.HandleFunc("/api/orig", s.orig)

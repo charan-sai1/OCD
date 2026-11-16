@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { File, FileMode } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 
 export type Cursor = { before: number; name: string };
@@ -72,6 +73,7 @@ export type ActivityEntry = {
   from?: string;
   to?: string;
   bytes?: number;
+  count?: number;
   verified?: boolean;
   sha256?: string;
   device?: string;
@@ -108,6 +110,29 @@ export type UploadStart = {
   libraryId?: string;
   volumeId?: string;
   label?: string;
+};
+
+/** What the desktop has stored for an interrupted upload. */
+export type UploadStatus = {
+  uploadId: string;
+  /** Bytes already written to the drive. */
+  received: number;
+  /** The file's declared size. */
+  size: number;
+  /** Same as `received`; kept for the server's own naming. */
+  offset: number;
+  libraryId?: string;
+  volumeId?: string;
+};
+
+/** One batch of verified phone deletions, written to the drive's audit log. */
+export type FreeRecord = {
+  libraryId?: string;
+  volumeId?: string;
+  count: number;
+  bytes: number;
+  /** Set only for a single-item delete, so the row can name the file. */
+  name?: string;
 };
 
 export type UploadFinish = {
@@ -211,7 +236,31 @@ function deviceHeaders(): Record<string, string> {
 
 // uploadFile streams the local file to the server. It is separate from request
 // because a large video must never be read into JS memory just to be sent.
-export async function uploadFile(
+//
+// An interrupted upload can continue where the desktop stopped. The server
+// already appends at `?offset=` and reports the saved byte count, so a retry
+// reads from that exact point instead of sending the whole file again. The
+// first attempt stays on the streaming upload task; only a resumed attempt
+// reads chunks, because that task cannot start mid-file.
+const UPLOAD_CHUNK = 4 * 1024 * 1024;
+const UPLOAD_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uploadError(status: number, body: string): ApiError {
+  let message = `HTTP ${status}`;
+  try {
+    const parsed = JSON.parse(body) as { error?: string };
+    if (parsed?.error) message = parsed.error;
+  } catch {
+    // Some failures have no JSON body.
+  }
+  return new ApiError(status, message);
+}
+
+async function streamWholeFile(
   server: string,
   uploadId: string,
   uri: string,
@@ -230,14 +279,7 @@ export async function uploadFile(
   const res = await task.uploadAsync();
   if (!res) throw new Error('The upload was cancelled.');
   if (res.status < 200 || res.status >= 300) {
-    let message = `HTTP ${res.status}`;
-    try {
-      const body = JSON.parse(res.body) as { error?: string };
-      if (body?.error) message = body.error;
-    } catch {
-      // Some failures have no JSON body.
-    }
-    throw new ApiError(res.status, message);
+    throw uploadError(res.status, res.body ?? '');
   }
   // A 2xx with an empty body means the server answered something other than
   // the upload endpoint; the caller's finish step would then fail with a
@@ -245,6 +287,103 @@ export async function uploadFile(
   if (!res.body || res.body.trim() === '') {
     throw new ApiError(res.status, 'The desktop accepted the upload but sent nothing back.');
   }
+}
+
+/** Sends the bytes from `offset` onward, in chunks the bridge can carry. */
+async function streamRemaining(
+  server: string,
+  uploadId: string,
+  uri: string,
+  offset: number,
+  onProgress?: (sent: number, total: number) => void,
+): Promise<void> {
+  const file = new File(uri);
+  const handle = file.open(FileMode.ReadOnly);
+  try {
+    const size = handle.size ?? file.size;
+    if (size <= offset) return;
+    let sent = offset;
+    handle.offset = offset;
+    while (sent < size) {
+      const want = Math.min(UPLOAD_CHUNK, size - sent);
+      const chunk = await handle.readBytes(want);
+      if (!chunk.length) break;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 120000);
+      let res: Response;
+      try {
+        res = await fetch(
+          `${server}/api/upload/${encodeURIComponent(uploadId)}?offset=${sent}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              ...deviceHeaders(),
+            },
+            body: chunk as unknown as BodyInit,
+            signal: ctl.signal,
+          },
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw uploadError(res.status, body);
+      }
+      let answered = 0;
+      try {
+        const body = (await res.json()) as { offset?: number; received?: number };
+        answered = body.offset ?? body.received ?? 0;
+      } catch {
+        // The bytes landed even if the answer was not JSON.
+      }
+      sent = answered > sent ? answered : sent + chunk.length;
+      if (sent > size) sent = size;
+      onProgress?.(sent, size);
+    }
+  } finally {
+    handle.close();
+  }
+}
+
+export async function uploadFile(
+  server: string,
+  uploadId: string,
+  uri: string,
+  offset = 0,
+  onProgress?: (sent: number, total: number) => void,
+): Promise<void> {
+  let sent = Math.max(0, offset);
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      if (sent === 0) await streamWholeFile(server, uploadId, uri, onProgress);
+      else await streamRemaining(server, uploadId, uri, sent, onProgress);
+      return;
+    } catch (e) {
+      lastError = e;
+      // An expired session cannot be resumed; the queue must start a new one.
+      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        const status = await api.uploadStatus(server, uploadId).catch(() => null);
+        if (!status) throw e;
+        if (status.received >= status.size) return;
+        sent = Math.max(0, status.received);
+        if (e.status === 409 && sent === 0) throw e;
+      } else {
+        const status = await api.uploadStatus(server, uploadId).catch(() => null);
+        if (status) {
+          if (status.received >= status.size) return;
+          sent = Math.max(0, status.received);
+        }
+      }
+      if (attempt + 1 < UPLOAD_ATTEMPTS) await sleep(400 * (attempt + 1));
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('The upload was interrupted.');
 }
 
 export const api = {
@@ -307,11 +446,28 @@ export const api = {
       headers: deviceHeaders(),
     }),
 
+  uploadStatus: (server: string, uploadId: string) =>
+    request<UploadStatus>(server, `/api/upload/${encodeURIComponent(uploadId)}`, {
+      timeoutMs: 15000,
+    }),
+
   uploadAbort: (server: string, uploadId: string) =>
     request<{ aborted: boolean }>(server, `/api/upload/${encodeURIComponent(uploadId)}/abort`, {
       method: 'POST',
       timeoutMs: 15000,
     }),
+
+  freeRecord: (server: string, record: FreeRecord) =>
+    request<{ recorded: boolean; volumeId?: string; libraryId?: string }>(
+      server,
+      '/api/free/record',
+      {
+        method: 'POST',
+        body: record,
+        timeoutMs: 20000,
+        headers: deviceHeaders(),
+      },
+    ),
 
   thumb: (server: string, key: string, w = 400, v?: number | string) =>
     `${server}/api/t?k=${encodeURIComponent(key)}&w=${w}${v !== undefined && v !== '' ? `&v=${encodeURIComponent(String(v))}` : ''}`,

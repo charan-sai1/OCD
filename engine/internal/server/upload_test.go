@@ -281,6 +281,68 @@ func TestUploadIncompleteThenAbort(t *testing.T) {
 	}
 }
 
+func TestUploadResumesAtSavedOffset(t *testing.T) {
+	s, root, _ := newUploadTestServer(t)
+	content := []byte("the first half and then the second half")
+	cut := 15
+	res := startUpload(t, s, uploadStartRequest{Name: "IMG_0006.JPG", Size: int64(len(content))})
+	id := res["uploadId"].(string)
+
+	rec := doUpload(t, s, http.MethodPut, "/api/upload/"+id+"?offset=0", content[:cut])
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first put = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// A relaunched app asks where the desktop stopped before sending again.
+	rec = doUpload(t, s, http.MethodGet, "/api/upload/"+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var status map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status["received"] != float64(cut) || status["offset"] != float64(cut) ||
+		status["size"] != float64(len(content)) {
+		t.Fatalf("status = %+v", status)
+	}
+
+	// Sending from the wrong offset must be refused rather than appending a
+	// second copy of the middle of the file.
+	rec = doUpload(t, s, http.MethodPut, "/api/upload/"+id+"?offset=0", content[:4])
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale offset = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = doUpload(t, s, http.MethodPut, "/api/upload/"+id+"?offset=15", content[cut:])
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second put = %d: %s", rec.Code, rec.Body.String())
+	}
+	var put map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &put); err != nil {
+		t.Fatal(err)
+	}
+	if put["received"] != float64(len(content)) {
+		t.Fatalf("put = %+v", put)
+	}
+
+	rec = doUpload(t, s, http.MethodPost, "/api/upload/"+id+"/finish", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("finish = %d: %s", rec.Code, rec.Body.String())
+	}
+	var fin map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &fin); err != nil {
+		t.Fatal(err)
+	}
+	if fin["verified"] != true {
+		t.Fatalf("finish = %+v", fin)
+	}
+	got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(fin["path"].(string))))
+	if err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("resumed file = %q, %v", got, err)
+	}
+}
+
 func TestUploadRefusesUnknownDrive(t *testing.T) {
 	s, _, _ := newUploadTestServer(t)
 	raw, _ := json.Marshal(uploadStartRequest{Name: "x.jpg", Size: 1, VolumeID: "win:NOPE"})

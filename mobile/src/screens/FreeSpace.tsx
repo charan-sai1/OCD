@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
-import { messageFor } from '../api';
+import { api, messageFor } from '../api';
 import {
   forgetVerified,
   readVerified,
   type VerifiedItem,
 } from '../sendQueue';
+import { phoneFreeBytes } from '../direct/deviceSpace';
+import { freeAfter } from '../direct/spacePlan';
 import { colors, radius, space, bytes, takenOn } from '../theme';
 import { PrimaryButton } from '../ui';
 import { Sheet } from './Sheet';
@@ -53,6 +55,8 @@ export function FreeSpace({
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** Phone data-partition free space, when the platform reports it. */
+  const [phoneFree, setPhoneFree] = useState<number | null>(null);
   const run = useRef(0);
 
   const load = useCallback(async () => {
@@ -63,8 +67,9 @@ export function FreeSpace({
     setNote(null);
     setPicked(new Set());
     try {
-      const list = await readVerified(server);
+      const [list, free] = await Promise.all([readVerified(server), phoneFreeBytes()]);
       if (token !== run.current) return;
+      setPhoneFree(free);
       setItems(list);
       setPresence(
         Object.fromEntries(list.map((i) => [i.assetId, 'checking' as Presence])),
@@ -152,28 +157,71 @@ export function FreeSpace({
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            void doDelete(selected.map((i) => i.assetId));
+            void doDelete(selected);
           },
         },
       ],
     );
   };
 
-  const doDelete = async (ids: string[]) => {
+  /**
+   * Writes one audit row per folder the freed items came from. The deletion has
+   * already succeeded by now, so a missing drive must not turn it into an
+   * error; the caller only needs to know whether every row was written.
+   */
+  const recordFree = async (deleted: VerifiedItem[]): Promise<number> => {
+    const groups = new Map<string, { count: number; bytes: number; name?: string }>();
+    for (const item of deleted) {
+      const group = groups.get(item.libraryId) ?? { count: 0, bytes: 0 };
+      group.count += 1;
+      group.bytes += item.size;
+      if (item.name) group.name = item.name;
+      groups.set(item.libraryId, group);
+    }
+    let failed = 0;
+    for (const [libraryId, group] of groups) {
+      try {
+        await api.freeRecord(server, {
+          libraryId,
+          count: group.count,
+          bytes: group.bytes,
+          name: group.count === 1 ? group.name : undefined,
+        });
+      } catch {
+        failed += 1;
+      }
+    }
+    return failed;
+  };
+
+  const doDelete = async (deleted: VerifiedItem[]) => {
     setWorking(true);
     setError(null);
     setNote(null);
+    const ids = deleted.map((i) => i.assetId);
+    const freed = deleted.reduce((n, i) => n + i.size, 0);
     try {
       const ok = await MediaLibrary.deleteAssetsAsync(ids);
       if (!ok) throw new Error('The phone did not delete those items.');
       // Only now forget the proof, so a partial failure keeps the rest listed.
       await forgetVerified(server, ids);
+      const logFailures = await recordFree(deleted);
+      const freeNow = await phoneFreeBytes();
+      setPhoneFree(freeNow);
       const drop = new Set(ids);
       setItems((prev) => prev.filter((i) => !drop.has(i.assetId)));
       setPicked(new Set());
       onDeleted?.(ids);
       setNote(
-        `Deleted ${ids.length.toLocaleString()} ${ids.length === 1 ? 'item' : 'items'} from the phone. The drive copies are still there.`,
+        `Deleted ${ids.length.toLocaleString()} ${ids.length === 1 ? 'item' : 'items'} · ${bytes(
+          freed,
+        )} freed on this phone.${
+          freeNow !== null ? ` ${bytes(freeNow)} is free now.` : ''
+        } ${
+          logFailures
+            ? 'The drive log could not be updated, but the drive copies are unchanged.'
+            : 'The drive log recorded the change.'
+        }`,
       );
     } catch (e) {
       setError(messageFor(e));
@@ -218,6 +266,14 @@ export function FreeSpace({
               ? `${present.length.toLocaleString()} ${present.length === 1 ? 'item' : 'items'} checked by the computer. Pick some, or select all.`
               : 'Send photos from the Camera roll tab first, then check back here.'}
         </Text>
+        {present.length > 0 && phoneFree !== null ? (
+          <Text style={styles.summarySpace}>
+            This phone: {bytes(phoneFree)} free
+            {picked.size > 0
+              ? ` → ${bytes(freeAfter(phoneFree, selectedBytes) ?? phoneFree)} after deleting`
+              : ''}
+          </Text>
+        ) : null}
         {present.length > 0 ? (
           <View style={styles.actions}>
             <Text
@@ -338,6 +394,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: colors.muted,
+  },
+  summarySpace: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: colors.text,
   },
   actions: { marginTop: space(1) },
   action: {

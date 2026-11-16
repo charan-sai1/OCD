@@ -104,7 +104,7 @@ export function Activity({
     <Sheet
       visible={visible}
       title="Activity"
-      subtitle="Sends, phone backups and duplicate moves, newest first. Read from each drive's own record."
+      subtitle="Sends, phone backups, freed space and duplicate moves, newest first. Read from each drive's own record."
       onClose={onClose}
     >
       {error ? (
@@ -140,6 +140,7 @@ export function Activity({
         renderItem={({ item }) => {
           const name = shortName(item.to) || shortName(item.from);
           const detail = [
+            item.count && item.count > 1 ? `${item.count.toLocaleString()} items` : '',
             item.library,
             item.device,
             whenLabel(item.at),
