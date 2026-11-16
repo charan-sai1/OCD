@@ -138,9 +138,6 @@ second move.
 **Help** — shows what OCD is using on this PC, which optional helper tools are
 installed, and how to install the missing ones.
 
-**Open gallery** (top right) opens the full Photofield gallery for the same
-folders in a new tab.
-
 ## Safety model (nothing is lost)
 
 1. **Import never keeps a copy unless it verified it.** Each file is streamed to

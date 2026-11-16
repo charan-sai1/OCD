@@ -89,9 +89,10 @@ export function Connect({ initial, busy, problem, onConnect, onUseDrive }: Props
           </View>
 
           <Text style={styles.hint}>
-            Start OCD Manager on your computer, then open{' '}
-            <Text style={styles.hintStrong}>Phone</Text> in its window to see this
-            address. Both devices need to be on the same Wi-Fi.
+            Start OCD Manager on your computer, open{' '}
+            <Text style={styles.hintStrong}>Import</Text> there, and expand{' '}
+            <Text style={styles.hintStrong}>Open this page on your phone</Text> to see
+            this address. Both devices need to be on the same Wi-Fi.
           </Text>
         </View>
         <View style={[styles.footer, { paddingBottom: insets.bottom + space(4) }]}>

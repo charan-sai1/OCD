@@ -32,8 +32,8 @@ export function NeedsComputer({
         </View>
         <Text style={styles.heading}>Connect a computer first</Text>
         <Text style={styles.text}>
-          Start OCD Manager on your computer, open Phone there, and type the address
-          it shows.
+          Start OCD Manager on your computer, open Import there, and expand
+          “Open this page on your phone” to see the address it shows.
         </Text>
         <View style={styles.wide}>
           <PrimaryButton label="Connect a computer" onPress={onConnect} />
