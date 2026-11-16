@@ -270,14 +270,18 @@ export function BackupSheet({
       : cond.layout === 'year'
         ? 'Year / month'
         : 'One folder';
-  const optionsSummary = [
-    mediaLabel,
-    timeLabel,
-    cond.albumTitle ? `Album: ${cond.albumTitle}` : '',
-    duplicateLabel,
-    layoutLabel,
-    cond.skipScreenshots ? 'Screenshots skipped' : '',
-  ]
+  const optionsSummary = (
+    pickedIds
+      ? [duplicateLabel, layoutLabel]
+      : [
+          mediaLabel,
+          timeLabel,
+          cond.albumTitle ? `Album: ${cond.albumTitle}` : '',
+          duplicateLabel,
+          layoutLabel,
+          cond.skipScreenshots ? 'Screenshots skipped' : '',
+        ]
+  )
     .filter(Boolean)
     .join(' · ');
 
