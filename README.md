@@ -115,14 +115,17 @@ The UI is a single photo-library app with five views (deep-linkable, e.g.
   Photofield, so nothing starts empty.
 - **Refresh counts** re-scans the folders and updates the photo totals.
 
-**Import** — copy a phone onto a drive, with its duplicate settings:
+**Import** — two ways to bring photos onto a drive:
 
-- **From / To** — click to browse for the source and destination.
-- **Duplicates → Skip what I already have** (default) or **Keep every copy**.
-- **How to compare → Content · exact** (reads the file, catches renamed copies)
-  or **Name + size · fast** (instant, but a renamed copy slips through).
-- **Remove from the phone after verifying** — off by default; deletes each
-  original only after the copy on the drive has been re-read and matched.
+- **From your phone over Wi-Fi** — pick the folder Quick Share, Phone Link or
+  the OCD app lands files in, pick the drive, then **Copy to the drive** (or
+  copy and then clear the landing folder). **Open this page on your phone**
+  shows the address and QR code for driving the page from the phone.
+- **From a cable or a folder** — **From / To**, duplicate handling, and
+  **Remove from the phone after verifying** (off by default).
+- **Advanced comparison** holds **Content · exact** (the default; reads the
+  file and catches renamed copies) and **Name + size · fast** (instant, but a
+  renamed copy slips through).
 - **Import photos** or **Preview first (safe)**.
 
 **Duplicates** — add folders with the browser (drives like `E:` and `F:` are
@@ -132,7 +135,8 @@ you pick, so point it at a folder of its own; the result names the folder and an
 example file. Moving clears the scan, so run **Find duplicates** again before a
 second move.
 
-**Setup** — shows which optional helper tools are installed, and how to get them.
+**Help** — shows what OCD is using on this PC, which optional helper tools are
+installed, and how to install the missing ones.
 
 **Open gallery** (top right) opens the full Photofield gallery for the same
 folders in a new tab.
@@ -299,7 +303,7 @@ computer at all, use the preview profile:
 npx eas build -p android --profile preview
 ```
 
-Install the APK on the phone, open **USB Drive**, allow "All files access",
+Install the APK on the phone, open **This phone**, allow "All files access",
 pick the drive, and press **Index drive** once.
 
 ### What the phone writes
@@ -337,7 +341,7 @@ writable. The damaged file is never copied over the good backup.
 
 ### Back up the camera roll from the phone
 
-Connect the drive straight to the phone, open **USB Drive**, pick the volume, and
+Connect the drive straight to the phone, open **This phone**, pick the volume, and
 press **Back up phone**. No computer, server, or Wi-Fi is involved.
 
 Choose what to copy:
@@ -486,10 +490,10 @@ The phone originals are never deleted automatically.
 
 ### Free up space on the phone
 
-Once a copy is verified, the Phone tab shows **Free space**. The screen lists
-only items the desktop answered with `verified` after hashing the bytes on
-arrival; a name-and-size catalog match is not accepted as proof, because it never
-looked inside the file.
+Once a copy is verified, **Settings → This phone** shows **Free up space**. The
+screen lists only items the desktop answered with `verified` after hashing the
+bytes on arrival; a name-and-size catalog match is not accepted as proof, because
+it never looked inside the file.
 
 The list survives relaunches: the proof is written to the phone (`ocd-verified.json`)
 when the send is verified, so the delete step can happen days later. Each row
@@ -522,10 +526,10 @@ computer when you are sure.
 
 ### Activity and settings
 
-The app has four tabs on Android (**Drive**, **Phone**, **USB**, **Settings**) and
-three on iPhone (**Drive**, **Phone**, **Settings**). Settings opens without a
-computer connected, so the phone-side counts and cleanup stay reachable even when
-Wi-Fi is off.
+The app has four tabs on Android (**Computer**, **Camera roll**, **This phone**,
+**Settings**) and three on iPhone (**Computer**, **Camera roll**, **Settings**).
+Settings opens without a computer connected, so the phone-side counts and cleanup
+stay reachable even when Wi-Fi is off.
 
 Settings shows which computer the phone is talking to and its OCD version, links
 to **Activity**, and summarises this phone's sends: waiting, failed, verified

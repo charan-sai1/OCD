@@ -223,6 +223,30 @@
   .seg button.on{background:var(--blue-soft);color:var(--blue-text);font-weight:600}
   .hint{font-size:12.5px;color:var(--mut);margin-top:8px}
 
+  /* ---------- folds / subsections ---------- */
+  details.fold{
+    margin-top:22px;border:1px solid var(--line);border-radius:12px;
+    background:var(--surface);padding:0 18px;
+  }
+  details.fold>summary{
+    cursor:pointer;padding:14px 0;font-size:14px;font-weight:600;
+    list-style:none;display:flex;align-items:center;gap:9px;
+  }
+  details.fold>summary::-webkit-details-marker{display:none}
+  details.fold>summary::before{
+    content:"";width:0;height:0;border-left:5px solid var(--mut);
+    border-top:4px solid transparent;border-bottom:4px solid transparent;
+    transition:transform .15s;flex:none;
+  }
+  details.fold[open]>summary::before{transform:rotate(90deg)}
+  details.fold>summary .s{font-weight:400;font-size:12.5px;color:var(--mut)}
+  details.fold[open]>summary{border-bottom:1px solid var(--line2)}
+  details.fold .foldbody{padding:16px 0 18px}
+  .subhead{margin:36px 0 2px;font-size:16px;font-weight:600;letter-spacing:-.1px}
+  .sub{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--mut);max-width:76ch}
+  .result{margin-top:18px;padding-top:16px;border-top:1px solid var(--line2)}
+  .result.hidden{display:none}
+
   /* ---------- tooltips ---------- */
   .tip{
     display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
@@ -562,7 +586,7 @@
       <path fill="#FBBC04" d="M12 22a5 5 0 0 1-5-5v-5h5a5 5 0 0 1 0 10z"/>
       <path fill="#34A853" d="M2 12a5 5 0 0 1 5-5h5v5a5 5 0 0 1-10 0z"/>
     </svg>
-    <span class="txt">Photos</span>
+    <span class="txt">OCD Manager</span>
   </div>
 
   <nav id="mainNav">
@@ -583,9 +607,9 @@
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
       Duplicates
     </button>
-    <button data-tab="setup" title="Optional helpers that unlock phone import and video thumbnails">
+    <button data-tab="setup" title="Optional helpers and what OCD is using on this PC">
       <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
-      Setup
+      Help
     </button>
   </nav>
 
@@ -645,21 +669,24 @@
 
     <!-- ============ IMPORT ============ -->
     <section id="import">
-      <p class="pagehead">Copies new photos onto a drive, verifies every byte, then optionally clears the phone.</p>
+      <p class="pagehead">Copy photos onto a drive. Every file is checked after it lands, and nothing is removed from the phone until the check passes.</p>
 
       <!-- Phone over Wi-Fi: nothing is plugged in, the phone just needs to get
            its files into one folder on this PC, and this is where they are
            collected from and watched for. -->
-      <div class="card" id="phoneCard" style="margin-top:0">
+      <h3 class="subhead">From your phone over Wi-Fi</h3>
+      <p class="sub">Send with Quick Share, Phone Link, the OCD app, or any app that saves to a folder on this PC. Point OCD at that folder once.</p>
+
+      <div class="card" id="phoneCard" style="margin-top:14px">
         <div class="phhead">
           <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
           <div>
-            <div class="t">Phone over Wi-Fi</div>
-            <div class="s">Quick Share, Phone Link and a cable copy all end up doing the same thing — writing files into a folder on this PC. Point OCD at that folder once and the phone never needs plugging in again.</div>
+            <div class="t">Photos your phone sends to this PC</div>
+            <div class="s">Pick the folder they land in. OCD only copies files it has not already put on the drive.</div>
           </div>
         </div>
 
-        <label class="fl">THE FOLDER YOUR PHONE SENDS TO<span class="tip" tabindex="0" data-tip="Where Quick Share, Phone Link or your phone's sync app puts the photos. Point OCD at that folder once — it is remembered from then on.">?</span></label>
+        <label class="fl">THE FOLDER YOUR PHONE SENDS TO</label>
         <div class="pickline">
           <button class="pick" data-field="inbox" title="Choose the folder your phone's photos arrive in">
             <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm0 12H4V8h16v10z"/></svg>
@@ -671,7 +698,7 @@
           </button>
         </div>
 
-        <label class="fl">THE DRIVE THEY BELONG ON<span class="tip" tabindex="0" data-tip="Where the verified copies are saved. Photos are sorted into year/month subfolders inside it. Pick one of your saved folders below, or choose any folder.">?</span></label>
+        <label class="fl">THE DRIVE THEY BELONG ON</label>
         <div class="pickline">
           <button class="pick" data-field="phoneDest" title="Choose the drive these photos belong on">
             <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h2v2H6z"/></svg>
@@ -687,34 +714,40 @@
         <label class="check" style="margin-top:18px" title="Look in the folder every few seconds and show how many photos are waiting, without you pressing anything.">
           <input type="checkbox" id="phoneWatch" />
           <span>
-            <span class="t">Keep an eye on the folder<span class="tip" tabindex="0" data-tip="Checks the folder every few seconds and shows how many files are waiting. It only ever reads — nothing is copied or removed until you press one of the buttons below.">?</span></span>
+            <span class="t">Keep an eye on the folder</span>
             <span class="s" id="phoneWait">Choose the folder your phone sends to.</span>
           </span>
         </label>
 
         <div class="row">
-          <button class="btn primary" id="phoneGo" title="Copies everything waiting onto the drive and checks every byte that lands. Nothing is removed from the folder.">Put them on the drive</button>
-          <button class="btn ghost" id="phoneClear" title="Copies everything waiting, checks every byte, and only then removes the copy from the folder. If anything fails to verify, it stays where it is.">Put them on the drive, then clear the folder</button>
+          <button class="btn primary" id="phoneGo" title="Copies everything waiting onto the drive and checks every byte that lands. Nothing is removed from the folder.">Copy to the drive</button>
+          <button class="btn ghost" id="phoneClear" title="Copies everything waiting, checks every byte, and only then removes the copy from the landing folder. If anything fails to verify, it stays where it is.">Copy, then clear the landing folder</button>
         </div>
         <div class="msg" id="phoneMsg"></div>
-
-        <div class="netsplit">
-          <div class="netqr off" id="netQR"></div>
-          <div class="netmeta">
-            <label class="fl" style="margin-top:0">DRIVE IT FROM THE PHONE<span class="tip" tabindex="0" data-tip="The phone opens this very page. The folder and the drive are read from this PC, so pressing a button on the phone does exactly what pressing it here does.">?</span></label>
-            <div class="neturl"><span id="netAddr">Looking for this PC's address…</span></div>
-            <div class="filters" id="netAddrs"></div>
-            <div class="row" style="margin-top:12px">
-              <button class="btn ghost" id="netCopy" title="Copy the address, for pasting into a message or into the phone's browser.">Copy the address</button>
-            </div>
-            <div class="s" id="netNote" style="margin-top:12px;max-width:none">Scan the code with the phone camera, or type the address into the phone's browser. Both devices have to be on the same Wi-Fi. If nothing loads, Windows is probably asking whether OCD Manager may use the network — allow it for private networks.</div>
-          </div>
-        </div>
       </div>
 
-      <p class="pagehead" style="margin-top:28px">Or copy straight from a phone plugged in by cable, or from any folder on this PC.</p>
+      <details class="fold">
+        <summary>Open this page on your phone <span class="s">same Wi-Fi</span></summary>
+        <div class="foldbody">
+          <div class="netsplit">
+            <div class="netqr off" id="netQR"></div>
+            <div class="netmeta">
+              <div class="neturl"><span id="netAddr">Looking for this PC's address…</span></div>
+              <div class="filters" id="netAddrs"></div>
+              <div class="row" style="margin-top:12px">
+                <button class="btn ghost" id="netCopy" title="Copy the address, for pasting into a message or into the phone's browser.">Copy the address</button>
+              </div>
+              <div class="s" id="netNote" style="margin-top:12px;max-width:none">Scan the code or type the address into the phone's browser. Both devices need the same Wi-Fi. If nothing loads, allow OCD Manager on private networks when Windows asks.</div>
+            </div>
+          </div>
+        </div>
+      </details>
 
-      <label class="fl">FROM<span class="tip" tabindex="0" data-tip="Where the photos come from — a phone connected by USB, or any folder on this PC.">?</span></label>
+      <h3 class="subhead">From a cable or a folder</h3>
+      <p class="sub">Plug the phone in, or copy from any folder already on this PC.</p>
+
+      <div class="card" style="margin-top:14px">
+      <label class="fl" style="margin-top:0">FROM</label>
       <div class="pickline">
         <button class="pick" data-field="source" title="Choose a phone or a folder to copy from">
           <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg>
@@ -739,24 +772,29 @@
         </button>
       </div>
 
-      <label class="fl">DUPLICATES<span class="tip" tabindex="0" data-tip="What to do when the same file is already on the drive. Skipping saves space; keeping every copy uses more.">?</span></label>
+      <label class="fl">DUPLICATES</label>
       <div class="seg" id="segAction">
         <button data-v="skip" class="on" title="Only copies files that are not already on the drive. Nothing is stored twice.">Skip what I already have</button>
         <button data-v="copy" title="Copies everything, even if an identical file is already there. Uses extra space.">Keep every copy</button>
       </div>
       <div class="hint" id="actionHint">Files already on the drive are not copied again — no wasted space.</div>
 
-      <label class="fl">HOW TO COMPARE<span class="tip" tabindex="0" data-tip="How OCD decides two files are the same file. Content matching reads every byte; name matching only looks at the filename and size.">?</span></label>
-      <div class="seg" id="segCheck">
-        <button data-v="content" class="on" title="Reads the whole file and matches it byte for byte. Slower, but catches copies that were renamed.">Content · exact</button>
-        <button data-v="name" title="Matches on filename and size only. Much faster, but misses copies that were renamed.">Name + size · fast</button>
-      </div>
-      <div class="hint" id="checkHint">Reads the whole file. Safest — catches renamed copies too.</div>
+      <details class="fold">
+        <summary>Advanced comparison <span class="s">usually not needed</span></summary>
+        <div class="foldbody">
+          <label class="fl" style="margin-top:0">HOW TO COMPARE</label>
+          <div class="seg" id="segCheck">
+            <button data-v="content" class="on" title="Reads the whole file and matches it byte for byte. Slower, but catches copies that were renamed.">Content · exact</button>
+            <button data-v="name" title="Matches on filename and size only. Much faster, but misses copies that were renamed.">Name + size · fast</button>
+          </div>
+          <div class="hint" id="checkHint">Reads the whole file. Safest — catches renamed copies too.</div>
+        </div>
+      </details>
 
       <label class="check" title="Deletes each file from the phone only after the copy on the drive has been re-read and matched. Leave this off to keep everything on the phone.">
         <input type="checkbox" id="wipe" />
         <span>
-          <span class="t">Remove from the phone after verifying<span class="tip" tabindex="0" data-tip="Each file is deleted from the phone only once the copy on the drive has been re-read and matched byte for byte. If anything fails to verify, it is left on the phone.">?</span></span>
+          <span class="t">Remove from the phone after verifying</span>
           <span class="s">Each file is deleted only after the copy on the drive has been re-read and matched.</span>
         </span>
       </label>
@@ -766,9 +804,10 @@
         <button class="btn ghost" id="impPreview" title="Shows what would be copied and cleared, without writing or deleting anything.">Preview first (safe)</button>
       </div>
 
-      <div class="card hidden" id="impCard">
+      <div class="result hidden" id="impCard">
         <div class="stats" id="impStats"></div>
         <div class="msg" id="impMsg"></div>
+      </div>
       </div>
     </section>
 
@@ -805,22 +844,30 @@
       </div>
     </section>
 
-    <!-- ============ SETUP ============ -->
+    <!-- ============ HELP ============ -->
     <section id="setup">
-      <p class="pagehead">These helpers are optional, but they unlock phone import and better thumbnails.</p>
+      <p class="pagehead">What OCD is using on this PC, and what is optional.</p>
 
-      <div class="tools" id="indexInfo" style="margin-top:16px"></div>
+      <h3 class="subhead">Your library</h3>
+      <p class="sub">OCD keeps its own index and previews so browsing stays fast. The originals are never changed.</p>
+      <div class="tools" id="indexInfo" style="margin-top:14px"></div>
 
-      <div class="tools" id="toolList" style="margin-top:16px"></div>
-      <div class="card">
-        <div class="msg" style="margin-top:0">
-Install on this PC with winget:<br><br>
+      <h3 class="subhead">Optional helpers</h3>
+      <p class="sub">Phone import and some thumbnails need these. Anything already installed is marked below; you only need the ones marked missing.</p>
+      <div class="tools" id="toolList" style="margin-top:14px"></div>
+
+      <details class="fold">
+        <summary>Install a missing helper <span class="s">uses winget</span></summary>
+        <div class="foldbody">
+          <p class="sub" style="margin-top:0">Run these in PowerShell on this PC. Install only what is marked missing above.</p>
+          <div class="msg" style="margin-top:12px">
 <span class="code">winget install Google.PlatformTools</span> — Android import (adb)<br>
 <span class="code">winget install libimobiledevice.ifuse</span> — iPhone import<br>
 <span class="code">winget install Gyan.FFmpeg</span> — video thumbnails<br>
 <span class="code">winget install OliverBetz.ExifTool</span> — richer photo details
+          </div>
         </div>
-      </div>
+      </details>
     </section>
 
   </div>
@@ -909,7 +956,7 @@ const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 
 /* ---------- tabs ---------- */
-const TITLES = { photos:'Photos', library:'Folders', import:'Import', dupes:'Duplicates', setup:'Setup' };
+const TITLES = { photos:'Photos', library:'Folders', import:'Import', dupes:'Duplicates', setup:'Help' };
 function showTab(name){
   if (!TITLES[name]) name = 'photos';
   $$('#mainNav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
