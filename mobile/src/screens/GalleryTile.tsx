@@ -14,6 +14,7 @@ export const Tile = memo(function Tile({
   selected = false,
   onToggleSelect,
   thumbUri,
+  sourceLabel,
 }: {
   item: GridItem;
   server: string;
@@ -24,6 +25,8 @@ export const Tile = memo(function Tile({
   selecting?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  /** A short badge such as "Phone" or "Drive" shown in the corner. */
+  sourceLabel?: string;
   /** Override for browsing a drive plugged into the phone instead of a server.
    *  It may answer asynchronously: the drive's preview is used when present,
    *  otherwise the original file is resolved through a folder listing. */
@@ -86,6 +89,11 @@ export const Tile = memo(function Tile({
           </Text>
         </View>
       )}
+      {sourceLabel ? (
+        <View style={styles.sourceBadge}>
+          <Text style={styles.sourceText}>{sourceLabel}</Text>
+        </View>
+      ) : null}
       {item.kind === 'video' ? (
         <View style={styles.videoBadge}>
           <Text style={styles.videoText}>▶ {formatDur(item.dur)}</Text>
@@ -145,6 +153,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)',
   },
   videoText: { color: colors.white, fontSize: 10, fontWeight: '700' },
+  sourceBadge: {
+    position: 'absolute',
+    left: 5,
+    top: 5,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(17,19,21,0.62)',
+  },
+  sourceText: { color: colors.white, fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
   shareButton: {
     position: 'absolute',
     top: 8,

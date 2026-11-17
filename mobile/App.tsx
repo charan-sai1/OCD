@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,17 +19,26 @@ import {
   normalizeServer,
   saveServer,
 } from './src/api';
-import { Connect } from './src/screens/Connect';
-import { DirectDrive } from './src/screens/DirectDrive';
-import { Gallery } from './src/screens/Gallery';
-import { NeedsComputer } from './src/screens/NeedsComputer';
-import { Phone } from './src/screens/Phone';
+import { useDriveSession } from './src/direct/session';
+import { Backups } from './src/screens/Backups';
+import { Devices } from './src/screens/Devices';
+import { Photos } from './src/screens/Photos';
 import { Settings } from './src/screens/Settings';
-import { isDriveModuleAvailable } from './src/direct/native';
+import { Space } from './src/screens/Space';
 import { Wordmark } from './src/ui';
 import { colors, space } from './src/theme';
 
-type Tab = 'drive' | 'phone' | 'usb' | 'settings';
+type Tab = 'photos' | 'devices' | 'backups' | 'space' | 'settings';
+
+const TABS: readonly Tab[] = ['photos', 'devices', 'backups', 'space', 'settings'];
+
+const LABELS: Record<Tab, string> = {
+  photos: 'Photos',
+  devices: 'Devices',
+  backups: 'Backups',
+  space: 'Space',
+  settings: 'Settings',
+};
 
 export default function App() {
   // Every screen reads its insets from here, so the provider has to sit above
@@ -47,56 +55,56 @@ export default function App() {
 }
 
 function Root() {
-  // A phone with the drive module can work without a computer, so it opens on
-  // the USB tab instead of a connect screen that cannot be satisfied.
-  const canBrowseDrive = Platform.OS === 'android' && isDriveModuleAvailable;
+  // One drive session for the whole app: Photos, Devices, Backups and Space all
+  // read the same connection, and the first usable volume opens by itself.
+  const drive = useDriveSession();
 
   const [booting, setBooting] = useState(true);
   const [server, setServer] = useState<string | null>(null);
   const [initial, setInitial] = useState('');
-  const [problem, setProblem] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [tab, setTab] = useState<Tab>(canBrowseDrive ? 'usb' : 'drive');
+  const [tab, setTab] = useState<Tab>('photos');
+  const [phoneRevision, setPhoneRevision] = useState(0);
 
   useEffect(() => {
     (async () => {
       const saved = await loadServer();
       setInitial(saved);
-      if (!saved) {
-        setBooting(false);
-        return;
+      if (saved) {
+        try {
+          await api.version(saved);
+          setServer(saved);
+        } catch {
+          // Keep the address in the form so the user can try again, but do not
+          // pretend a computer answered. The other tabs still work.
+          setServer(null);
+        }
       }
-      try {
-        await api.version(saved);
-        setServer(saved);
-        // A saved desktop is the main way in; land there, not on USB.
-        setTab('drive');
-      } catch (e) {
-        setProblem(messageFor(e));
-        // Show the address field and its error rather than silently landing on USB.
-        setTab('drive');
-      } finally {
-        setBooting(false);
-      }
+      setBooting(false);
     })();
   }, []);
 
-  const connect = useCallback(async (raw: string) => {
+  const connectTo = useCallback(async (raw: string): Promise<string | null> => {
     const url = normalizeServer(raw);
-    if (!url) return;
-    setConnecting(true);
-    setProblem(null);
+    if (!url) return 'Type the address shown on the computer.';
     try {
       await api.version(url);
       await saveServer(url);
       setInitial(url);
       setServer(url);
-      setTab('drive');
+      return null;
     } catch (e) {
-      setProblem(messageFor(e));
-    } finally {
-      setConnecting(false);
+      return messageFor(e);
     }
+  }, []);
+
+  const forgetComputer = useCallback(() => {
+    void saveServer('');
+    setInitial('');
+    setServer(null);
+  }, []);
+
+  const phoneChanged = useCallback(() => {
+    setPhoneRevision((n) => n + 1);
   }, []);
 
   if (booting) {
@@ -109,52 +117,55 @@ function Root() {
     );
   }
 
-  if (!server) {
-    return (
-      <View style={styles.shell}>
-        <StatusBar style="dark" />
-        {tab === 'usb' && Platform.OS === 'android' ? (
-          <DirectDrive />
-        ) : tab === 'settings' ? (
-          <Settings server={null} onChangeServer={() => setTab('drive')} />
-        ) : tab === 'phone' ? (
-          <NeedsComputer
-            onConnect={() => setTab('drive')}
-            onUseDrive={canBrowseDrive ? () => setTab('usb') : undefined}
-          />
-        ) : (
-          <Connect
-            initial={initial}
-            busy={connecting}
-            problem={problem}
-            onConnect={connect}
-            onUseDrive={canBrowseDrive ? () => setTab('usb') : undefined}
-          />
-        )}
-        <TabBar tab={tab} onChange={setTab} />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.shell}>
       <StatusBar style="dark" />
-      {tab === 'drive' ? (
-        <Gallery server={server} />
-      ) : tab === 'usb' ? (
-        <DirectDrive />
-      ) : tab === 'settings' ? (
-        <Settings
-          server={server}
-          onChangeServer={() => {
-            setServer(null);
-            setProblem(null);
-            setTab('drive');
-          }}
-        />
-      ) : (
-        <Phone server={server} />
-      )}
+      <View style={styles.screenWrap}>
+        <View style={[styles.screen, tab !== 'photos' && styles.hidden]}>
+          <Photos
+            server={server}
+            drive={drive}
+            onOpenDevices={() => setTab('devices')}
+            phoneRevision={phoneRevision}
+          />
+        </View>
+
+        <View style={[styles.screen, tab !== 'devices' && styles.hidden]}>
+          <Devices
+            server={server}
+            initialUrl={initial}
+            connectTo={connectTo}
+            forgetComputer={forgetComputer}
+            drive={drive}
+          />
+        </View>
+
+        <View style={[styles.screen, tab !== 'backups' && styles.hidden]}>
+          <Backups
+            server={server}
+            drive={drive}
+            onOpenDevices={() => setTab('devices')}
+            onOpenSpace={() => setTab('space')}
+            phoneRevision={phoneRevision}
+            onPhoneChanged={phoneChanged}
+          />
+        </View>
+
+        <View style={[styles.screen, tab !== 'space' && styles.hidden]}>
+          <Space
+            server={server}
+            drive={drive}
+            onOpenDevices={() => setTab('devices')}
+            phoneRevision={phoneRevision}
+            onDeleted={phoneChanged}
+          />
+        </View>
+
+        <View style={[styles.screen, tab !== 'settings' && styles.hidden]}>
+          <Settings server={server} onChangeServer={() => setTab('devices')} />
+        </View>
+      </View>
+
       <TabBar tab={tab} onChange={setTab} />
     </View>
   );
@@ -162,12 +173,6 @@ function Root() {
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   const insets = useSafeAreaInsets();
-  // Only show the USB tab on Android, where SAF browsing is wired up. iOS
-  // gets its own route once Dev builds exist.
-  const tabs: readonly Tab[] =
-    Platform.OS === 'android'
-      ? ['drive', 'phone', 'usb', 'settings']
-      : ['drive', 'phone', 'settings'];
   return (
     <View
       style={[
@@ -176,7 +181,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
         { paddingBottom: Math.max(insets.bottom, space(2)) },
       ]}
     >
-      {tabs.map((t) => {
+      {TABS.map((t) => {
         const active = tab === t;
         return (
           <Pressable
@@ -184,17 +189,12 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
             onPress={() => onChange(t)}
             style={styles.tab}
             accessibilityRole="tab"
+            accessibilityLabel={LABELS[t]}
             accessibilityState={{ selected: active }}
           >
             <View style={[styles.dot, active && styles.dotActive]} />
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-              {t === 'drive'
-                ? 'Computer'
-                : t === 'phone'
-                  ? 'Camera roll'
-                  : t === 'usb'
-                    ? 'This phone'
-                    : 'Settings'}
+              {LABELS[t]}
             </Text>
           </Pressable>
         );
@@ -205,6 +205,9 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.bg },
+  screenWrap: { flex: 1 },
+  screen: { flex: 1 },
+  hidden: { display: 'none' },
   tabs: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -222,7 +225,7 @@ const styles = StyleSheet.create({
   },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
   dotActive: { backgroundColor: colors.text },
-  tabLabel: { fontSize: 12, fontWeight: '600', color: colors.faint },
+  tabLabel: { fontSize: 11, fontWeight: '600', color: colors.faint },
   tabLabelActive: { color: colors.text },
   boot: {
     flex: 1,

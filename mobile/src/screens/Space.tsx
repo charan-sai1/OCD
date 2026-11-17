@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
+  RefreshControl,
   Pressable,
   StyleSheet,
   Text,
@@ -11,66 +13,65 @@ import {
 import * as MediaLibrary from 'expo-media-library/legacy';
 
 import { api, messageFor } from '../api';
+import { phoneFreeBytes } from '../direct/deviceSpace';
+import { freeAfter } from '../direct/spacePlan';
+import type { DriveSession } from '../direct/session';
+import { volumeName } from '../direct/native';
 import {
   forgetVerified,
   readVerified,
   type VerifiedItem,
 } from '../sendQueue';
-import { phoneFreeBytes } from '../direct/deviceSpace';
-import { freeAfter } from '../direct/spacePlan';
+import { BottomBar, ScreenHeader, TextAction } from '../layout';
 import { colors, radius, space, bytes, takenOn } from '../theme';
 import { PrimaryButton } from '../ui';
-import { Sheet } from './Sheet';
 
 /** How many camera-roll lookups run at once while checking presence. */
 const CHECK_CHUNK = 25;
 
 type Presence = 'checking' | 'present' | 'gone';
 
+type Props = {
+  server: string | null;
+  drive: DriveSession;
+  onOpenDevices: () => void;
+  /** Bumped when the camera roll changed in another screen. */
+  phoneRevision: number;
+  onDeleted: (assetIds: string[]) => void;
+};
+
 /**
- * The free-space screen. It only ever offers items the desktop answered with
- * `verified` after hashing the bytes on arrival. A catalog match is not proof:
- * it only knows a name and a size, so those items never reach this list.
- *
- * Deleting is the one destructive action in the app, so it is deliberate: pick
- * items (or all of them), confirm with the exact count and byte total, and only
- * then ask the phone to delete. The forgotten record is written after the phone
- * confirms, so a failed delete leaves the item on the list to try again.
+ * Space shows what is left on the phone and on the open drive, and offers the
+ * one destructive action in the app: deleting phone copies that a computer has
+ * already checked by hash. A catalog match is not proof, so only the verified
+ * store reaches this list. The drive copies and the phone originals are never
+ * touched by anything else here.
  */
-export function FreeSpace({
-  visible,
-  server,
-  onClose,
-  onDeleted,
-}: {
-  visible: boolean;
-  server: string;
-  onClose: () => void;
-  onDeleted?: (assetIds: string[]) => void;
-}) {
+export function Space({ server, drive, onOpenDevices, phoneRevision, onDeleted }: Props) {
   const [items, setItems] = useState<VerifiedItem[]>([]);
   const [presence, setPresence] = useState<Record<string, Presence>>({});
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [phoneFree, setPhoneFree] = useState<number | null>(null);
   const [checking, setChecking] = useState(true);
   const [working, setWorking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  /** Phone data-partition free space, when the platform reports it. */
-  const [phoneFree, setPhoneFree] = useState<number | null>(null);
   const run = useRef(0);
 
   const load = useCallback(async () => {
-    if (!visible) return;
     const token = ++run.current;
     setChecking(true);
     setError(null);
-    setNote(null);
-    setPicked(new Set());
     try {
-      const [list, free] = await Promise.all([readVerified(server), phoneFreeBytes()]);
+      const [free, list] = await Promise.all([
+        phoneFreeBytes(),
+        server ? readVerified(server) : Promise.resolve([] as VerifiedItem[]),
+      ]);
       if (token !== run.current) return;
       setPhoneFree(free);
       setItems(list);
+      setPicked(new Set());
       setPresence(
         Object.fromEntries(list.map((i) => [i.assetId, 'checking' as Presence])),
       );
@@ -101,13 +102,26 @@ export function FreeSpace({
     } finally {
       if (token === run.current) setChecking(false);
     }
-  }, [visible, server]);
+  }, [server]);
 
   useEffect(() => {
     // Reading the store and the camera roll are external reads, not derived
-    // state; the sheet re-runs this every time it opens.
+    // state; the page also re-runs this when a delete happened elsewhere.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+  }, [load, phoneRevision]);
+
+  const refreshFree = drive.refreshFree;
+
+  useEffect(() => {
+    void refreshFree();
+  }, [refreshFree]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void load();
+    });
+    return () => sub.remove();
   }, [load]);
 
   const present = items.filter((i) => presence[i.assetId] === 'present');
@@ -127,7 +141,14 @@ export function FreeSpace({
 
   const selectAll = () => setPicked(new Set(present.map((i) => i.assetId)));
 
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([load(), drive.refreshFree()]);
+    setRefreshing(false);
+  }, [drive, load]);
+
   const forgetGone = async () => {
+    if (!server) return;
     setWorking(true);
     setError(null);
     try {
@@ -145,31 +166,8 @@ export function FreeSpace({
     }
   };
 
-  const confirmDelete = () => {
-    if (picked.size === 0 || working) return;
-    const count = selected.length;
-    Alert.alert(
-      `Delete ${count.toLocaleString()} ${count === 1 ? 'item' : 'items'} from this phone?`,
-      `${bytes(selectedBytes)} will be freed. The computer checked and kept a copy of every one of these, and those copies stay exactly as they are. This cannot be undone.`,
-      [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void doDelete(selected);
-          },
-        },
-      ],
-    );
-  };
-
-  /**
-   * Writes one audit row per folder the freed items came from. The deletion has
-   * already succeeded by now, so a missing drive must not turn it into an
-   * error; the caller only needs to know whether every row was written.
-   */
   const recordFree = async (deleted: VerifiedItem[]): Promise<number> => {
+    if (!server) return 0;
     const groups = new Map<string, { count: number; bytes: number; name?: string }>();
     for (const item of deleted) {
       const group = groups.get(item.libraryId) ?? { count: 0, bytes: 0 };
@@ -204,23 +202,23 @@ export function FreeSpace({
       const ok = await MediaLibrary.deleteAssetsAsync(ids);
       if (!ok) throw new Error('The phone did not delete those items.');
       // Only now forget the proof, so a partial failure keeps the rest listed.
-      await forgetVerified(server, ids);
+      if (server) await forgetVerified(server, ids);
       const logFailures = await recordFree(deleted);
       const freeNow = await phoneFreeBytes();
       setPhoneFree(freeNow);
       const drop = new Set(ids);
       setItems((prev) => prev.filter((i) => !drop.has(i.assetId)));
       setPicked(new Set());
-      onDeleted?.(ids);
+      onDeleted(ids);
       setNote(
-        `Deleted ${ids.length.toLocaleString()} ${ids.length === 1 ? 'item' : 'items'} · ${bytes(
-          freed,
-        )} freed on this phone.${
+        `Deleted ${ids.length.toLocaleString()} ${
+          ids.length === 1 ? 'item' : 'items'
+        } · ${bytes(freed)} freed on this phone.${
           freeNow !== null ? ` ${bytes(freeNow)} is free now.` : ''
         } ${
           logFailures
-            ? 'The drive log could not be updated, but the drive copies are unchanged.'
-            : 'The drive log recorded the change.'
+            ? 'The computer log could not be updated, but its copies are unchanged.'
+            : 'The computer log recorded the change.'
         }`,
       );
     } catch (e) {
@@ -230,51 +228,88 @@ export function FreeSpace({
     }
   };
 
-  const footer = (
-    <PrimaryButton
-      label={
-        picked.size === 0
-          ? 'Choose items to free space'
-          : `Delete ${picked.size.toLocaleString()} from this phone`
-      }
-      onPress={confirmDelete}
-      disabled={picked.size === 0 || working}
-      busy={working}
-    />
-  );
+  const confirmDelete = () => {
+    if (picked.size === 0 || working) return;
+    const count = selected.length;
+    Alert.alert(
+      `Delete ${count.toLocaleString()} ${count === 1 ? 'item' : 'items'} from this phone?`,
+      `${bytes(selectedBytes)} will be freed. The computer checked and kept a copy of every one of these, and those copies stay exactly as they are. This cannot be undone.`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void doDelete(selected);
+          },
+        },
+      ],
+    );
+  };
 
-  return (
-    <Sheet
-      visible={visible}
-      title="Free up space"
-      subtitle="Only items the computer checked appear here. The drive copies are never touched."
-      onClose={onClose}
-      footer={footer}
-    >
+  const driveLabel = drive.active
+    ? volumeName(drive.active.volume)
+    : drive.saf?.label ?? '';
+
+  const header = (
+    <View>
+      <View style={styles.metrics}>
+        <View style={styles.metricCard}>
+          <Text style={styles.metricLabel}>This phone</Text>
+          <Text style={styles.metricValue}>
+            {phoneFree === null ? 'Unknown' : bytes(phoneFree)}
+          </Text>
+          <Text style={styles.metricSub}>
+            {picked.size > 0 && phoneFree !== null
+              ? `${bytes(freeAfter(phoneFree, selectedBytes) ?? phoneFree)} after deleting`
+              : 'free space'}
+          </Text>
+        </View>
+
+        <View style={styles.metricCard}>
+          <Text style={styles.metricLabel}>
+            {driveLabel || 'Drive'}
+          </Text>
+          <Text style={styles.metricValue}>
+            {drive.free === null ? 'Unknown' : bytes(drive.free)}
+          </Text>
+          <Text style={styles.metricSub}>
+            {drive.active || drive.saf ? 'free on this drive' : 'no drive open'}
+          </Text>
+          {!drive.active && !drive.saf ? (
+            <View style={styles.metricAction}>
+              <TextAction
+                label="Open Devices"
+                onPress={onOpenDevices}
+                accessibilityHint="Plug in a drive or connect a computer"
+              />
+            </View>
+          ) : null}
+        </View>
+      </View>
+
       <View style={styles.summary}>
         <Text style={styles.summaryTitle}>
-          {checking
-            ? 'Checking what is still on this phone…'
-            : present.length > 0
-              ? `${bytes(freeableBytes)} can be freed`
-              : 'Nothing to free right now'}
+          {!server
+            ? 'Verified cleanup needs a computer'
+            : checking
+              ? 'Checking what is still on this phone…'
+              : present.length > 0
+                ? `${bytes(freeableBytes)} can be freed`
+                : 'Nothing to free right now'}
         </Text>
         <Text style={styles.summarySub}>
-          {picked.size > 0
-            ? `${picked.size.toLocaleString()} of ${present.length.toLocaleString()} selected · ${bytes(selectedBytes)}`
-            : present.length > 0
-              ? `${present.length.toLocaleString()} ${present.length === 1 ? 'item' : 'items'} checked by the computer. Pick some, or select all.`
-              : 'Send photos from the Camera roll tab first, then check back here.'}
+          {!server
+            ? 'Connect a computer on this Wi-Fi to send photos. Once it has checked a copy by hash, the phone copy can be deleted here.'
+            : picked.size > 0
+              ? `${picked.size.toLocaleString()} of ${present.length.toLocaleString()} selected · ${bytes(selectedBytes)}`
+              : present.length > 0
+                ? `${present.length.toLocaleString()} ${
+                    present.length === 1 ? 'item' : 'items'
+                  } checked by the computer. Pick some, or select all.`
+                : 'Send photos from Backups first, then check back here.'}
         </Text>
-        {present.length > 0 && phoneFree !== null ? (
-          <Text style={styles.summarySpace}>
-            This phone: {bytes(phoneFree)} free
-            {picked.size > 0
-              ? ` → ${bytes(freeAfter(phoneFree, selectedBytes) ?? phoneFree)} after deleting`
-              : ''}
-          </Text>
-        ) : null}
-        {present.length > 0 ? (
+        {server && present.length > 0 ? (
           <View style={styles.actions}>
             <Text
               onPress={picked.size === present.length ? () => setPicked(new Set()) : selectAll}
@@ -300,11 +335,33 @@ export function FreeSpace({
           <Text style={styles.noteText}>{note}</Text>
         </View>
       ) : null}
+    </View>
+  );
+
+  return (
+    <View style={styles.root}>
+      <ScreenHeader style={styles.header}>
+        <Text style={styles.title} accessibilityRole="header">
+          Space
+        </Text>
+        <Text style={styles.sub}>
+          Room on this phone and the open drive. Only checked copies can be deleted.
+        </Text>
+      </ScreenHeader>
 
       <FlatList
-        data={items}
+        data={server ? items : []}
         keyExtractor={(i) => i.assetId}
-        contentContainerStyle={{ paddingBottom: space(8) }}
+        contentContainerStyle={{ paddingBottom: space(10) }}
+        ListHeaderComponent={header}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refresh()}
+            tintColor={colors.muted}
+            colors={[colors.text]}
+          />
+        }
         renderItem={({ item }) => {
           const state = presence[item.assetId] ?? 'checking';
           const isPicked = picked.has(item.assetId);
@@ -347,7 +404,18 @@ export function FreeSpace({
           );
         }}
         ListEmptyComponent={
-          checking ? (
+          !server ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Connect a computer</Text>
+              <Text style={styles.emptyText}>
+                Verified cleanup is only offered for copies a computer has checked by
+                hash. The drive still shows its free space above.
+              </Text>
+              <View style={styles.emptyAction}>
+                <PrimaryButton label="Open Devices" onPress={onOpenDevices} />
+              </View>
+            </View>
+          ) : checking ? (
             <View style={styles.empty}>
               <ActivityIndicator color={colors.muted} />
             </View>
@@ -355,8 +423,8 @@ export function FreeSpace({
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No verified items yet</Text>
               <Text style={styles.emptyText}>
-                Send photos from the Camera roll tab. Once the computer has checked a
-                copy, it shows up here so you can delete it from the phone.
+                Send photos from Backups. Once the computer has checked a copy, it shows
+                up here so you can delete it from the phone.
               </Text>
             </View>
           )
@@ -377,16 +445,63 @@ export function FreeSpace({
           ) : undefined
         }
       />
-    </Sheet>
+
+      {server ? (
+        <BottomBar>
+          <PrimaryButton
+            label={
+              picked.size === 0
+                ? 'Choose items to free space'
+                : `Delete ${picked.size.toLocaleString()} from this phone`
+            }
+            onPress={confirmDelete}
+            disabled={picked.size === 0 || working}
+            busy={working}
+          />
+        </BottomBar>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  header: { paddingBottom: space(2) },
+  title: {
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: '700',
+    letterSpacing: -0.8,
+    color: colors.text,
+    marginTop: space(1),
+  },
+  sub: { marginTop: space(1), fontSize: 13, lineHeight: 18, color: colors.muted },
+  metrics: {
+    flexDirection: 'row',
+    gap: space(2.5),
+    paddingHorizontal: space(4),
+    paddingTop: space(3),
+  },
+  metricCard: {
+    flex: 1,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    padding: space(3),
+  },
+  metricLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  metricValue: {
+    marginTop: space(1),
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    color: colors.text,
+  },
+  metricSub: { fontSize: 12, lineHeight: 17, color: colors.muted },
+  metricAction: { marginTop: space(1), alignItems: 'flex-start' },
   summary: {
     paddingHorizontal: space(4),
-    paddingVertical: space(3),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
+    paddingTop: space(4),
+    paddingBottom: space(2),
   },
   summaryTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   summarySub: {
@@ -394,13 +509,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: colors.muted,
-  },
-  summarySpace: {
-    marginTop: 2,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
-    color: colors.text,
   },
   actions: { marginTop: space(1) },
   action: {
@@ -415,8 +523,8 @@ const styles = StyleSheet.create({
     gap: space(3),
     paddingHorizontal: space(4),
     paddingVertical: space(2.5),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
     minHeight: 60,
   },
   rowPressed: { backgroundColor: colors.surfacePressed },
@@ -455,7 +563,7 @@ const styles = StyleSheet.create({
   noteText: { fontSize: 13, lineHeight: 18, color: '#027a48' },
   empty: {
     paddingHorizontal: space(8),
-    paddingTop: space(14),
+    paddingTop: space(10),
     alignItems: 'center',
   },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
@@ -466,6 +574,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textAlign: 'center',
   },
+  emptyAction: { marginTop: space(4) },
   forget: {
     paddingHorizontal: space(4),
     paddingTop: space(2),

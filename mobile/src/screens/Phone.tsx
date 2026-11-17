@@ -19,7 +19,6 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as MediaLibrary from 'expo-media-library/legacy';
-import * as FileSystem from 'expo-file-system/legacy';
 import { api, ImportMatch, Library, messageFor } from '../api';
 import { BottomBar, ScreenHeader, TextAction } from '../layout';
 import {
@@ -28,35 +27,26 @@ import {
   forgetVerified,
   pendingCount,
   readSendQueue,
-  readVerified,
   retryFailed,
   runSendQueue,
   type QueuedItem,
 } from '../sendQueue';
+import { PHONE_PAGE, resolveAssets, type PhoneAsset } from '../phoneRoll';
 import { colors, duration, radius, space, takenOn } from '../theme';
 import { Chip, PrimaryButton } from '../ui';
-import { FreeSpace } from './FreeSpace';
-
-type PhoneAsset = {
-  id: string;
-  filename: string;
-  uri: string;
-  cloud?: boolean;
-  size?: number;
-  takenAt: number;
-  kind: 'image' | 'video';
-  duration: number;
-};
 
 type Props = {
   server: string;
+  /** Present when the camera roll is opened as a task from Backups. */
+  onClose?: () => void;
+  /** Called after a delete so the Photos grid can reload the roll. */
+  onPhoneChanged?: () => void;
 };
 
 const COLS = 3;
 const GAP = 2;
-const PAGE = 60;
 
-export function Phone({ server }: Props) {
+export function Phone({ server, onClose, onPhoneChanged }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const cell = Math.floor((width - GAP * (COLS - 1)) / COLS);
@@ -88,8 +78,6 @@ export function Phone({ server }: Props) {
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [queue, setQueue] = useState<QueuedItem[]>([]);
-  const [freeCount, setFreeCount] = useState(0);
-  const [freeOpen, setFreeOpen] = useState(false);
 
   const after = useRef<string | undefined>(undefined);
   const busy = useRef(false);
@@ -150,7 +138,7 @@ export function Phone({ server }: Props) {
       }
       try {
         const page = await MediaLibrary.getAssetsAsync({
-          first: PAGE,
+          first: PHONE_PAGE,
           after: reset ? undefined : after.current,
           mediaType: ['photo', 'video'],
           sortBy: [['creationTime', false]],
@@ -295,7 +283,6 @@ export function Phone({ server }: Props) {
   const refreshQueue = useCallback(async () => {
     const all = await readSendQueue();
     setQueue(all.filter((i) => i.server === server));
-    setFreeCount((await readVerified(server)).length);
   }, [server]);
 
   const drainQueue = useCallback(
@@ -469,6 +456,7 @@ export function Phone({ server }: Props) {
       setSentNote(
         `Deleted ${ids.length} ${ids.length === 1 ? 'item' : 'items'} from the phone. The drive copy is still there.`,
       );
+      onPhoneChanged?.();
       void refreshQueue();
     } catch (e) {
       const text = e instanceof Error ? e.message : String(e);
@@ -484,14 +472,23 @@ export function Phone({ server }: Props) {
         <Text style={styles.title} accessibilityRole="header">
           {selecting ? 'Select photos' : 'Camera roll'}
         </Text>
-        {assets.length > 0 ? (
-          <TextAction
-            label={selecting ? 'Cancel' : 'Select'}
-            onPress={selecting ? cancelSelection : enterSelection}
-            disabled={sending}
-            accessibilityHint={selecting ? 'Stops selecting' : 'Pick photos to send'}
-          />
-        ) : null}
+        <View style={styles.titleActions}>
+          {assets.length > 0 ? (
+            <TextAction
+              label={selecting ? 'Cancel' : 'Select'}
+              onPress={selecting ? cancelSelection : enterSelection}
+              disabled={sending}
+              accessibilityHint={selecting ? 'Stops selecting' : 'Pick photos to send'}
+            />
+          ) : null}
+          {onClose ? (
+            <TextAction
+              label="Done"
+              onPress={onClose}
+              accessibilityHint="Close the camera roll and go back"
+            />
+          ) : null}
+        </View>
       </View>
       <Text style={styles.stats}>
         {loading
@@ -501,19 +498,6 @@ export function Phone({ server }: Props) {
             }${newCount ? ` · ${newCount} new` : ''}`}
         {checking ? '  ·  Checking drive…' : ''}
       </Text>
-      {!selecting && freeCount > 0 ? (
-        <View style={styles.freeRow}>
-          <Text style={styles.freeText}>
-            {freeCount.toLocaleString()} verified{' '}
-            {freeCount === 1 ? 'item' : 'items'} can be removed from this phone
-          </Text>
-          <TextAction
-            label="Free space"
-            onPress={() => setFreeOpen(true)}
-            accessibilityHint="Delete photos the computer has already verified"
-          />
-        </View>
-      ) : null}
       {selecting ? (
         <View style={styles.selectRow}>
           <Text style={styles.selectCount}>{selected.size} selected</Text>
@@ -844,31 +828,6 @@ export function Phone({ server }: Props) {
           ) : null}
         </View>
       </Modal>
-
-      <FreeSpace
-        visible={freeOpen}
-        server={server}
-        onClose={() => {
-          setFreeOpen(false);
-          void refreshQueue();
-        }}
-        onDeleted={(ids) => {
-          // The tiles and badges must agree with the phone's camera roll.
-          const drop = new Set(ids);
-          setAssets((prev) => prev.filter((a) => !drop.has(a.id)));
-          setBadges((prev) => {
-            const next = { ...prev };
-            ids.forEach((id) => delete next[id]);
-            return next;
-          });
-          setSelected((prev) => {
-            const next = new Set(prev);
-            ids.forEach((id) => next.delete(id));
-            return next;
-          });
-          setFreeCount((n) => Math.max(0, n - ids.length));
-        }}
-      />
     </View>
   );
 }
@@ -951,64 +910,6 @@ const Tile = React.memo(function Tile({
   );
 });
 
-async function resolveAssets(list: MediaLibrary.Asset[]): Promise<PhoneAsset[]> {
-  const out = new Array<PhoneAsset>(list.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < list.length) {
-      const i = next++;
-      out[i] = await resolveOne(list[i]);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(6, list.length) }, worker),
-  );
-  return out;
-}
-
-async function resolveOne(a: MediaLibrary.Asset): Promise<PhoneAsset> {
-  let uri = a.uri;
-  let cloud = false;
-  if (Platform.OS === 'ios') {
-    try {
-      // false: never pull originals down from iCloud just to show a badge.
-      const info = await MediaLibrary.getAssetInfoAsync(a, {
-        shouldDownloadFromNetwork: false,
-      });
-      if (info.localUri) uri = info.localUri;
-      else cloud = true;
-    } catch {
-      // iCloud-only asset; the tile will say so.
-      cloud = true;
-    }
-    // React Native's image loader has no handler for ph://. Handing it one
-    // just logs "No suitable image URL loader found" and leaves an empty tile.
-    if (uri.startsWith('ph://')) {
-      cloud = true;
-      uri = '';
-    }
-  }
-  let size: number | undefined;
-  if (uri) {
-    try {
-      const file = await FileSystem.getInfoAsync(uri);
-      if (file.exists && !file.isDirectory) size = file.size;
-    } catch {
-      // Size is optional; a missing size just leaves the badge unknown.
-    }
-  }
-  return {
-    id: a.id,
-    filename: a.filename,
-    uri,
-    cloud,
-    size,
-    takenAt: Math.round(a.creationTime / 1000),
-    kind: a.mediaType === 'video' ? 'video' : 'image',
-    duration: a.duration,
-  };
-}
-
 function permissionProblem(e: unknown): string {
   if (Platform.OS === 'android' && Constants.appOwnership === 'expo') {
     return 'Expo Go cannot grant camera-roll access on Android. Use the iPhone, or install the OCD development build.';
@@ -1029,7 +930,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space(3),
   },
-  change: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(1),
+  },
   dim: { opacity: 0.45 },
   title: {
     fontSize: 32,
@@ -1045,14 +950,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.muted,
   },
-  freeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space(2),
-    marginTop: space(1),
-  },
-  freeText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.muted },
   filterRow: {
     flexDirection: 'row',
     marginTop: space(3),
@@ -1064,7 +961,6 @@ const styles = StyleSheet.create({
     marginTop: space(2),
   },
   selectCount: { fontSize: 13, fontWeight: '700', color: colors.text },
-  selectAction: { fontSize: 13, fontWeight: '600', color: colors.muted },
   boot: { marginTop: space(20) },
   permission: {
     paddingHorizontal: space(6),
@@ -1096,12 +992,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 13,
     lineHeight: 19,
-  },
-  settingsLink: {
-    marginTop: space(5),
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.muted,
   },
   notice: {
     marginHorizontal: space(4),

@@ -76,8 +76,9 @@ itself, so this is a one-time step.
 
 The other platforms are the same, with the matching file name: `chmod +x` once,
 and on macOS also `xattr -d com.apple.quarantine <file>`.
-There is no Android or iPhone app: the phone opens the same page in its browser
-(the Import view shows a QR code for it).
+There is no published Android or iPhone app: the phone opens the same page in its
+browser (the Import view shows a QR code for it). A companion app for Android and
+iPhone lives in `mobile/` and is built from source; see [Phone app](#phone-app-on-drive-browsing-and-indexing).
 
 **Building from source:**
 
@@ -268,6 +269,22 @@ or the mirror, how many entries each holds, and whether the drive is connected.
 Wi-Fi, and it can open a drive plugged straight into the phone with no computer
 involved.
 
+The app is organised into five tabs, and all five stay reachable without a
+computer:
+
+| Tab | What it is for |
+|-----|----------------|
+| **Photos** | One grid of this phone's camera roll, the drive plugged into the phone, and a computer on the same Wi-Fi. Chips filter to one source; every tile keeps the source it came from. |
+| **Devices** | Connect or scan for a computer, and see, open, index or eject the drive Android has mounted. The first readable volume opens by itself. |
+| **Backups** | Back up the camera roll onto the drive, tidy duplicate drive copies, and send photos to the computer. |
+| **Space** | Free space on the phone and the open drive, plus the verified-cleanup list. |
+| **Settings** | Which computer this phone talks to, and the app version. |
+
+Under **Devices**, the saved computer address is reused for a bounded search of
+the same Wi-Fi network: **Scan network** asks every address in that `/24` (254
+hosts, port 8090, a short timeout, a few at a time) for `/api/version` and lists
+the ones that answer. It never runs on its own and never uploads anything.
+
 **Expo Go** can browse a drive that already carries a catalog, read-only, using
 Android's document picker. A drive with no catalog still opens, but has no
 previews and no dates.
@@ -300,8 +317,8 @@ computer at all, use the preview profile:
 npx eas build -p android --profile preview
 ```
 
-Install the APK on the phone, open **This phone**, allow "All files access",
-pick the drive, and press **Index drive** once.
+Install the APK on the phone, open **Devices**, allow "All files access", and press
+**Index drive** once on the volume that opened.
 
 ### What the phone writes
 
@@ -338,8 +355,9 @@ writable. The damaged file is never copied over the good backup.
 
 ### Back up the camera roll from the phone
 
-Connect the drive straight to the phone, open **This phone**, pick the volume, and
-press **Back up phone**. No computer, server, or Wi-Fi is involved.
+Connect the drive straight to the phone, open **Devices** and let the first volume
+open, then open **Backups** and press **Choose what to back up**. No computer,
+server, or Wi-Fi is involved.
 
 Choose what to copy:
 
@@ -467,8 +485,8 @@ until the next scan reads them again.
 ### Send from the phone to the PC
 
 The other route needs no cable: keep the drive on the computer, start the server,
-and connect the app to it over Wi-Fi. Pick items in the phone's camera roll and
-choose a drive folder on the PC.
+and connect the app to it over Wi-Fi. Open **Backups**, press **Send photos**, pick
+items in the camera roll and choose a drive folder on the PC.
 
 A send is a small queue written to the phone's own storage, not just to the
 screen. That matters because the queue is what makes "send, verify, then delete"
@@ -502,10 +520,10 @@ The phone originals are never deleted automatically.
 
 ### Free up space on the phone
 
-Once a copy is verified, **Settings → This phone** shows **Free up space**. The
-screen lists only items the desktop answered with `verified` after hashing the
-bytes on arrival; a name-and-size catalog match is not accepted as proof, because
-it never looked inside the file.
+Once a copy is verified, the **Space** tab lists it. The screen lists only items
+the desktop answered with `verified` after hashing the bytes on arrival; a
+name-and-size catalog match is not accepted as proof, because it never looked
+inside the file.
 
 The list survives relaunches: the proof is written to the phone (`ocd-verified.json`)
 when the send is verified, so the delete step can happen days later. Each row
@@ -529,11 +547,11 @@ are unchanged either way.
 
 ### Tidy duplicates on the phone
 
-**Tidy duplicates** finds files whose **bytes** are identical, not merely their
-names. It groups the drive's media by size first, so only the groups that could
-contain a copy are hashed at all. For each match it keeps the oldest copy, then
-the shallowest and shortest path, and moves every other copy to
-`_OCD Duplicates/<original path>`.
+**Tidy duplicates** on the **Backups** tab finds files whose **bytes** are
+identical, not merely their names. It groups the drive's media by size first, so
+only the groups that could contain a copy are hashed at all. For each match it
+keeps the oldest copy, then the shallowest and shortest path, and moves every
+other copy to `_OCD Duplicates/<original path>`.
 
 The moves are same-volume renames, so nothing is copied and nothing is deleted.
 The preview lists exactly which files will move before you confirm. If the drive
@@ -546,16 +564,18 @@ computer when you are sure.
 
 ### Activity and settings
 
-The app has four tabs on Android (**Computer**, **Camera roll**, **This phone**,
-**Settings**) and three on iPhone (**Computer**, **Camera roll**, **Settings**).
-Settings opens without a computer connected, so the phone-side counts and cleanup
-stay reachable even when Wi-Fi is off.
+The app has five tabs on both platforms: **Photos**, **Devices**, **Backups**,
+**Space** and **Settings**. All five stay mounted and keep working without a
+computer; a screen that needs one says so and points at **Devices**.
 
-Settings shows which computer the phone is talking to and its OCD version, links
-to **Activity**, and summarises this phone's sends: waiting, failed, verified
-items and finished rows. From there you can open **Free up space** or clear the
-finished rows. Clearing rows only forgets the summary; the verified list and the
-drive copies are untouched.
+**Settings** now only answers "which computer is this phone talking to, and what
+version is running?". Sends, the drive, backups and cleanup each have their own
+tab instead of being grouped here.
+
+**Backups** shows the send queue's waiting, failed, checked and finished counts,
+and links to **Send photos**, **Free up space** (the Space tab) and **Activity**.
+Clearing finished rows only forgets the summary; the verified list and the drive
+copies are untouched.
 
 **Activity** is a read-only timeline. It does not record anything new: uploads,
 phone backups, duplicate moves and verified phone deletions already append one

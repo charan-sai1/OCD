@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCD — What it can do</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --ink:#16191d; --mute:#5f6873; --line:#e0e4e9; --card:#fff;
+    --done:#1a7f4b; --done-bg:#e7f5ed;
+    --part:#a35f00; --part-bg:#fdf1de;
+    --todo:#5b6572; --todo-bg:#eef0f3;
+    --accent:#1d5fd6; --accent-bg:#eaf0fd;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1317; --ink:#e8ecf1; --mute:#9aa4b0; --line:#28313a; --card:#161c22;
+      --done:#6bd69b; --done-bg:#12301f;
+      --part:#f2bd6b; --part-bg:#33260f;
+      --todo:#a3aeba; --todo-bg:#1e252c;
+      --accent:#8db6ff; --accent-bg:#16233a;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:36px 20px 70px}
+  h1{font-size:30px;letter-spacing:-.02em;margin:0 0 8px}
+  h2{font-size:20px;margin:42px 0 6px}
+  h3{font-size:16px;margin:0 0 2px}
+  p{margin:0 0 10px}
+  .lead{font-size:18px;color:var(--ink);max-width:62ch}
+  .sub{color:var(--mute)}
+  .small{font-size:13px;color:var(--mute)}
+
+  /* how it works */
+  .steps{display:grid;gap:10px;grid-template-columns:repeat(4,1fr);margin:18px 0 6px}
+  @media (max-width:760px){.steps{grid-template-columns:1fr 1fr}}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .step .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+    border-radius:50%;background:var(--accent-bg);color:var(--accent);font-size:13px;font-weight:700;margin-bottom:8px}
+  .step b{display:block;font-size:15px;margin-bottom:3px}
+  .step span{font-size:13px;color:var(--mute);line-height:1.45;display:block}
+
+  /* sections */
+  .group{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 18px;margin-top:12px}
+  .row{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row .body{flex:1;min-width:0}
+  .row p{margin:0;font-size:15px}
+  .tag{flex:0 0 66px;text-align:center;font-size:11px;font-weight:700;letter-spacing:.05em;
+    padding:3px 0;border-radius:999px;margin-top:3px}
+  .tag.done{color:var(--done);background:var(--done-bg)}
+  .tag.part{color:var(--part);background:var(--part-bg)}
+  .tag.todo{color:var(--todo);background:var(--todo-bg)}
+
+  details{margin-top:6px}
+  summary{cursor:pointer;font-size:12.5px;color:var(--accent);list-style:none;display:inline-block;padding:2px 0}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ ";font-size:11px}
+  details[open] summary::before{content:"▾ "}
+  details .tech{margin-top:6px;font-size:13px;color:var(--mute);line-height:1.55;
+    border-left:2px solid var(--line);padding:2px 0 2px 12px}
+  code{font:12.5px ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--todo-bg);padding:1px 5px;border-radius:4px}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0 4px;font-size:13px;color:var(--mute)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.done{background:var(--done)} .dot.part{background:var(--part)} .dot.todo{background:var(--todo)}
+
+  .note{border-radius:12px;padding:16px 18px;margin-top:26px;font-size:15px}
+  .warn{background:var(--part-bg);border:1px solid color-mix(in srgb,var(--part) 35%,var(--line))}
+  .note b{display:block;margin-bottom:4px}
+  footer{margin-top:46px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>OCD — what it can do</h1>
+  <p class="lead">OCD keeps your photos safe across your computer, your phone, and portable hard drives. It works without an internet connection, without an account, and it never deletes anything until it has checked that a good copy exists.</p>
+
+  <div class="legend">
+    <span><i class="dot done"></i> Works today</span>
+    <span><i class="dot part"></i> Works, but not fully</span>
+    <span><i class="dot todo"></i> Not built yet</span>
+  </div>
+  <p class="small">Tap “Technical details” under any item if you want the plumbing.</p>
+
+  <h2>How it works</h2>
+  <p class="sub">Every way of adding photos goes through the same four steps.</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><b>Find the photos</b><span>From your phone, a folder, or a camera.</span></div>
+    <div class="step"><span class="n">2</span><b>Check the copy</b><span>Reads every byte back to make sure it matches.</span></div>
+    <div class="step"><span class="n">3</span><b>Save and record</b><span>Puts them in a dated folder and writes a note of what happened.</span></div>
+    <div class="step"><span class="n">4</span><b>Your move</b><span>Browse them, or clear space — only after the check passes.</span></div>
+  </div>
+
+  <h2>On your computer</h2>
+  <div class="group">
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>One small program you run on Windows, Mac, or Linux. No installer and no account.</p>
+      <details><summary>Technical details</summary><div class="tech">Single Go binary, cross-platform builds, one-click launcher, CLI, self-update.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Browse your drives in OCD’s own gallery, jump between years and months, mark favourites, and open a photo’s folder. Import, duplicates and help each have their own tab.</p>
+      <details><summary>Technical details</summary><div class="tech">Paged server-side index with thumbnail cache, year/month timeline, favourites, reveal in file manager, thumbnail export. Photofield is optional and only used if you open its own interface.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Copy photos in from your phone over Wi-Fi, from a cable, or from a folder. The page is split by how the photos arrive, and every copy is checked before anything is cleared.</p>
+      <details><summary>Technical details</summary><div class="tech">Watched landing folder for Quick Share / Phone Link / the OCD app, plus folder / ADB / iPhone importers. SHA-256 verification, optional wipe of verified originals, content and name dedupe with quarantine. Name-only matching sits under “Advanced comparison”.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Your phone can send photos to the computer over Wi-Fi, and the computer checks what arrives.</p>
+      <details><summary>Technical details</summary><div class="tech">Upload API with server-side hash check, staged in <code>.ocd-incoming</code> then moved into <code>Phone/YYYY/MM/</code>; import-check endpoint for on-drive badges.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>The drive keeps its own index, and the computer uses it instead of re-reading every file. A copy on the computer keeps the gallery working when the drive is unplugged.</p>
+      <details><summary>Technical details</summary><div class="tech">Scan reads <code>.ocd/catalog.gz</code> and adopts entries before walking, so unchanged files are not probed again. Writes a local mirror to <code>&lt;data&gt;/catalog/&lt;volume&gt;.jsonl.gz</code>, loads it at startup, and falls back to it if the drive catalog is damaged. <code>GET /api/catalogs</code> reports drive vs mirror.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag todo">NOT YET</span><div class="body">
+      <p>Right now anyone on your Wi-Fi can open the computer’s photo pages. A pairing step with a code or QR will lock that down.</p>
+      <details><summary>Technical details</summary><div class="tech">Planned: bearer/cookie token auth on all <code>/api/*</code>, <code>/api/pair/*</code> public and rate-limited, loopback cookie for the desktop UI.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag todo">NOT YET</span><div class="body">
+      <p>A list of every computer and phone that has used the drive, with when each was last seen.</p>
+      <details><summary>Technical details</summary><div class="tech">Planned: <code>devices.json</code> registry with heartbeat and last-seen counts.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag todo">NOT YET</span><div class="body">
+      <p>Sending photos from the computer back down to the phone.</p>
+      <details><summary>Technical details</summary><div class="tech">Planned: desktop→phone send. The audit logs it would draw from already exist and are shown on the phone’s Activity screen.</div></details>
+    </div></div>
+  </div>
+
+  <h2>On the drive</h2>
+  <p class="sub">The drive carries a small index of what is on it, so another machine or a phone can understand it quickly.</p>
+  <div class="group">
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>The drive remembers what is on it, even if you unplug it or its letter changes.</p>
+      <details><summary>Technical details</summary><div class="tech"><code>.ocd/catalog.gz</code> with header, volume ID, and one line per item. Written tmp → sync → rename, with <code>catalog.bak</code> fallback and header validation.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Every add, move, and delete leaves a written record you can look back at.</p>
+      <details><summary>Technical details</summary><div class="tech">Append-only <code>audit.jsonl</code> on both the desktop upload path and the phone backup path; archived files stay restorable from the log.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>The drive is recognised by its hardware ID, not by its drive letter, so it survives being plugged in as E: one day and G: the next.</p>
+      <details><summary>Technical details</summary><div class="tech">Native volume serial per OS, with <code>volume.json</code> only as a fallback. Item IDs are volume ID + relative path.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>The computer keeps its own copy of the drive’s index, so the gallery still fills while the drive is unplugged.</p>
+      <details><summary>Technical details</summary><div class="tech">Local mirror at <code>&lt;data&gt;/catalog/&lt;volumeId&gt;.jsonl.gz</code>, loaded at startup and used as a fallback if the drive catalog is damaged. <code>GET /api/catalogs</code> reports drive vs mirror.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag todo">NOT YET</span><div class="body">
+      <p>Two computers writing to the same drive at the same time are not yet coordinated, so they could still tread on each other’s index.</p>
+      <details><summary>Technical details</summary><div class="tech">Planned: <code>.ocd/catalog.lock</code> and a catalog journal, so concurrent writers are ordered rather than assumed away.</div></details>
+    </div></div>
+  </div>
+
+  <h2>On your phone, over Wi-Fi</h2>
+  <p class="sub">The phone talks to OCD running on your computer.</p>
+  <div class="group">
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Type in your computer’s address — the computer shows it with a QR code under Import — and browse its photos from the phone, including full-screen, zoom, video, and sharing.</p>
+      <details><summary>Technical details</summary><div class="tech">Connect screen, PC gallery, viewer with zoom, remote video, share sheet. The address and QR live in a collapsed block on the desktop Import page.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>See your camera roll with a badge on the photos that are already on the drive, filter to new ones, and send several at once.</p>
+      <details><summary>Technical details</summary><div class="tech">Camera-roll grid, on-drive badges from <code>/api/import/check</code>, “new only” filter, multi-select upload.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>The computer checks each upload, and only then can you delete the copy on your phone to free space.</p>
+      <details><summary>Technical details</summary><div class="tech">Camera-roll assets staged into app sandbox, server re-hashes, verified delete only on success.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>A dropped connection does not start the file again.</b> The phone asks the computer how much already arrived and sends only the rest, even if the app was closed mid-file.</p>
+      <details><summary>Technical details</summary><div class="tech">Upload session saved in the queue before the first byte; <code>GET /api/upload/{id}</code> reports <code>received</code>; <code>PUT ?offset=N</code> appends; resumed sends use 4 MiB chunks; a different file size starts a fresh session instead of appending.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Sending survives closing the app.</b> The queue is kept on the phone, so an interrupted send is still waiting next time, and you can pause, resume, retry or clear it.</p>
+      <details><summary>Technical details</summary><div class="tech">On-disk queue (<code>ocd-send-queue.json</code>) with per-item <code>pending</code>/<code>done</code>/<code>failed</code> state; auto-resume once per app open; Stop finishes the current item; server re-hash idempotency makes retries safe. Still foreground-only.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Free space in one place.</b> The <b>Space</b> tab lists only the photos the computer has verified, shows the phone’s free space now and after the items you pick, and lets you delete them from the phone.</p>
+      <details><summary>Technical details</summary><div class="tech">Verified sends persist in <code>ocd-verified.json</code> with asset id, size, date and drive path. Space resolves presence against the camera roll, refuses catalog-only matches, confirms count and bytes, deletes via <code>deleteAssetsAsync</code>, then forgets the proof. A verified delete posts count and bytes to <code>/api/free/record</code>, which writes one <code>op:"delete"</code> row per folder. Missing items can be forgotten separately.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>One Photos grid for every source.</b> The camera roll, a drive plugged into the phone, and a computer on the same Wi-Fi appear together, newest first. Chips narrow the grid to one source, and every tile knows where it came from.</p>
+      <details><summary>Technical details</summary><div class="tech">Three page loaders (camera roll, drive catalog, <code>/api/photos</code>) are merged by capture date with a linear merge. Keys are prefixed <code>phone:</code>, <code>drive:</code> and <code>pc:</code> so previews, originals, video and sharing route back to the right source. A source that is not available is left out of the chips rather than shown empty.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Find the computer on your Wi-Fi.</b> If you forget the address, <b>Devices → Scan network</b> asks the addresses around the one you last used and lists any that answer.</p>
+      <details><summary>Technical details</summary><div class="tech">Bounded /24 probe on port 8090, 254 hosts, 900 ms timeout, 20 at a time, only on an explicit tap. The saved address or a typed one supplies the subnet; public addresses and hostnames are refused. Every hit is confirmed by <code>/api/version</code>, so another service on the port is not mistaken for OCD.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>See what the app has done.</b> An Activity screen lists recent sends, phone backups, freed phone space and duplicate moves, newest first.</p>
+      <details><summary>Technical details</summary><div class="tech">Backups tab shows queue counts and links to Activity. Activity merges each drive's <code>.ocd/audit.jsonl</code> plus the computer's log under <code>DataDir/.ocd</code> via <code>/api/activity</code>; tail read (2 MiB per log), 120 rows by default, 500 cap, read-only.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Five plain tabs.</b> Photos, Devices, Backups, Space and Settings. Each screen says what it is for, and anything that needs the computer says so instead of failing quietly.</p>
+      <details><summary>Technical details</summary><div class="tech">Five always-mounted screens with <code>display:'none'</code> when inactive, so a drive keeps its catalog and a page keeps its scroll position. One shared <code>useDriveSession</code> feeds Photos, Backups and Space; a phone-changed revision makes the grid reload after a delete elsewhere.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag todo">NOT YET</span><div class="body">
+      <p>QR pairing and password protection.</p>
+      <details><summary>Technical details</summary><div class="tech">Planned: QR/manual-code pairing and auth for the phone-facing pages.</div></details>
+    </div></div>
+  </div>
+
+  <h2>On your phone, plugged into a drive</h2>
+  <p class="sub">No computer needed. The phone copies straight onto the drive.</p>
+  <div class="group">
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Plug in a drive and the first readable volume opens by itself in <b>Devices</b>; index it once, then browse it with full-screen zoom, video, and sharing. Its photos also appear in the unified <b>Photos</b> grid.</p>
+      <details><summary>Technical details</summary><div class="tech">Native Kotlin drive module (USB + SAF fallback): scan, hash, stat, mtime. Index/recover catalog, gallery grid, viewer. A volume that disappears and returns is allowed to auto-open again.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Back up the camera roll onto the drive from <b>Backups</b>, in dated folders, choosing what counts as a duplicate and where duplicates go.</p>
+      <details><summary>Technical details</summary><div class="tech">Backup conditions, dated layout, content-based duplicate policy, custom quarantine folder constrained inside <code>_OCD Duplicates</code>. The open drive and its free space come from the shared drive session.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Duplicates are compared by what is inside the file, not by its name. The redundant copy is moved to a duplicates folder, never deleted.</p>
+      <details><summary>Technical details</summary><div class="tech">Verified duplicate hashing, collision-safe catalog commit, quarantine replacement, audit row per move. Covered by <code>mobile/scripts/catalog-merge.test.mjs</code>.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p>Clean-up stays honest if you cancel halfway or something fails: the index and the record still agree with what is on the drive.</p>
+      <details><summary>Technical details</summary><div class="tech">Catalog + audit commit after cancellation and partial failure; truncated/unreadable scan, unknown free space, read-only drive, and orphan staging handled explicitly.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>See the size of the job before it starts.</b> The backup panel counts what will be copied, shows the drive’s room now and after, and says that the phone itself stays unchanged. If the drive is known to be too full, it says so before copying anything.</p>
+      <details><summary>Technical details</summary><div class="tech">Pure arithmetic in <code>mobile/src/direct/spacePlan.ts</code> (count, bytes, skipped, remaining room, free after delete) with node tests; <code>estimateBackup</code> applies the same rules as the run without hashing or writing; 64 MiB headroom; unknown free space is shown as unknown, never zero.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Pick just the photos you want.</b> Choose exact photos and videos instead of backing up by rule.</p>
+      <details><summary>Technical details</summary><div class="tech">Camera-roll picker with paging and multi-select passes a <code>BackupSelection</code> of asset ids to <code>runBackup</code>; duplicate policy, dated layout, hashing, read-back verification, catalog merge and audit all run unchanged.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Live Photos stay together, and photos keep their own date, camera and place.</b> A Live Photo’s video is copied beside its photo, and the backup reads capture date, orientation, camera, exposure and GPS from the file itself.</p>
+      <details><summary>Technical details</summary><div class="tech">iOS <code>pairedVideoAsset</code> copied to the photo’s final stem and verified with its own hash; both copies roll back if either fails. Android same-stem sidecars linked during catalog commit. EXIF from CoreImage (iOS) and flat tag maps (Android), including fractions, GPS refs and 0,0; stored in the catalog and preserved by adoption and rewrites.</div></details>
+    </div></div>
+
+    <div class="row"><span class="tag done">WORKS</span><div class="body">
+      <p><b>Backup keeps going with the screen locked on Android, and an interrupted run can be continued.</b> A progress notification stays in the shade, and if the system kills the app the backup screen offers to pick up the same run on the same drive.</p>
+      <details><summary>Technical details</summary><div class="tech">Android foreground service (<code>dataSync</code>) with a low-importance notification and partial wake lock; <code>START_NOT_STICKY</code>, no restart without JavaScript. A resume marker in the app’s document folder records the drive, rules and ticked ids; a resumed run forces the duplicate policy to skip and rewrites the catalog if the previous kill happened during the catalog commit. iOS runs in the foreground only.</div></details>
+    </div></div>
+  </div>
+
+  <h2>Keeping things safe</h2>
+  <div class="group">
+    <div class="row"><span class="tag done">WORKS</span><div class="body"><p>Backing up never deletes or changes the photos on your phone.</p></div></div>
+    <div class="row"><span class="tag done">WORKS</span><div class="body"><p>A duplicate is decided by the file’s content, so the wrong drive file is never the one moved.</p></div></div>
+    <div class="row"><span class="tag done">WORKS</span><div class="body"><p>Nothing is hard-deleted. Redundant copies go to a duplicates folder and can be put back from the record.</p></div></div>
+    <div class="row"><span class="tag done">WORKS</span><div class="body"><p>Unreadable scans, drives with no free-space figure, and read-only drives are refused or handled read-only instead of guessed at.</p></div></div>
+    <div class="row"><span class="tag done">WORKS</span><div class="body"><p>Every destructive step is written down before it reports success.</p></div></div>
+  </div>
+
+  <h2>What is not done yet</h2>
+  <div class="group">
+    <div class="row"><span class="tag todo">NEXT</span><div class="body"><p><b>Try all of this on a real phone.</b> The features are built; the installed build predates them. A fresh Android build has not been started yet, and it will be the first time the Android changes are compiled.</p></div></div>
+    <div class="row"><span class="tag todo">LATER</span><div class="body"><p>Pairing and password-protection for the computer’s phone-facing pages.</p></div></div>
+    <div class="row"><span class="tag todo">LATER</span><div class="body"><p>A background send that keeps going when the app is closed.</p></div></div>
+    <div class="row"><span class="tag todo">LATER</span><div class="body"><p>Sharing straight from other apps, browsing inside the app, a device registry, computer-to-phone sending, motion playback, and a public store listing.</p></div></div>
+  </div>
+
+  <div class="note warn">
+    <b>The app on your phone is behind the code</b>
+    The last installed build predates the five-tab restructure (Photos, Devices,
+    Backups, Space, Settings) with its unified grid and Wi-Fi scan, the
+    duplicate-folder choice, the send queue, resumed sends, verified cleanup and
+    its freed-space record, the preflight size panel, Activity, Live Photo
+    pairing, EXIF capture, and background backup with resume. No new Android build
+    has been started yet; when it is, it will be the first time the Android changes
+    are compiled.
+  </div>
+
+  <footer>
+    Written from the project’s README, plan, computer server routes, and phone app screens. This describes the code as it stands now, not the last published build.
+  </footer>
+</div>
+</body>
+</html>
